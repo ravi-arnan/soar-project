@@ -1,0 +1,24 @@
+# Wazuh Docker (upstream repo — track version saja di README)
+wazuh-docker/
+
+# Backup archives (besar, biner — versioning via filename timestamp sudah cukup)
+backups/*.tar.gz
+
+# Local environment / secrets
+.env
+.env.local
+*.key
+*.pem
+*.crt
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Logs / runtime data
+*.log
+/tmp/
+ossec.conf.bak-*
