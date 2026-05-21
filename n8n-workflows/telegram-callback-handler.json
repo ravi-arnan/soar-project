@@ -1,0 +1,262 @@
+[
+  {
+    "name": "Telegram Callback Handler",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "tg-callback",
+          "responseMode": "onReceived",
+          "options": {}
+        },
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          300
+        ],
+        "id": "86cef16a-ec27-498b-9ad6-0da302e41d38",
+        "webhookId": "4291f5dd-ea70-4e8f-b88a-559ed76555c2"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst cq = body.callback_query || {};\nconst data = cq.data || '';\nconst parts = data.split(':');\nconst text = (cq.message && cq.message.text) || '';\nconst pathMatch = text.match(/Path:\\s*(.+)/);\nconst fileMatch = text.match(/File:\\s*(.+)/);\nconst hashMatch = text.match(/([a-f0-9]{64})/i);\nreturn [{ json: {\n  action: parts[0] || '',\n  agentId: parts[1] || '000',\n  filePath: pathMatch ? pathMatch[1].trim() : '',\n  fileName: fileMatch ? fileMatch[1].trim() : '',\n  hash: hashMatch ? hashMatch[1] : '',\n  chatId: cq.message ? cq.message.chat.id : '',\n  messageId: cq.message ? cq.message.message_id : '',\n  callbackQueryId: cq.id || '',\n  analyst: (cq.from && (cq.from.first_name || cq.from.username)) || 'analis',\n  origText: text\n}}];"
+        },
+        "name": "Parse Keputusan",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          300
+        ],
+        "id": "1e3c84c8-11b9-4ee4-a13e-7d10c3695dd8"
+      },
+      {
+        "parameters": {
+          "resource": "callback",
+          "operation": "answerQuery",
+          "queryId": "={{ $('Parse Keputusan').first().json.callbackQueryId }}",
+          "additionalFields": {
+            "text": "Diproses..."
+          }
+        },
+        "name": "Answer Callback",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          440,
+          300
+        ],
+        "id": "8946c4ba-39b2-4be7-a03d-f3cbd06c2783",
+        "credentials": {
+          "telegramApi": {
+            "id": "DCCZSQ4bTDcFjrWs",
+            "name": "Telegram account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "cond-iso",
+                "leftValue": "={{ $('Parse Keputusan').first().json.action }}",
+                "rightValue": "iso",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "name": "Isolasi?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          660,
+          300
+        ],
+        "id": "0c708d96-819c-4228-a1f7-98ae427d8ad4"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://172.17.0.1:55000/security/user/authenticate",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBasicAuth",
+          "options": {
+            "allowUnauthorizedCerts": true
+          }
+        },
+        "name": "Get Wazuh Token",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          880,
+          200
+        ],
+        "id": "6fa04dfb-8ffa-4658-912e-29f413d1a36c",
+        "credentials": {
+          "httpBasicAuth": {
+            "id": "z3vHEZdm4EpUDzRE",
+            "name": "Wazuh Creds"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const token = $('Get Wazuh Token').first().json.data.token;\nconst agentId = $('Parse Keputusan').first().json.agentId;\nconst filePath = $('Parse Keputusan').first().json.filePath;\nconst response = await this.helpers.httpRequest({\n  method: 'PUT',\n  url: `https://172.17.0.1:55000/active-response?agents_list=${agentId}&wait_for_complete=true`,\n  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ command: '!quarantine-file', arguments: [filePath] }),\n  rejectUnauthorized: false, timeout: 30000\n});\nreturn [{ json: { ar_response: response, filePath, agentId, status: (response && response.error === 0) ? 'terkirim' : 'gagal' } }];"
+        },
+        "name": "Quarantine File",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1100,
+          200
+        ],
+        "id": "6ab6f8bc-ebed-4ff6-8a26-59e3f07c429a"
+      },
+      {
+        "parameters": {
+          "resource": "message",
+          "operation": "editMessageText",
+          "chatId": "={{ $('Parse Keputusan').first().json.chatId }}",
+          "messageId": "={{ $('Parse Keputusan').first().json.messageId }}",
+          "text": "={{ $('Parse Keputusan').first().json.origText + \"\\n\\n----------\\nFILE DIISOLASI oleh \" + $('Parse Keputusan').first().json.analyst + \" (karantina di agent, status AR: \" + $('Quarantine File').first().json.status + \").\" }}",
+          "additionalFields": {}
+        },
+        "name": "Edit Pesan Isolasi",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          1320,
+          200
+        ],
+        "id": "36ec336f-2770-4b72-be0f-19c09f0aa556",
+        "credentials": {
+          "telegramApi": {
+            "id": "DCCZSQ4bTDcFjrWs",
+            "name": "Telegram account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "message",
+          "operation": "editMessageText",
+          "chatId": "={{ $('Parse Keputusan').first().json.chatId }}",
+          "messageId": "={{ $('Parse Keputusan').first().json.messageId }}",
+          "text": "={{ $('Parse Keputusan').first().json.origText + \"\\n\\n----------\\nDitandai FALSE POSITIVE oleh \" + $('Parse Keputusan').first().json.analyst + \". Tidak ada aksi (file dibiarkan).\" }}",
+          "additionalFields": {}
+        },
+        "name": "Edit Pesan Abaikan",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          880,
+          420
+        ],
+        "id": "a338acf4-8719-47b3-b023-341b9bdd871f",
+        "credentials": {
+          "telegramApi": {
+            "id": "DCCZSQ4bTDcFjrWs",
+            "name": "Telegram account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Parse Keputusan",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse Keputusan": {
+        "main": [
+          [
+            {
+              "node": "Answer Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Answer Callback": {
+        "main": [
+          [
+            {
+              "node": "Isolasi?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Isolasi?": {
+        "main": [
+          [
+            {
+              "node": "Get Wazuh Token",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Edit Pesan Abaikan",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Wazuh Token": {
+        "main": [
+          [
+            {
+              "node": "Quarantine File",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Quarantine File": {
+        "main": [
+          [
+            {
+              "node": "Edit Pesan Isolasi",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "pinData": {},
+    "id": "kGzPH0MPHjKvailW"
+  }
+]

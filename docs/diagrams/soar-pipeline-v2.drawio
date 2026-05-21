@@ -1,0 +1,127 @@
+<mxfile host="Electron" agent="SOAR-project">
+  <diagram name="SOAR Pipeline v2" id="soarpipev2">
+    <mxGraphModel dx="1100" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontSize=20;fontStyle=1;fontColor=#1A1A1A;" value="SOAR Pipeline - Deteksi Malware End-to-End" vertex="1">
+          <mxGeometry height="40" width="500" x="180" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lyr1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;verticalAlign=top;fontStyle=1;fontSize=11;fontColor=#1A1A1A;arcSize=6;" value="LAYER 1 - DETECTION (Endpoint)" vertex="1">
+          <mxGeometry height="200" width="360" x="40" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="attacker" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=11;fontColor=#1A1A1A;" value="Attacker atau User&#xa;Drop file ke folder Downloads" vertex="1">
+          <mxGeometry height="50" width="170" x="60" y="115" as="geometry" />
+        </mxCell>
+        <mxCell id="agent" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C8EBF;fontSize=11;fontColor=#1A1A1A;" value="Wazuh Agent (rocky-server atau ravi-zorin)&#xa;syscheckd FIM realtime - hitung SHA256" vertex="1">
+          <mxGeometry height="70" width="320" x="60" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="lyr2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=6;fontColor=#1A1A1A;" value="LAYER 2 - AGGREGATION (Wazuh Manager atau Server)" vertex="1">
+          <mxGeometry height="200" width="370" x="440" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="manager" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82B366;fontSize=11;fontColor=#1A1A1A;" value="wazuh-analysisd&#xa;Decode dan match rule (554 File added, level 5)" vertex="1">
+          <mxGeometry height="55" width="330" x="460" y="115" as="geometry" />
+        </mxCell>
+        <mxCell id="integratord" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#82B366;fontSize=11;fontColor=#1A1A1A;" value="wazuh-integratord&#xa;Invoke custom-n8n script&#xa;(rule_id whitelist 554, 550, 553)" vertex="1">
+          <mxGeometry height="60" width="330" x="460" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="lyr3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D79B00;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=6;fontColor=#1A1A1A;" value="LAYER 3 - INTEGRATION BRIDGE" vertex="1">
+          <mxGeometry height="160" width="370" x="440" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="script" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D79B00;fontSize=11;align=left;spacingLeft=10;fontColor=#1A1A1A;" value="custom-n8n.py&#xa;1. Filter rule_level di bawah 5&#xa;2. Filter noisy paths (tmp runc dll)&#xa;3. Build nested JSON payload&#xa;4. Route hash ke malware, url ke phishing" vertex="1">
+          <mxGeometry height="110" width="330" x="460" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="lyr4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=6;fontColor=#1A1A1A;" value="LAYER 4 - ORCHESTRATION (n8n Workflow)" vertex="1">
+          <mxGeometry height="470" width="360" x="40" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="filteralert" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9673A6;fontSize=11;fontColor=#1A1A1A;" value="Filter Alert Malware - hash exists" vertex="1">
+          <mxGeometry height="40" width="320" x="60" y="335" as="geometry" />
+        </mxCell>
+        <mxCell id="ekstrak" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9673A6;fontSize=11;fontColor=#1A1A1A;" value="Ekstrak Alert&#xa;Normalize fields (hash, path, agent, srcip)" vertex="1">
+          <mxGeometry height="45" width="320" x="60" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="vt" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;fontSize=11;fontColor=#1A1A1A;" value="Scan VirusTotal&#xa;GET files by sha256 hash (neverError true)" vertex="1">
+          <mxGeometry height="45" width="320" x="60" y="450" as="geometry" />
+        </mxCell>
+        <mxCell id="severity" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9673A6;fontSize=11;fontColor=#1A1A1A;" value="Rangkum dan Severity Classifier&#xa;CRITICAL (VT min 20 atau level min 12)&#xa;HIGH (VT min 5 atau level min 7) atau MEDIUM" vertex="1">
+          <mxGeometry height="60" width="320" x="60" y="510" as="geometry" />
+        </mxCell>
+        <mxCell id="cek" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=11;fontColor=#1A1A1A;" value="Cek Ancaman&#xa;should active response true" vertex="1">
+          <mxGeometry height="80" width="220" x="110" y="595" as="geometry" />
+        </mxCell>
+        <mxCell id="buildpayload" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9673A6;fontSize=11;fontColor=#1A1A1A;" value="Build Payload&#xa;Prompt severity-aware untuk AI" vertex="1">
+          <mxGeometry height="45" width="320" x="60" y="705" as="geometry" />
+        </mxCell>
+        <mxCell id="lyr5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8CECC;strokeColor=#B85450;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=6;fontColor=#1A1A1A;" value="LAYER 5 - RESPONSE (Active Response)" vertex="1">
+          <mxGeometry height="190" width="370" x="440" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="token" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=11;fontColor=#1A1A1A;" value="Get Wazuh Token&#xa;POST security authenticate (JWT)" vertex="1">
+          <mxGeometry height="45" width="330" x="460" y="535" as="geometry" />
+        </mxCell>
+        <mxCell id="ar" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B85450;fontSize=11;fontColor=#1A1A1A;" value="Trigger Active Response&#xa;PUT active-response (firewall-drop)&#xa;ke iptables atau firewalld DROP di agent" vertex="1">
+          <mxGeometry height="70" width="330" x="460" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="lyr6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;verticalAlign=top;fontStyle=1;fontSize=11;arcSize=6;fontColor=#1A1A1A;" value="LAYER 6 - AI ENRICHMENT dan NOTIFICATION" vertex="1">
+          <mxGeometry height="180" width="770" x="40" y="800" as="geometry" />
+        </mxCell>
+        <mxCell id="ollama" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C8EBF;fontSize=11;fontColor=#1A1A1A;" value="Ollama Generate (llama3.2 3b)&#xa;Analisis Bahasa Indonesia&#xa;severity-aware dan markdown sanitize" vertex="1">
+          <mxGeometry height="90" width="330" x="70" y="850" as="geometry" />
+        </mxCell>
+        <mxCell id="telegram" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C8EBF;fontSize=11;fontColor=#1A1A1A;" value="Send Telegram Alert&#xa;Icon dan label per severity&#xa;KRITIS atau TINGGI atau SEDANG&#xa;(silent untuk MEDIUM)" vertex="1">
+          <mxGeometry height="90" width="330" x="450" y="850" as="geometry" />
+        </mxCell>
+        <mxCell id="soc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF2CC;strokeColor=#D6B656;fontSize=11;fontColor=#1A1A1A;" value="SOC Analyst&#xa;Review dan tindakan" vertex="1">
+          <mxGeometry height="50" width="200" x="560" y="1010" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" parent="1" source="attacker" target="agent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" parent="1" source="agent" target="manager" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;fontSize=9;" value="TCP 1514 (encrypted)" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" parent="1" source="manager" target="integratord" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" parent="1" source="integratord" target="script" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" parent="1" source="script" target="filteralert" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;fontSize=9;" value="HTTP POST webhook wazuh-alert" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" parent="1" source="filteralert" target="ekstrak" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" parent="1" source="ekstrak" target="vt" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" parent="1" source="vt" target="severity" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" parent="1" source="severity" target="cek" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" parent="1" source="cek" target="token" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B85450;strokeWidth=2;endArrow=block;fontSize=9;fontColor=#B85450;" value="TRUE (HIGH atau CRITICAL)" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" parent="1" source="token" target="ar" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B85450;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" parent="1" source="ar" target="buildpayload" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B85450;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" parent="1" source="cek" target="buildpayload" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#82B366;strokeWidth=2;endArrow=block;fontSize=9;fontColor=#82B366;" value="FALSE (MEDIUM)" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" parent="1" source="buildpayload" target="ollama" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" parent="1" source="ollama" target="telegram" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" parent="1" source="telegram" target="soc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333333;strokeWidth=2;endArrow=block;" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
