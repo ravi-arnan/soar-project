@@ -29,7 +29,12 @@ graph TB
 
     subgraph "EXTERNAL SERVICES"
         VT[VirusTotal API<br/>Threat Intel]
-        TG[Telegram Bot<br/>Notification]
+        TG[Telegram Bot<br/>Notification + Buttons]
+    end
+
+    subgraph "HUMAN-IN-THE-LOOP"
+        POLLER[tg-callback-poller<br/>long-poll getUpdates]
+        ANALYST[SOC Analyst<br/>klik tombol]
     end
 
     EP1 -->|TCP 1514<br/>encrypted| WM
@@ -43,11 +48,21 @@ graph TB
 
     N8N -->|hash/url query| VT
     N8N -->|inference| OLLAMA
-    N8N -->|sendMessage| TG
-    N8N -->|PUT /active-response| WM
-    WM -->|firewall-drop cmd| EP1
-    WM -->|firewall-drop cmd| EP2
+    N8N -->|sendMessage<br/>+ inline keyboard| TG
+    TG -->|notif + tombol| ANALYST
+    ANALYST -->|Isolasi / Abaikan| TG
+    TG -.->|callback_query| POLLER
+    POLLER -->|POST /webhook/tg-callback| N8N
+    N8N -->|PUT /active-response<br/>!quarantine-file| WM
+    WM -->|quarantine cmd| EP1
+    WM -->|quarantine cmd| EP2
 ```
+
+> **Catatan model AR:** Active Response **tidak otomatis**. Untuk alert
+> CRITICAL/HIGH, n8n hanya mengirim notifikasi Telegram dengan dua tombol
+> (Isolasi File / Abaikan). Eksekusi `quarantine-file` baru terjadi setelah
+> analis menekan "Isolasi File" — keputusan ada di tangan manusia
+> (human-in-the-loop), bukan blocking buta.
 
 ## 2. Layered Architecture
 
@@ -113,18 +128,28 @@ Sistem dirancang dengan **5 layer** terpisah dengan tanggung jawab yang clear:
 
 **Privacy**: AI inference berjalan lokal — data tidak keluar dari server
 
-### Layer 5: Response Execution (Distributed)
+### Layer 5: Response Execution (Distributed, human-approved)
 
-**Lokasi**: Setiap endpoint (Wazuh agent dengan AR scripts)
+**Lokasi**: Setiap endpoint (Wazuh agent dengan custom AR script `quarantine-file`)
+
+**Model**: human-in-the-loop. AR **tidak dipicu otomatis** oleh rule; ia hanya
+berjalan setelah analis menyetujui lewat tombol Telegram (saran dosen — hindari
+isolasi buta atas false positive).
 
 **Fungsi**:
-- Receive AR command dari Wazuh Manager via existing agent connection
-- Execute platform-specific response:
-  - Linux: `firewall-drop` → iptables DROP rule
-  - Windows: `firewall-drop` → netsh advfirewall
-- Auto-expire response setelah timeout (default 10 menit)
+- Untuk alert CRITICAL/HIGH, n8n kirim Telegram + inline keyboard 2 tombol
+  (`callback_data` = `iso:<agentId>` / `ign:<agentId>`)
+- Analis klik tombol → `tg-callback-poller` (long-poll `getUpdates`, aman di
+  balik NAT) teruskan klik ke workflow "Telegram Callback Handler"
+- Kalau **Isolasi File**: handler panggil Wazuh API
+  `PUT /active-response` dengan `command: !quarantine-file` → agent eksekusi
+  script `quarantine-file`: pindahkan file ke `/var/ossec/quarantine` + `chmod 000`
+- Kalau **Abaikan**: pesan ditandai FALSE POSITIVE, tidak ada aksi
 
-**Notification side**: Telegram Bot API delivery
+**Catatan**: node `firewall-drop` lama masih ada di file workflow tapi sudah
+**tidak tersambung** (dead code) — alur aktif memakai `quarantine-file`.
+
+**Notification side**: Telegram Bot API delivery (sendMessage + editMessageText)
 
 ## 3. Network Architecture
 
@@ -179,30 +204,33 @@ graph TD
     H --> J
     I --> K[should_active_response = FALSE]
 
-    J --> L[Cek Ancaman TRUE branch]
-    K --> M[Cek Ancaman FALSE branch]
-
-    L --> N[Get Wazuh Token]
-    N --> O[Trigger Active Response<br/>firewall-drop]
-    O --> P[Build Payload<br/>+ AI guidance per severity]
-
-    M --> P
+    J --> P[Build Payload<br/>+ AI guidance per severity]
+    K --> P
 
     P --> Q[Ollama Generate<br/>analysis Bahasa Indonesia]
-    Q --> R[Send Telegram<br/>icon + silent per severity]
+    Q --> S{Perlu Konfirmasi?<br/>should_active_response}
+    S -->|TRUE CRITICAL/HIGH| T[Send Telegram Alert<br/>+ tombol Isolasi/Abaikan]
+    S -->|FALSE MEDIUM| U[Send Telegram Info<br/>polos, silent]
+
+    T -.->|analis klik Isolasi| V[Callback Handler<br/>quarantine-file]
 
     style G fill:#ff4444,color:#fff
     style H fill:#ff8800,color:#fff
     style I fill:#ffaa00,color:#000
 ```
 
+> AR tidak otomatis. `should_active_response=true` hanya menentukan apakah pesan
+> Telegram diberi **tombol aksi**; isolasi file dieksekusi setelah analis menekan
+> tombol (lihat Section 4b). Node `Get Wazuh Token`/`Trigger Active Response`
+> (firewall-drop) lama masih ada di file workflow tapi sudah tidak tersambung.
+
 ### Severity Classification Rules
 
-| Severity | Trigger | Telegram | Active Response |
-|----------|---------|----------|-----------------|
-| **CRITICAL** | `malicious >= 20` OR `rule_level >= 12` | 🆘 KRITIS, **sound on** | ✅ firewall-drop |
-| **HIGH** | `malicious >= 5` OR `rule_level >= 7` | 🚨 TINGGI, **sound on** | ✅ firewall-drop |
-| **MEDIUM** | (else) | ⚠️ SEDANG, **silent** | ❌ no action |
+| Severity | Trigger | Telegram | Tombol Aksi (human-in-the-loop) |
+|----------|---------|----------|---------------------------------|
+| **CRITICAL** | `malicious >= 20` OR `rule_level >= 12` | 🆘 KRITIS, **sound on** | ✅ tombol Isolasi/Abaikan |
+| **HIGH** | `malicious >= 5` OR `rule_level >= 7` | 🚨 TINGGI, **sound on** | ✅ tombol Isolasi/Abaikan |
+| **MEDIUM** | (else) | ⚠️ SEDANG, **silent** | ❌ info polos, tanpa tombol |
 
 ### AI Prompt per Severity
 
@@ -211,6 +239,39 @@ graph TD
 | CRITICAL | "Berikan rekomendasi immediate response, isolasi sistem, eradikasi" |
 | HIGH | "Berikan rekomendasi tindakan dalam 24 jam, verifikasi dan kontainmen" |
 | MEDIUM | "Konteks informational, rekomendasi monitoring rutin" |
+
+## 4b. Active Response Interaktif (Human-in-the-Loop)
+
+Saat analis menekan tombol di notifikasi Telegram, klik tersebut diteruskan ke
+workflow kedua ("Telegram Callback Handler") lewat poller.
+
+```mermaid
+graph TD
+    A[Analis klik tombol di Telegram] --> B[Telegram callback_query]
+    B --> C[tg-callback-poller<br/>long-poll getUpdates]
+    C -->|POST /webhook/tg-callback| D[Webhook]
+    D --> E[Parse Keputusan<br/>action + agentId dari callback_data]
+    E --> F[Answer Callback<br/>answerCallbackQuery 'Diproses...']
+    F --> G{Isolasi? action == iso}
+    G -->|TRUE| H[Get Wazuh Token]
+    H --> I[Quarantine File<br/>PUT /active-response !quarantine-file]
+    I --> J[Edit Pesan Isolasi<br/>editMessageText DIISOLASI]
+    G -->|FALSE| K[Edit Pesan Abaikan<br/>editMessageText FALSE POSITIVE]
+```
+
+**Kenapa poller, bukan Telegram Trigger node?** n8n Telegram Trigger berbasis
+webhook publik. SOAR ini di balik NAT/Tailscale tanpa URL publik, jadi
+`tg-callback-poller` melakukan long-poll `getUpdates` (koneksi keluar saja) dan
+hanya meneruskan update `callback_query` ke webhook n8n **lokal**. Tidak ada port
+n8n yang diekspos ke internet. Poller juga menjalankan `deleteWebhook` saat start
+agar tidak konflik (jangan pasang Telegram Trigger node lain di bot yang sama →
+bentrok `getUpdates` 409).
+
+**Script AR `quarantine-file`** (di `/var/ossec/active-response/bin/`, root:wazuh
+750): baca perintah JSON dari stdin (protokol AR v1), ambil path dari
+`extra_args[0]`, pindahkan file ke `/var/ossec/quarantine/<nama>.<ts>.quarantined`
+lalu `chmod 000`. Command `delete` (rollback) hanya dicatat, restore manual demi
+keamanan.
 
 ## 5. Integration Script Architecture
 
@@ -315,21 +376,21 @@ graph TB
 }
 ```
 
-### Active Response API call (n8n → Wazuh)
+### Active Response API call (Callback Handler → Wazuh)
+
+Dipicu setelah analis menekan "Isolasi File" (bukan otomatis). `arguments[0]`
+adalah path file yang akan dikarantina, diteruskan Wazuh ke agent sebagai
+`extra_args[0]` untuk script `quarantine-file`.
 
 ```http
-PUT /active-response?agents_list=002&wait_for_complete=false HTTP/1.1
-Host: 172.20.0.1:55000
+PUT /active-response?agents_list=002&wait_for_complete=true HTTP/1.1
+Host: 172.17.0.1:55000
 Authorization: Bearer eyJ...JWT...
 Content-Type: application/json
 
 {
-  "command": "!firewall-drop",
-  "alert": {
-    "data": {
-      "srcip": "0.0.0.0"
-    }
-  }
+  "command": "!quarantine-file",
+  "arguments": ["/home/ravi/Downloads/eicar-rocky-demo2.com"]
 }
 ```
 
@@ -385,7 +446,7 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 - Agent #1 di Debian-family (Ubuntu) Linux
 - Agent #2 di RHEL-family (Rocky 9) Linux
 - Sama-sama report ke 1 manager
-- Sama-sama dapat AR command (firewall-drop)
+- Sama-sama bisa menerima AR command (`quarantine-file`, setelah approval analis)
 - Notifikasi Telegram include `Agent: <name>` untuk identifikasi sumber
 
 ## 10. Design Decisions Justification
@@ -470,5 +531,6 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 - [ ] EDR integration (Velociraptor / osquery)
 - [ ] Threat intel feed aggregation (MISP)
 - [ ] Phishing detection via real Squid proxy log
-- [ ] File quarantine via custom AR script
+- [x] File quarantine via custom AR script (human-in-the-loop, lihat Section 4b)
 - [ ] Weekly SOC report generation
+- [ ] Bersihkan node firewall-drop yatim di deteksi-malware.json

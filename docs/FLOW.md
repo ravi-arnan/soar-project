@@ -39,24 +39,49 @@ sequenceDiagram
 
     N8N->>N8N: 15. Rangkum Hasil + Severity Classifier<br/>(CRITICAL/HIGH/MEDIUM)
 
+    Note over N8N: AR TIDAK otomatis. Severity hanya<br/>menentukan apakah pesan diberi tombol aksi.
+
+    N8N->>N8N: 16. Build Payload<br/>(prompt severity-aware)
+    N8N->>Ollama: 17. POST /api/generate<br/>(prompt, model)
+    Ollama-->>N8N: 18. Response (Bahasa Indonesia)
+    N8N->>N8N: 19. Sanitize markdown chars
+
     alt should_active_response == true (HIGH/CRITICAL)
-        N8N->>WAPI: 16a. POST /security/user/authenticate<br/>(Basic Auth)
-        WAPI-->>N8N: 17a. JWT token
-        N8N->>WAPI: 18a. PUT /active-response<br/>(firewall-drop, srcip)
-        WAPI->>Manager: 19a. Forward AR command
-        Manager->>Agent: 20a. AR command via 1514
-        Agent->>Endpoint: 21a. Execute firewall-drop<br/>(iptables/firewalld rule)
+        N8N->>TG: 20a. sendMessage + inline keyboard<br/>(tombol Isolasi / Abaikan)
     else MEDIUM
-        Note over N8N: Skip AR (silent notification)
+        N8N->>TG: 20b. sendMessage polos<br/>(silent, tanpa tombol)
     end
 
-    N8N->>N8N: 22. Build Payload<br/>(prompt severity-aware)
-    N8N->>Ollama: 23. POST /api/generate<br/>(prompt, model)
-    Ollama-->>N8N: 24. Response (Bahasa Indonesia)
-    N8N->>N8N: 25. Sanitize markdown chars
-    N8N->>TG: 26. sendMessage<br/>(icon + content + disable_notification)
-    TG-->>SOC: 27. Push notification<br/>HP / desktop
-    SOC->>SOC: 28. Review alert, decide<br/>next action
+    TG-->>SOC: 21. Push notification<br/>HP / desktop
+    SOC->>SOC: 22. Review alert, decide<br/>(klik tombol kalau perlu)
+```
+
+### Sequence Human-in-the-Loop (saat analis klik tombol)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor SOC as SOC Analyst
+    participant TG as Telegram Bot
+    participant Poller as tg-callback-poller
+    participant CB as n8n Callback<br/>Handler
+    participant WAPI as Wazuh API
+    participant Agent as Wazuh Agent
+
+    SOC->>TG: 1. Klik "Isolasi File" / "Abaikan"
+    TG-->>Poller: 2. callback_query (long-poll getUpdates)
+    Poller->>CB: 3. POST /webhook/tg-callback
+    CB->>CB: 4. Parse Keputusan<br/>(action+agentId dari callback_data)
+    CB->>TG: 5. answerCallbackQuery ("Diproses...")
+    alt action == iso (Isolasi)
+        CB->>WAPI: 6a. POST authenticate -> JWT
+        CB->>WAPI: 7a. PUT /active-response<br/>(!quarantine-file, [path])
+        WAPI->>Agent: 8a. Forward AR command via 1514
+        Agent->>Agent: 9a. quarantine-file:<br/>mv file -> /var/ossec/quarantine, chmod 000
+        CB->>TG: 10a. editMessageText "DIISOLASI"
+    else action == ign (Abaikan)
+        CB->>TG: 6b. editMessageText "FALSE POSITIVE"
+    end
 ```
 
 ## Step-by-Step Penjelasan
@@ -232,19 +257,35 @@ if (malicious >= 20 || ruleLevel >= 12) {
 const should_active_response = severity !== 'MEDIUM';
 ```
 
-### Phase 5: Decision & Response
+### Phase 5: Decision & Response (human-in-the-loop)
 
-**Step 16-21: Active Response (kalau severity HIGH/CRITICAL)**
+**Step 20: Tentukan apakah pesan diberi tombol aksi**
 
-Cek Ancaman IF node check `$json.should_active_response == true`:
+Active Response **tidak dijalankan otomatis**. `should_active_response`
+(severity != MEDIUM) hanya menentukan apakah notifikasi Telegram diberi inline
+keyboard. Node "Perlu Konfirmasi" (IF) memilih node Telegram mana yang dipakai:
 
 ```mermaid
 graph LR
-    A[Cek Ancaman] -->|TRUE| B[Get Wazuh Token]
-    B --> C[Trigger Active Response]
-    C --> D[Build Payload]
-    A -->|FALSE| D
+    A[Perlu Konfirmasi] -->|TRUE HIGH/CRITICAL| B[Send Telegram Alert<br/>+ tombol Isolasi/Abaikan]
+    A -->|FALSE MEDIUM| C[Send Telegram Info<br/>polos, silent]
 ```
+
+> Catatan: node lama "Get Wazuh Token" → "Trigger Active Response" (`!firewall-drop`)
+> masih ada di file workflow tapi **tidak tersambung** di `connections` (dead code).
+> Tidak ada blocking otomatis di alur aktif.
+
+Tombol dibangun di node **Send Telegram Alert** dengan `callback_data`:
+
+```javascript
+// tombol "Isolasi File"
+callback_data: "iso:" + agent_id   // mis. "iso:002"
+// tombol "Abaikan (False Positive)"
+callback_data: "ign:" + agent_id   // mis. "ign:002"
+```
+
+**Eksekusi AR baru terjadi setelah analis klik** — ditangani workflow kedua
+"Telegram Callback Handler" (lihat diagram "Sequence Human-in-the-Loop" di atas):
 
 Get Wazuh Token (Basic Auth → JWT):
 ```http
@@ -252,30 +293,30 @@ POST https://172.17.0.1:55000/security/user/authenticate
 Authorization: Basic <base64(wazuh-wui:password)>
 ```
 
-Trigger Active Response (with JWT):
+Quarantine File (with JWT) — hanya kalau analis pilih "Isolasi File":
 ```http
-PUT https://172.17.0.1:55000/active-response?agents_list=002&wait_for_complete=false
+PUT https://172.17.0.1:55000/active-response?agents_list=002&wait_for_complete=true
 Authorization: Bearer <JWT>
 Content-Type: application/json
 
-{"command": "!firewall-drop", "alert": {"data": {"srcip": "0.0.0.0"}}}
+{"command": "!quarantine-file", "arguments": ["/home/ravi/Downloads/eicar.com"]}
 ```
 
-Wazuh Manager kemudian forward command ke target agent via existing TCP 1514 connection. Agent's `wazuh-execd` execute `firewall-drop` script:
+Wazuh Manager forward command ke agent via TCP 1514. Agent `wazuh-execd`
+menjalankan script `quarantine-file`:
 
 ```bash
-# Default Wazuh firewall-drop di Linux:
-iptables -I INPUT -s <srcip> -j DROP
-
-# Default at Rocky/RHEL (firewalld):
-firewall-cmd --add-rich-rule="rule source address=<srcip> drop"
+# scripts/quarantine-file (custom AR) di /var/ossec/active-response/bin/
+DEST="/var/ossec/quarantine/$(basename "$FILE").$(date +%s).quarantined"
+mv -f "$FILE" "$DEST" && chmod 000 "$DEST"
 ```
 
-Default timeout 10 menit → rule auto-removed.
+Command `delete` (rollback) hanya dicatat di `active-responses.log`; restore
+sengaja manual demi keamanan.
 
 ### Phase 6: AI Enrichment
 
-**Step 22-24: Ollama analysis**
+**Step 16-18: Ollama analysis**
 
 Build Payload prepare severity-aware prompt:
 
@@ -318,7 +359,7 @@ Markdown sanitization penting karena Telegram `parse_mode: Markdown` reject unba
 
 ### Phase 7: Notification Delivery
 
-**Step 25-27: Telegram message**
+**Step 20-21: Telegram message**
 
 Template:
 ```javascript
@@ -354,10 +395,14 @@ End-to-end latency dari file drop sampai Telegram delivery (observed):
 | 11-12: Workflow filter + ekstrak | ~30 ms |
 | 13-14: **VirusTotal scan** | **5-15 s** |
 | 15: Severity classifier | ~10 ms |
-| 16-21: Active Response (kalau fire) | ~500 ms |
-| 22-24: **Ollama AI inference** | **15-50 s** (CPU-bound) |
-| 25-27: Markdown sanitize + Telegram | ~1 s |
-| **TOTAL** | **30-60 detik** |
+| 16-18: **Ollama AI inference** | **15-50 s** (CPU-bound) |
+| 19-21: Markdown sanitize + Telegram (+ tombol) | ~1 s |
+| **TOTAL (deteksi → notifikasi)** | **30-60 detik** |
+
+Active Response (`quarantine-file`) **tidak masuk** latency di atas karena
+dipicu manual oleh analis. Latency klik-tombol → file terisolasi (workflow kedua):
+authenticate ~300 ms + PUT /active-response + eksekusi agent ~500 ms ≈ **<1 s**
+setelah analis menekan tombol.
 
 **Bottleneck utama**:
 1. Ollama inference (CPU-bound LLM, sequential)

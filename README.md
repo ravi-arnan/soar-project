@@ -1,6 +1,6 @@
 # SOAR Open-Source — n8n + Wazuh + AI Lokal
 
-Implementasi Security Orchestration, Automation, and Response (SOAR) menggunakan stack open-source untuk deteksi malware dan phishing dengan automated response dan AI analysis lokal.
+Implementasi Security Orchestration, Automation, and Response (SOAR) menggunakan stack open-source untuk deteksi malware dan phishing dengan **Active Response human-in-the-loop** (isolasi file disetujui analis lewat tombol Telegram) dan AI analysis lokal.
 
 ## Komponen Utama
 
@@ -26,16 +26,20 @@ Lihat [`docs/FLOW.md`](docs/FLOW.md) untuk alur kerja step-by-step.
 ```
 soar-project/
 ├── README.md                       # File ini
-├── docker-compose.yml              # n8n stack
-├── wazuh-docker/single-node/       # Wazuh stack
+├── plan.md                         # Catatan remote access (Tailscale) + to-do
+├── docker-compose.yml              # n8n + tg-callback-poller stack
+├── wazuh-docker/single-node/       # Wazuh stack (manager/indexer/dashboard)
 ├── scripts/
-│   ├── custom-n8n.py              # Integration script Wazuh → n8n
+│   ├── custom-n8n.py              # Integration bridge Wazuh → n8n
+│   ├── quarantine-file            # Custom AR: isolasi file (human-approved)
+│   ├── tg-callback-poller.py      # Long-poll Telegram → webhook n8n (anti-NAT)
 │   ├── syscheck-recommended.xml    # FIM config Wazuh agent
 │   └── apply-syscheck.sh          # Auto-deploy syscheck config
+├── n8n-workflows/                  # Definisi workflow (deteksi-malware, callback handler)
 ├── backups/                        # Workflow JSON backups
 └── docs/
-    ├── ARCHITECTURE.md             # System architecture
-    ├── FLOW.md                     # End-to-end workflow
+    ├── ARCHITECTURE.md             # System architecture (lihat Section 4b)
+    ├── FLOW.md                     # End-to-end workflow + sequence human-in-the-loop
     └── DEPLOYMENT.md               # Setup steps
 ```
 
