@@ -10,13 +10,22 @@
 - SSH lewat Tailscale: `ssh ravi@100.79.21.46` (rocky), `ssh ravi@100.95.198.108`
   (laptop utama).
 
-### Sisa to-do (belum dikerjakan)
-1. Tambah `restart: unless-stopped` di compose Wazuh + n8n supaya stack auto-hidup
-   sesudah reboot (sekarang mati tiap laptop reboot/shutdown).
-2. Downgrade agent host ravi-zorin 4.14.5 -> 4.9.2 + `apt-mark hold` (lihat
-   bagian "Known issue" di bawah).
-3. (Opsional) Fix SELinux supaya Tailscale SSH (`--ssh`) jalan di rocky. Sementara
-   SSH biasa via IP Tailscale tetap jalan.
+### Sisa to-do
+1. [SELESAI 2026-06-02] `restart: unless-stopped` di compose Wazuh + n8n supaya
+   stack auto-hidup sesudah reboot. n8n + tg-callback-poller sudah sejak awal;
+   stack Wazuh (manager/indexer/dashboard) diubah dari `restart: "no"` ->
+   `unless-stopped` di `wazuh-docker/single-node/docker-compose.yml`, terverifikasi
+   aktif di runtime via `docker inspect`.
+2. [SELESAI 2026-06-02] Downgrade agent host ravi-zorin 4.14.5 -> 4.9.2-1 +
+   `apt-mark hold` (lihat bagian "Known issue" di bawah). Saat install, apt minta
+   konfirmasi config `/etc/systemd/system/wazuh-agent.service` (terhapus) -> pilih
+   Y (versi maintainer). Hasil: `wazuh-agent 4.9.2-1 hold ok installed`, service
+   active, agent 001 ravi-zorin -> Active di manager.
+3. [SELESAI/TAK PERLU 2026-06-02] Tailscale SSH (`--ssh`) ternyata SUDAH jalan di
+   rocky walau SELinux Enforcing (`tailscale ssh ravi@100.79.21.46` sukses,
+   `RunSSH: true`), kemungkinan teratasi oleh upgrade Tailscale ke 1.98.x. Tidak
+   perlu fix SELinux. Catatan kosmetik: sesi jalan sebagai `unconfined_service_t`
+   (bukan konteks user normal), fungsional penuh.
 
 ---
 
@@ -114,13 +123,15 @@ Deploy quarantine-file ke agent baru: salin script ke
 /var/ossec/active-response/bin/quarantine-file, chown root:wazuh, chmod 750,
 restart wazuh-agent.
 
-## Known issue: agent host (ravi-zorin) version mismatch
+## Known issue: agent host (ravi-zorin) version mismatch [TERATASI 2026-06-02]
 Saat start service (2026-05-21), agent host `ravi-zorin` gagal connect ke
 manager. Log manager: `wazuh-authd: ERROR: Incompatible version for new agent`.
 Penyebab: agent host ke-upgrade ke `4.14.5` (apt upgrade, tanpa hold) sedangkan
 manager `4.9.2`. Enrollment ditolak, agent tidak pernah connect.
 
-Fix (butuh sudo, lakukan setelah presentasi):
+TERATASI: downgrade ke 4.9.2-1 + hold (2026-06-02), agent 001 kini Active.
+
+Fix (butuh sudo):
 ```bash
 sudo systemctl stop wazuh-agent
 sudo apt-get install --allow-downgrades -y wazuh-agent=4.9.2-1
