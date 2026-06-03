@@ -146,8 +146,9 @@ isolasi buta atas false positive).
   script `quarantine-file`: pindahkan file ke `/var/ossec/quarantine` + `chmod 000`
 - Kalau **Abaikan**: pesan ditandai FALSE POSITIVE, tidak ada aksi
 
-**Catatan**: node `firewall-drop` lama masih ada di file workflow tapi sudah
-**tidak tersambung** (dead code) — alur aktif memakai `quarantine-file`.
+**Catatan**: node `firewall-drop` lama (auto-AR) sudah **dihapus** dari workflow
+(2026-06-03) bersama node `Cek Ancaman` yang menjadi no-op — alur aktif memakai
+`quarantine-file` lewat persetujuan analis.
 
 **Notification side**: Telegram Bot API delivery (sendMessage + editMessageText)
 
@@ -222,7 +223,7 @@ graph TD
 > AR tidak otomatis. `should_active_response=true` hanya menentukan apakah pesan
 > Telegram diberi **tombol aksi**; isolasi file dieksekusi setelah analis menekan
 > tombol (lihat Section 4b). Node `Get Wazuh Token`/`Trigger Active Response`
-> (firewall-drop) lama masih ada di file workflow tapi sudah tidak tersambung.
+> (firewall-drop) lama sudah dihapus dari workflow (2026-06-03).
 
 ### Severity Classification Rules
 
@@ -478,7 +479,8 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 ### Kenapa severity classifier di Rangkum Hasil (bukan Build Payload)?
 
 - **Single source of truth** — severity dihitung sekali, dipakai berkali-kali
-- **Cek Ancaman bisa pakai severity** untuk routing AR decision
+- **`Perlu Konfirmasi` pakai `should_active_response`** untuk routing notifikasi
+  (alert + tombol vs info silent)
 - **Lebih cohesive** — severity adalah bagian dari "rangkuman" hasil scan
 
 ### Kenapa path-based noise filter di script (bukan workflow)?
@@ -533,4 +535,4 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 - [ ] Phishing detection via real Squid proxy log
 - [x] File quarantine via custom AR script (human-in-the-loop, lihat Section 4b)
 - [ ] Weekly SOC report generation
-- [ ] Bersihkan node firewall-drop yatim di deteksi-malware.json
+- [x] Bersihkan node firewall-drop yatim di deteksi-malware.json (2026-06-03)

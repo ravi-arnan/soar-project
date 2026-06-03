@@ -272,8 +272,9 @@ graph LR
 ```
 
 > Catatan: node lama "Get Wazuh Token" → "Trigger Active Response" (`!firewall-drop`)
-> masih ada di file workflow tapi **tidak tersambung** di `connections` (dead code).
-> Tidak ada blocking otomatis di alur aktif.
+> dan IF "Cek Ancaman" yang sudah menjadi no-op telah **dihapus** dari workflow
+> (2026-06-03); `Rangkum Hasil` kini langsung ke `Build Payload`. Tidak ada
+> blocking otomatis di alur aktif — isolasi hanya lewat persetujuan analis.
 
 Tombol dibangun di node **Send Telegram Alert** dengan `callback_data`:
 
