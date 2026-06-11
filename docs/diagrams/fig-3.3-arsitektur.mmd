@@ -1,0 +1,30 @@
+graph TB
+    subgraph EP["Endpoint (Terdistribusi)"]
+        A1["Wazuh Agent<br/>FIM + pengumpulan log<br/>Linux / Windows / macOS"]
+    end
+    subgraph SRV["SOAR Server (Terpusat)"]
+        WM["Wazuh Manager<br/>korelasi aturan + integratord"]
+        SC["Skrip custom-n8n<br/>filter + jembatan integrasi"]
+        N8N["n8n<br/>mesin orkestrasi playbook"]
+        OL["Ollama llama3.2:3b<br/>analisis AI lokal"]
+    end
+    subgraph EXT["Layanan Eksternal"]
+        VT["VirusTotal API<br/>threat intelligence"]
+        TG["Telegram Bot<br/>notifikasi + tombol"]
+    end
+    subgraph HIL["Human-in-the-Loop"]
+        PO["tg-callback-poller<br/>long-poll getUpdates"]
+        AN["Analis SOC<br/>menyetujui via tombol"]
+    end
+    A1 -->|"TCP 1514 terenkripsi"| WM
+    WM -->|"alert"| SC
+    SC -->|"HTTP POST"| N8N
+    N8N -->|"cek hash / URL"| VT
+    N8N -->|"inferensi lokal"| OL
+    N8N -->|"sendMessage + tombol"| TG
+    TG -->|"notifikasi"| AN
+    AN -->|"Isolasi / Abaikan"| TG
+    TG -.->|"callback"| PO
+    PO -->|"POST webhook lokal"| N8N
+    N8N -->|"PUT /active-response !quarantine-file"| WM
+    WM -->|"perintah karantina"| A1

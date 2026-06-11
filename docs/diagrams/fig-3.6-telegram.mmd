@@ -1,0 +1,16 @@
+graph TD
+    A([Mulai]) --> B[Endpoint Agent mengirim log aktivitas]
+    B --> C[Wazuh Manager menyimpan & menganalisis log]
+    C --> D[Pipeline n8n mengambil & memproses alert]
+    D --> E{Log serangan / anomali?}
+    E -->|Tidak| Z([Selesai])
+    E -->|Ya| F[Klasifikasi Severity + Enrichment VT/AI]
+    F --> G{Severity CRITICAL/HIGH?}
+    G -->|Ya| H[Notifikasi Telegram + tombol Isolasi/Abaikan]
+    G -->|Tidak / MEDIUM| I[Notifikasi Telegram info polos]
+    H --> J{Analis menekan Isolasi?}
+    J -->|Ya| K[Eksekusi quarantine-file via Wazuh API]
+    J -->|Tidak| L[Tandai FALSE POSITIVE]
+    K --> Z
+    L --> Z
+    I --> Z

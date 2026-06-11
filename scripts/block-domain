@@ -1,0 +1,80 @@
+#!/bin/bash
+# block-domain - Wazuh custom Active Response (SOAR phishing)
+#
+# Sinkhole domain phishing ke /etc/hosts (0.0.0.0) di endpoint, sehingga host
+# tidak bisa membuka situs phishing. Dipicu MANUAL via Wazuh API (persetujuan
+# analis dari tombol Telegram) atau otomatis untuk deteksi VirusTotal tinggi.
+# Menerima perintah JSON di stdin (protokol AR v1), sama seperti quarantine-file.
+#
+# Body API yang diharapkan: command "!block-domain", arguments ["<url_atau_domain>"]
+# -> Wazuh meneruskan nilai itu sebagai parameters.extra_args[0].
+
+LOG="/var/ossec/logs/active-responses.log"
+HOSTS="/etc/hosts"
+MARK="# WAZUH-SOAR-SINKHOLE"
+BACKUP_DIR="/var/ossec/quarantine/.hosts-backup"
+
+read -r INPUT
+
+# command top-level AR: "add" (jalankan) atau "delete" (rollback).
+HEAD=${INPUT%%\"parameters\"*}
+COMMAND=$(printf '%s' "$HEAD" | sed -n 's/.*"command":"\([^"]*\)".*/\1/p')
+
+# argumen pertama = URL atau domain phishing
+RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"extra_args":\["\([^"]*\)".*/\1/p')
+
+ts() { date '+%Y/%m/%d %H:%M:%S'; }
+
+# Ekstrak domain dari URL: buang skema, kredensial, path, dan port.
+DOM=$(printf '%s' "$RAW" \
+  | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##' \
+  | sed -E 's#^[^/@]*@##' \
+  | sed -E 's#[/?#].*$##' \
+  | sed -E 's#:[0-9]+$##' \
+  | tr '[:upper:]' '[:lower:]' \
+  | tr -d ' ')
+
+# Validasi domain sederhana (cegah merusak /etc/hosts dengan input aneh).
+if ! printf '%s' "$DOM" | grep -qE '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$'; then
+  echo "$(ts) block-domain: ERROR domain tidak valid (raw='$RAW' dom='$DOM')" >> "$LOG"
+  exit 1
+fi
+
+mkdir -p "$BACKUP_DIR" 2>/dev/null
+cp -f "$HOSTS" "$BACKUP_DIR/hosts.$(date +%s).bak" 2>/dev/null
+
+case "$COMMAND" in
+  add)
+    if grep -q "$MARK" "$HOSTS" 2>/dev/null && grep -qiE "^0\.0\.0\.0[[:space:]]+(www\.)?${DOM}([[:space:]]|\$)" "$HOSTS"; then
+      echo "$(ts) block-domain: $DOM sudah disinkhole, skip" >> "$LOG"
+    else
+      {
+        printf '0.0.0.0 %s %s\n' "$DOM" "$MARK"
+        printf '0.0.0.0 www.%s %s\n' "$DOM" "$MARK"
+      } >> "$HOSTS"
+      echo "$(ts) block-domain: SINKHOLED $DOM -> 0.0.0.0 (/etc/hosts)" >> "$LOG"
+    fi
+    ;;
+  delete)
+    # rollback: buang baris sinkhole milik domain ini (hanya yang bertanda MARK).
+    if [ -f "$HOSTS" ]; then
+      TMP=$(mktemp)
+      awk -v d="$DOM" -v m="$MARK" '
+        {
+          line=$0
+          if (index(line, m) > 0 && \
+              (line ~ ("^0\\.0\\.0\\.0[ \t]+" d "([ \t]|$)") || \
+               line ~ ("^0\\.0\\.0\\.0[ \t]+www\\." d "([ \t]|$)"))) {
+            next
+          }
+          print line
+        }' "$HOSTS" > "$TMP" && cat "$TMP" > "$HOSTS" && rm -f "$TMP"
+      echo "$(ts) block-domain: ROLLBACK sinkhole $DOM" >> "$LOG"
+    fi
+    ;;
+  *)
+    echo "$(ts) block-domain: command tidak dikenal '$COMMAND'" >> "$LOG"
+    ;;
+esac
+
+exit 0

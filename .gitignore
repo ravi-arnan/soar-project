@@ -1,8 +1,8 @@
 # Wazuh Docker (upstream repo — track version saja di README)
 wazuh-docker/
 
-# Backup archives (besar, biner — versioning via filename timestamp sudah cukup)
-backups/*.tar.gz
+# Backup snapshots (lokal; sebagian memuat key API lama — JANGAN commit)
+backups/
 
 # Local environment / secrets
 .env

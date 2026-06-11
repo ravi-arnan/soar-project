@@ -1,6 +1,12 @@
 [
   {
+    "updatedAt": "2026-05-21T17:29:31.000Z",
+    "createdAt": "2026-05-21T17:28:18.971Z",
+    "id": "kGzPH0MPHjKvailW",
     "name": "Telegram Callback Handler",
+    "description": null,
+    "active": true,
+    "isArchived": false,
     "nodes": [
       {
         "parameters": {
@@ -22,7 +28,7 @@
       {
         "parameters": {
           "mode": "runOnceForAllItems",
-          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst cq = body.callback_query || {};\nconst data = cq.data || '';\nconst parts = data.split(':');\nconst text = (cq.message && cq.message.text) || '';\nconst pathMatch = text.match(/Path:\\s*(.+)/);\nconst fileMatch = text.match(/File:\\s*(.+)/);\nconst hashMatch = text.match(/([a-f0-9]{64})/i);\nreturn [{ json: {\n  action: parts[0] || '',\n  agentId: parts[1] || '000',\n  filePath: pathMatch ? pathMatch[1].trim() : '',\n  fileName: fileMatch ? fileMatch[1].trim() : '',\n  hash: hashMatch ? hashMatch[1] : '',\n  chatId: cq.message ? cq.message.chat.id : '',\n  messageId: cq.message ? cq.message.message_id : '',\n  callbackQueryId: cq.id || '',\n  analyst: (cq.from && (cq.from.first_name || cq.from.username)) || 'analis',\n  origText: text\n}}];"
+          "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst cq = body.callback_query || {};\nconst data = cq.data || '';\nconst parts = data.split(':');\nconst action = parts[0] || '';\nconst text = (cq.message && cq.message.text) || '';\n\nconst pathMatch = text.match(/Path:\\s*(.+)/);\nconst fileMatch = text.match(/File:\\s*(.+)/);\nconst hashMatch = text.match(/([a-f0-9]{64})/i);\nconst urlMatch  = text.match(/URL:\\*?\\s*(\\S+)/i);   // dari pesan phishing\n\nconst isPhishing = (action === 'pblk' || action === 'pign');\nconst doBlock    = (action === 'iso'  || action === 'pblk');   // ada tindakan AR\n\nreturn [{ json: {\n  action, doBlock, isPhishing,\n  agentId:  parts[1] || '000',\n  filePath: pathMatch ? pathMatch[1].trim() : '',\n  fileName: fileMatch ? fileMatch[1].trim() : '',\n  hash:     hashMatch ? hashMatch[1] : '',\n  url:      urlMatch ? urlMatch[1].trim() : '',\n  chatId:    cq.message ? cq.message.chat.id : '',\n  messageId: cq.message ? cq.message.message_id : '',\n  callbackQueryId: cq.id || '',\n  analyst: (cq.from && (cq.from.first_name || cq.from.username)) || 'analis',\n  origText: text\n}}];"
         },
         "name": "Parse Keputusan",
         "type": "n8n-nodes-base.code",
@@ -67,11 +73,11 @@
             },
             "conditions": [
               {
-                "id": "cond-iso",
-                "leftValue": "={{ $('Parse Keputusan').first().json.action }}",
-                "rightValue": "iso",
+                "id": "cond-doblock",
+                "leftValue": "={{ $('Parse Keputusan').first().json.doBlock }}",
+                "rightValue": true,
                 "operator": {
-                  "type": "string",
+                  "type": "boolean",
                   "operation": "equals"
                 }
               }
@@ -80,7 +86,7 @@
           },
           "options": {}
         },
-        "name": "Isolasi?",
+        "name": "Perlu Tindakan?",
         "type": "n8n-nodes-base.if",
         "typeVersion": 2.3,
         "position": [
@@ -117,9 +123,9 @@
       {
         "parameters": {
           "mode": "runOnceForAllItems",
-          "jsCode": "const token = $('Get Wazuh Token').first().json.data.token;\nconst agentId = $('Parse Keputusan').first().json.agentId;\nconst filePath = $('Parse Keputusan').first().json.filePath;\nconst response = await this.helpers.httpRequest({\n  method: 'PUT',\n  url: `https://172.17.0.1:55000/active-response?agents_list=${agentId}&wait_for_complete=true`,\n  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ command: '!quarantine-file', arguments: [filePath] }),\n  rejectUnauthorized: false, timeout: 30000\n});\nreturn [{ json: { ar_response: response, filePath, agentId, status: (response && response.error === 0) ? 'terkirim' : 'gagal' } }];"
+          "jsCode": "const token = $('Get Wazuh Token').first().json.data.token;\nconst p = $('Parse Keputusan').first().json;\nconst agentId = p.agentId;\n\n// pilih AR sesuai jenis alert: phishing -> block-domain(url), malware -> quarantine-file(path)\nlet command, arg;\nif (p.action === 'pblk') { command = '!block-domain';    arg = p.url; }\nelse                     { command = '!quarantine-file'; arg = p.filePath; }\n\nconst response = await this.helpers.httpRequest({\n  method: 'PUT',\n  url: `https://172.17.0.1:55000/active-response?agents_list=${agentId}&wait_for_complete=true`,\n  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ command, arguments: [arg] }),\n  rejectUnauthorized: false, timeout: 30000\n});\nreturn [{ json: { ar_response: response, command, arg, agentId,\n  status: (response && response.error === 0) ? 'terkirim' : 'gagal' } }];"
         },
-        "name": "Quarantine File",
+        "name": "Jalankan AR",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
@@ -134,7 +140,7 @@
           "operation": "editMessageText",
           "chatId": "={{ $('Parse Keputusan').first().json.chatId }}",
           "messageId": "={{ $('Parse Keputusan').first().json.messageId }}",
-          "text": "={{ $('Parse Keputusan').first().json.origText + \"\\n\\n----------\\nFILE DIISOLASI oleh \" + $('Parse Keputusan').first().json.analyst + \" (karantina di agent, status AR: \" + $('Quarantine File').first().json.status + \").\" }}",
+          "text": "={{ $('Parse Keputusan').first().json.origText + \"\\n\\n----------\\n\" + ($('Parse Keputusan').first().json.isPhishing ? (\"DOMAIN DIBLOKIR (sinkhole 0.0.0.0) oleh \" + $('Parse Keputusan').first().json.analyst) : (\"FILE DIISOLASI oleh \" + $('Parse Keputusan').first().json.analyst)) + \" (status AR: \" + $('Jalankan AR').first().json.status + \").\" }}",
           "additionalFields": {}
         },
         "name": "Edit Pesan Isolasi",
@@ -158,7 +164,7 @@
           "operation": "editMessageText",
           "chatId": "={{ $('Parse Keputusan').first().json.chatId }}",
           "messageId": "={{ $('Parse Keputusan').first().json.messageId }}",
-          "text": "={{ $('Parse Keputusan').first().json.origText + \"\\n\\n----------\\nDitandai FALSE POSITIVE oleh \" + $('Parse Keputusan').first().json.analyst + \". Tidak ada aksi (file dibiarkan).\" }}",
+          "text": "={{ $('Parse Keputusan').first().json.origText + \"\\n\\n----------\\nDitandai FALSE POSITIVE oleh \" + $('Parse Keputusan').first().json.analyst + \". Tidak ada aksi (dibiarkan).\" }}",
           "additionalFields": {}
         },
         "name": "Edit Pesan Abaikan",
@@ -204,14 +210,25 @@
         "main": [
           [
             {
-              "node": "Isolasi?",
+              "node": "Perlu Tindakan?",
               "type": "main",
               "index": 0
             }
           ]
         ]
       },
-      "Isolasi?": {
+      "Get Wazuh Token": {
+        "main": [
+          [
+            {
+              "node": "Jalankan AR",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Perlu Tindakan?": {
         "main": [
           [
             {
@@ -229,18 +246,7 @@
           ]
         ]
       },
-      "Get Wazuh Token": {
-        "main": [
-          [
-            {
-              "node": "Quarantine File",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Quarantine File": {
+      "Jalankan AR": {
         "main": [
           [
             {
@@ -252,11 +258,39 @@
         ]
       }
     },
-    "active": false,
     "settings": {
       "executionOrder": "v1"
     },
+    "staticData": null,
+    "meta": null,
     "pinData": {},
-    "id": "kGzPH0MPHjKvailW"
+    "versionId": "879e9632-8b30-403d-b16a-cb6f982c563a",
+    "activeVersionId": "879e9632-8b30-403d-b16a-cb6f982c563a",
+    "versionCounter": 38,
+    "triggerCount": 1,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-05-21T17:28:18.983Z",
+        "createdAt": "2026-05-21T17:28:18.983Z",
+        "role": "workflow:owner",
+        "workflowId": "kGzPH0MPHjKvailW",
+        "projectId": "nvpwMZoZStjEx64h",
+        "project": {
+          "updatedAt": "2026-04-09T04:56:53.740Z",
+          "createdAt": "2026-04-09T04:55:58.106Z",
+          "id": "nvpwMZoZStjEx64h",
+          "name": "Ravi Arnan Irianto <raviarnankeren@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "23d22c3c-d51e-476b-98b2-9e2df64b7225"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": null,
+      "description": null
+    }
   }
 ]

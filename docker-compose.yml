@@ -17,6 +17,9 @@ services:
       - WEBHOOK_URL=http://localhost:5678/
       - GENERIC_TIMEZONE=Asia/Makassar
       - NODE_TLS_REJECT_UNAUTHORIZED=0
+      # Cegah Code node (Ollama/VT) mati di tengah lonjakan alert serentak
+      - N8N_RUNNERS_TASK_TIMEOUT=300
+      - N8N_RUNNERS_MAX_CONCURRENCY=10
     volumes:
       - n8n_data:/home/node/.n8n
       - /home/ravi/Projects/soar-project/scripts:/scripts
@@ -29,6 +32,9 @@ services:
     image: python:3.12-alpine
     container_name: tg-callback-poller
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     env_file:
       - .env
     environment:
