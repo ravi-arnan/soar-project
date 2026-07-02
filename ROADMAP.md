@@ -19,13 +19,13 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 
 VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 
-| Gap | Dampak | Solusi |
-|-----|--------|--------|
-| **Zero-day / file baru → 0/70** | ⚠️ **False-negative** (jahat dianggap bersih → disuppress diam-diam) | Jangan bisukan file eksekutabel **tak-dikenal** di folder sensitif → arahkan ke **HITL (tombol)** |
-| Hanya melihat **hash dikenal** (ganti 1 byte → hash baru) | Reputasi hash mudah dielakkan | **Deteksi perilaku** (rule Wazuh, sandbox lokal spt CAPEv2) |
-| *Detection lag* (verdict berubah seiring waktu) | Cache bisa menyajikan verdict basi | **Re-scan terjadwal** + turunkan TTL cache verdict "bersih" |
-| Ketergantungan 1 sumber | Single point of intel-failure | **Multi-sinyal/ensemble**: MalwareBazaar, Hybrid Analysis, **MISP** |
-| Rate limit / downtime | Analisis gagal | ✅ Sudah ditangani `vt_unverified` (jangan dianggap bersih) |
+| Status | Gap | Dampak | Solusi |
+|--------|-----|--------|--------|
+| ✅ **SELESAI** (2026-07-02) | **Zero-day / file baru → 0/70** | ⚠️ **False-negative** (jahat dianggap bersih → disuppress diam-diam) | Node `Rangkum Hasil` kini: file **eksekutabel/berisiko** (ekstensi .sh/.exe/.ps1/… ) yang **tak dikenal VT** → `review_unknown=true` → **THREAT jalur tombol (HITL)**, bukan silent/auto. File jinak non-eksekutabel tetap sunyi. **Terverifikasi:** `.sh` unknown → Telegram Alert (tombol); `.txt` unknown → sunyi. **Batas:** file eksekutabel **tanpa ekstensi** (ELF) belum tertangkap → lanjutan: deteksi magic-byte/exec-bit |
+| ⬜ Lanjutan | Hanya melihat **hash dikenal** (ganti 1 byte → hash baru) | Reputasi hash mudah dielakkan | **Deteksi perilaku** (rule Wazuh, sandbox lokal spt CAPEv2) |
+| ⬜ Lanjutan | *Detection lag* (verdict berubah seiring waktu) | Cache bisa menyajikan verdict basi | **Re-scan terjadwal** + turunkan TTL cache verdict "bersih" |
+| ⬜ Lanjutan | Ketergantungan 1 sumber | Single point of intel-failure | **Multi-sinyal/ensemble**: MalwareBazaar, Hybrid Analysis, **MISP** |
+| ✅ Sudah ada | Rate limit / downtime | Analisis gagal | Ditangani `vt_unverified` (jangan dianggap bersih) |
 
 **Prinsip:** perlakukan VT/GSB/URLScan sebagai **corroboration multi-sinyal**, bukan otoritas tunggal.
 
