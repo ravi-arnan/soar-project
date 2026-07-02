@@ -15,6 +15,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 - **Reproducibility** config Wazuh manager ter-track (`config/` + `scripts/sync-wazuh-config.sh`).
 - **C** metrik kuantitatif terukur (MTTR malware 1,68 dtk · phishing 2,13 dtk · FP suppression 100%).
 - **B#1** hybrid: file eksekutabel tak-dikenal VT → tombol review (tutup celah zero-day utama).
+- **F (explainable)** setiap notifikasi memuat `🧠 Alasan keputusan`; **F (self-aware inline)** tandai `⚠️ Deteksi TERDEGRADASI` saat VT rate-limit/error.
 
 ### ⬜ BELUM dikerjakan (sisa)
 | Prioritas | Item | Kategori | Berat |
@@ -24,7 +25,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | Menengah | Justifikasi empiris **n8n vs Shuffle** + pemetaan **MITRE ATT&CK** | C | sedang |
 | Menengah | **Deteksi perilaku** (sandbox/exec-bit), **multi-sumber** (MISP/MalwareBazaar), re-scan, TTL cache | B | berat |
 | **#3** | **Hardening keamanan** (reverse-proxy+TLS, auth, segmentasi, secret mgmt) + **IaC** (Ansible) | D | sedang |
-| **#5** | **Self-aware SOAR** (pemantau kesehatan/coverage) + keputusan **explainable/auditable** | F | sedang (orisinal) |
+| — | **F sisa**: pemantau kesehatan/coverage penuh + **audit-trail** analis (explainable & degradasi inline SUDAH) | F | sedang |
 | Lanjutan | **LLM-fallback** advisory + **RAG** anti-halusinasi; **trusted autonomy** (timeout/SLA) | F | berat |
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
 
@@ -80,17 +81,17 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | Tak ada observability pipeline | **Prometheus + Grafana** (sekaligus sumber data metrik bab evaluasi) |
 | Ollama bersaing resource | AI sebagai **microservice inferensi** terpisah; opsi **RAG** atas playbook/threat-intel |
 
-## F. Kontribusi terhadap masalah INDUSTRI (arah kebaruan) ⬜ BELUM
+## F. Kontribusi terhadap masalah INDUSTRI (arah kebaruan) 🟢 SEBAGIAN
 
 Masalah industri 2025–2026: playbook rapuh/statis, *playbook rot* (silent-failure), alert fatigue (67% alert diabaikan), black-box → analis tak percaya, risiko LLM (halusinasi/kebocoran).
 
-| Gap industri | Kontribusi yang diusulkan (dari fondasi proyek ini) |
-|--------------|------------------------------------------------------|
-| Automasi **gagal diam-diam** & tak sadar cakupan turun | **"Self-aware SOAR"**: kembangkan `vt_unverified` jadi **pemantau kesehatan/coverage** — laporkan saat intel down/webhook gagal/agent putus, alih-alih diam |
-| **Black-box** merusak kepercayaan analis | Keputusan **explainable & auditable**: setiap aksi auto/tombol menjelaskan alasan (skor VT, verdict GSB, rule, keyakinan) + **audit-trail** keputusan analis |
-| Alert yang **tak cocok playbook** → diam/dilempar | **LLM-fallback** (Ollama lokal) untuk alert tanpa aturan cocok → *advisory* ke analis (bukan auto-aksi) + **RAG** anti-halusinasi + AI tak pernah eksekusi AR sendiri |
-| **Alert fatigue** | Formalkan & **ukur** reduksi FP dari respons berjenjang VT-gated (angka konkret) |
-| HITL = bottleneck vs otonomi berisiko | **Trusted autonomy**: timeout/SLA + otonomi adaptif per tingkat keyakinan + umpan balik keputusan analis menyetel ambang |
+| Status | Gap industri | Kontribusi (dari fondasi proyek ini) |
+|--------|--------------|--------------------------------------|
+| 🟢 **Sebagian** (2026-07-02) | Automasi **gagal diam-diam** & tak sadar cakupan turun | **Self-aware (inline):** notifikasi menandai **`⚠️ Deteksi TERDEGRADASI`** saat VT rate-limit/error (`degraded`) → tak diam-diam. **Lanjutan:** pemantau kesehatan/coverage penuh (agent putus/webhook gagal) |
+| ✅ **SELESAI** (explainable, 2026-07-02) | **Black-box** merusak kepercayaan analis | Setiap notifikasi memuat **`🧠 Alasan keputusan`** (skor VT + tingkat keyakinan + jalur). Terverifikasi: auto-isolate → "VirusTotal 65/67 (≥20) → keyakinan tinggi, isolasi otomatis". **Lanjutan:** **audit-trail** keputusan analis (siapa/kapan) |
+| ⬜ Lanjutan | Alert yang **tak cocok playbook** → diam/dilempar | **LLM-fallback** (Ollama) advisory + **RAG** anti-halusinasi + AI tak pernah eksekusi AR sendiri |
+| ✅ **Terukur** (di C) | **Alert fatigue** | Reduksi FP VT-gated **100%** (lihat `docs/EVALUASI-METRIK.pdf`) |
+| ⬜ Lanjutan | HITL = bottleneck vs otonomi berisiko | **Trusted autonomy**: timeout/SLA + otonomi adaptif per tingkat keyakinan |
 
 ---
 
