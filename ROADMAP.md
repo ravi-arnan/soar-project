@@ -7,6 +7,31 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 
 ---
 
+## Status ringkas (per 2026-07-02)
+
+### ✅ SUDAH dikerjakan
+- **A#1** `block-domain` persist (permanen di template + config ter-version-control).
+- **A#3** notifikasi ganda diperbaiki (abaikan event FIM `deleted` akibat karantina).
+- **Reproducibility** config Wazuh manager ter-track (`config/` + `scripts/sync-wazuh-config.sh`).
+- **C** metrik kuantitatif terukur (MTTR malware 1,68 dtk · phishing 2,13 dtk · FP suppression 100%).
+- **B#1** hybrid: file eksekutabel tak-dikenal VT → tombol review (tutup celah zero-day utama).
+
+### ⬜ BELUM dikerjakan (sisa)
+| Prioritas | Item | Kategori | Berat |
+|-----------|------|----------|-------|
+| — | **A#2** event pertama terlewat pasca-restart agent | A | dimitigasi (fix sejati = buffer/queue di E) |
+| Menengah | MTTR HITL & URLScan, VT cold-vs-cache, **uji beban**, false-negative rate, ulangi N≥30 | C | sedang |
+| Menengah | Justifikasi empiris **n8n vs Shuffle** + pemetaan **MITRE ATT&CK** | C | sedang |
+| Menengah | **Deteksi perilaku** (sandbox/exec-bit), **multi-sumber** (MISP/MalwareBazaar), re-scan, TTL cache | B | berat |
+| **#3** | **Hardening keamanan** (reverse-proxy+TLS, auth, segmentasi, secret mgmt) + **IaC** (Ansible) | D | sedang |
+| **#5** | **Self-aware SOAR** (pemantau kesehatan/coverage) + keputusan **explainable/auditable** | F | sedang (orisinal) |
+| Lanjutan | **LLM-fallback** advisory + **RAG** anti-halusinasi; **trusted autonomy** (timeout/SLA) | F | berat |
+| **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
+
+**Rekomendasi lanjut berikutnya:** **F** (self-aware + explainable) — orisinal, menjawab keluhan industri teratas, tanpa mengubah arsitektur berisiko. Alternatif: **D** (keamanan).
+
+---
+
 ## A. Gap keandalan sistem (bug teramati saat pengujian) — prioritas #1
 
 | Status | Gap | Akar masalah | Solusi yang diterapkan |
@@ -37,14 +62,14 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | "Kenapa n8n bukan Shuffle?" | Bandingkan **empiris** n8n vs Shuffle (fleksibilitas, latensi, biaya, maintenance) |
 | Cakupan deteksi | Pemetaan **MITRE ATT&CK** per playbook; uji **false-negative** |
 
-## D. Gap keamanan platform SOAR itu sendiri — prioritas #3
+## D. Gap keamanan platform SOAR itu sendiri — prioritas #3 ⬜ BELUM
 
 | Gap | Solusi |
 |-----|--------|
 | n8n rentan (CVE-2026-21858 "Ni8mare", CVSS 10.0; penyalahgunaan webhook) | Webhook **tidak diekspos publik** (poller keluar-saja di balik NAT — sudah), **reverse-proxy + TLS**, autentikasi, **segmentasi jaringan**, manajemen secret, versi ter-patch |
 | Reproducibility | **IaC** (Ansible / docker-compose lengkap) — bukan Coolify; validasi/uji workflow otomatis |
 
-## E. Gap arsitektur (jangka menengah–panjang)
+## E. Gap arsitektur (jangka menengah–panjang) ⬜ BELUM
 
 | Gap | Solusi |
 |-----|--------|
@@ -55,7 +80,7 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | Tak ada observability pipeline | **Prometheus + Grafana** (sekaligus sumber data metrik bab evaluasi) |
 | Ollama bersaing resource | AI sebagai **microservice inferensi** terpisah; opsi **RAG** atas playbook/threat-intel |
 
-## F. Kontribusi terhadap masalah INDUSTRI (arah kebaruan)
+## F. Kontribusi terhadap masalah INDUSTRI (arah kebaruan) ⬜ BELUM
 
 Masalah industri 2025–2026: playbook rapuh/statis, *playbook rot* (silent-failure), alert fatigue (67% alert diabaikan), black-box → analis tak percaya, risiko LLM (halusinasi/kebocoran).
 
