@@ -1,30 +1,40 @@
 graph TB
     subgraph EP["Endpoint (Terdistribusi)"]
-        A1["Wazuh Agent<br/>FIM + pengumpulan log<br/>Linux / Windows / macOS"]
+        A1["Wazuh Agent<br/>FIM (~/Downloads, ~/Desktop, /etc ...)<br/>+ pengumpulan log<br/>ravi-zorin (Ubuntu) &amp; rocky-server (Rocky 9)"]
     end
-    subgraph SRV["SOAR Server (Terpusat)"]
-        WM["Wazuh Manager<br/>korelasi aturan + integratord"]
-        SC["Skrip custom-n8n<br/>filter + jembatan integrasi"]
-        N8N["n8n<br/>mesin orkestrasi playbook"]
-        OL["Ollama llama3.2:3b<br/>analisis AI lokal"]
+
+    subgraph SRV["SOAR Server (Terpusat - Docker)"]
+        WM["Wazuh Manager<br/>analysisd + remoted + integratord<br/>+ custom-n8n.py (filter &amp; jembatan)<br/>API :55000"]
+        N8N["n8n - mesin orkestrasi playbook :5678<br/>Deteksi Malware | Deteksi Phishing<br/>Telegram Callback Handler"]
+        OL["Ollama llama3.2:3b<br/>analisis AI lokal :11434"]
     end
-    subgraph EXT["Layanan Eksternal"]
-        VT["VirusTotal API<br/>threat intelligence"]
+
+    subgraph EXT["Layanan Eksternal (Threat Intelligence)"]
+        VT["VirusTotal API<br/>reputasi hash (malware)"]
+        GSB["Google Safe Browsing<br/>reputasi URL (phishing)"]
+        US["URLScan.io<br/>verdict URL (phishing)"]
         TG["Telegram Bot<br/>notifikasi + tombol"]
     end
+
     subgraph HIL["Human-in-the-Loop"]
-        PO["tg-callback-poller<br/>long-poll getUpdates"]
-        AN["Analis SOC<br/>menyetujui via tombol"]
+        PO["tg-callback-poller<br/>long-poll getUpdates (aman di balik NAT)"]
+        AN["Analis SOC<br/>klik tombol di HP"]
     end
+
     A1 -->|"TCP 1514 terenkripsi"| WM
-    WM -->|"alert"| SC
-    SC -->|"HTTP POST"| N8N
-    N8N -->|"cek hash / URL"| VT
+    WM -->|"alert malware (FIM)<br/>POST /webhook/wazuh-alert"| N8N
+    WM -->|"alert phishing (log)<br/>POST /webhook/wazuh-phishing"| N8N
+
+    N8N -->|"cek hash"| VT
+    N8N -->|"cek URL"| GSB
+    N8N -->|"scan URL"| US
     N8N -->|"inferensi lokal"| OL
     N8N -->|"sendMessage + tombol"| TG
+
     TG -->|"notifikasi"| AN
-    AN -->|"Isolasi / Abaikan"| TG
-    TG -.->|"callback"| PO
-    PO -->|"POST webhook lokal"| N8N
-    N8N -->|"PUT /active-response !quarantine-file"| WM
-    WM -->|"perintah karantina"| A1
+    AN -->|"Isolasi / Blokir / Abaikan"| TG
+    TG -.->|"callback_query"| PO
+    PO -->|"POST /webhook/tg-callback"| N8N
+
+    N8N -->|"PUT /active-response<br/>!quarantine-file (malware)<br/>!block-domain (phishing)"| WM
+    WM -->|"perintah AR ke agent"| A1

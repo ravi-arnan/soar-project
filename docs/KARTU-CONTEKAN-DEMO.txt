@@ -1,0 +1,130 @@
+==============================================================================
+                  KARTU CONTEKAN DEMO SOAR  -  1 HALAMAN
+==============================================================================
+ATURAN EMAS: 1 skenario per kali, tunggu hasil muncul sebelum lanjut.
+LAYAR: n8n (tab Executions, http://localhost:5678) + Telegram di HP.
+==============================================================================
+
+
+------------------------------------------------------------------------------
+ [0] PREFLIGHT  (5 menit sebelum tampil)
+------------------------------------------------------------------------------
+  cd ~/Projects/soar-project && docker compose start
+  cd wazuh-docker/single-node && docker compose start && cd ../..
+  ollama run llama3.2:3b "test" >/dev/null
+
+  # cek 2 agent Active:
+  docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l
+
+  # cek block-domain terdaftar (WAJIB - sering hilang pasca restart!):
+  docker exec single-node-wazuh.manager-1 grep block-domain /var/ossec/etc/shared/ar.conf
+
+  Kalau block-domain TIDAK muncul:
+      sudo bash scripts/deploy-block-domain.sh
+
+  Pemanasan: picu 1 EICAR lalu hapus, biar inferensi pertama tak lambat.
+
+
+------------------------------------------------------------------------------
+ [1] MALWARE - AUTO-ISOLATE  (keyakinan tinggi)
+------------------------------------------------------------------------------
+  printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > ~/Downloads/malware-demo.com
+
+  HASIL (~15-30 dtk): Telegram "OTOMATIS DIISOLASI" (tanpa tombol).
+  BUKTI:  ls ~/Downloads/malware-demo.com    -> HILANG
+
+  NARASI: "VirusTotal yakin (sekitar 59 dari 70 antivirus). Menunggu manusia
+           hanya menambah risiko, jadi SOAR karantina otomatis - MTTR ~ nol."
+
+
+------------------------------------------------------------------------------
+ [2] MALWARE - TOMBOL  (ambigu, human-in-the-loop)
+------------------------------------------------------------------------------
+  echo "dokumen kerja yang sah" > ~/Downloads/demoreview-laporan-rapat.txt
+
+  HASIL: Telegram dengan tombol [Isolasi File] [Abaikan].
+  AKSI:  TAP "Isolasi File" di HP -> pesan jadi "DIISOLASI", file dikarantina.
+
+  NARASI: "Untuk deteksi rendah / ambigu, daripada salah karantina file kerja
+           yang sah, sistem serahkan keputusan ke analis lewat 1 klik di
+           Telegram - human-in-the-loop. Hindari isolasi buta."
+
+
+------------------------------------------------------------------------------
+ [3] FILE BERSIH - ANTI FALSE-POSITIVE  (bintang!)
+------------------------------------------------------------------------------
+  echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
+
+  HASIL: Telegram TETAP SUNYI (VirusTotal bersih, 0 deteksi).
+
+  NARASI: "Dulu tiap unduhan - foto, ISO, config - dianggap malware = alert
+           fatigue. Sekarang sistem hanya bersuara saat VirusTotal benar-benar
+           menemukan sesuatu. Ini yang membedakan SOAR matang dari penerus alert."
+
+
+------------------------------------------------------------------------------
+ [4] PHISHING - AUTO-BLOCK
+------------------------------------------------------------------------------
+  bash scripts/test-phishing.sh "http://testsafebrowsing.appspot.com/s/phishing.html"
+
+  HASIL (~40 dtk, tunggu URLScan): Telegram info + domain di-sinkhole.
+  BUKTI:  grep testsafebrowsing /etc/hosts   -> 0.0.0.0 ...
+
+  NARASI: "Google Safe Browsing menandai phishing, domain langsung di-sinkhole
+           otomatis ke 0.0.0.0 - korban tidak bisa mengakses situsnya."
+
+
+------------------------------------------------------------------------------
+ [5] PHISHING - TOMBOL BLOKIR
+------------------------------------------------------------------------------
+  bash scripts/test-phishing.sh "http://demoreview-phish-test.example.org/login"
+
+  HASIL: Telegram dengan tombol [Blokir] [Abaikan].
+  AKSI:  TAP "Blokir" di HP -> domain di-sinkhole di /etc/hosts.
+
+  NARASI: "Sama seperti malware - phishing yang ambigu juga bisa diserahkan ke
+           analis untuk keputusan akhir."
+
+
+==============================================================================
+ BUKTI  (kalau ditanya penguji)
+==============================================================================
+  docker exec single-node-wazuh.manager-1 grep malware-demo /var/ossec/logs/alerts/alerts.json | tail -1
+  sudo tail -5 /var/ossec/logs/active-responses.log
+
+
+==============================================================================
+ TROUBLESHOOTING CEPAT
+==============================================================================
+  Telegram lama (>1 mnt)      -> Ollama dingin / VT lambat. Wajar, jelaskan.
+  Notifikasi tak muncul       -> Cek workflow Active di n8n; docker logs n8n --tail 20
+  Tombol diklik tak ada efek  -> docker logs tg-callback-poller --tail 10
+                                 (harus ada "forwarded callback_query")
+  Agent tak Active            -> sudo systemctl restart wazuh-agent
+  FIM rewel                   -> picu lewat webhook langsung (lihat KARTU-DEMO.md bagian 6)
+
+
+==============================================================================
+ BERSIH-BERSIH SETELAH DEMO
+==============================================================================
+  sudo sed -i '/WAZUH-SOAR-SINKHOLE/d' /etc/hosts
+  rm -f ~/Downloads/malware-demo.com ~/Downloads/demoreview-*.txt ~/Downloads/foto-liburan.jpg
+
+
+==============================================================================
+ KOMPONEN  (untuk sesi tanya-jawab)
+==============================================================================
+  Wazuh        - SIEM + HIDS: File Integrity Monitoring, korelasi rule,
+                 eksekusi Active Response
+  n8n          - Mesin orkestrasi (otak SOAR): playbook deteksi -> enrich ->
+                 keputusan
+  VirusTotal   - Reputasi hash/URL terhadap 60+ antivirus
+  GSB+URLScan  - Sumber reputasi URL (jalur phishing otomatis)
+  Ollama 3.2:3b- AI analisis LOKAL -> kedaulatan data, tanpa biaya API
+  Telegram Bot - Kanal notifikasi + antarmuka keputusan dua arah
+  tg-poller    - Teruskan klik tombol ke n8n (aman di balik NAT, long-poll)
+  Tailscale    - Mesh VPN: agent tetap terhubung walau beda jaringan
+
+  Multi-agent: 2 endpoint - ravi-zorin (Ubuntu) + rocky-server (Rocky 9),
+               lapor ke 1 manager.
+==============================================================================
