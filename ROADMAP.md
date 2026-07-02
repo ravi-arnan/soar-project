@@ -15,7 +15,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 - **Reproducibility** config Wazuh manager ter-track (`config/` + `scripts/sync-wazuh-config.sh`).
 - **C** metrik kuantitatif terukur (MTTR malware 1,68 dtk · phishing 2,13 dtk · FP suppression 100%).
 - **B#1** hybrid: file eksekutabel tak-dikenal VT → tombol review (tutup celah zero-day utama).
-- **F (explainable)** setiap notifikasi memuat `🧠 Alasan keputusan`; **F (self-aware inline)** tandai `⚠️ Deteksi TERDEGRADASI` saat VT rate-limit/error.
+- **F (explainable)** notifikasi malware **&** phishing memuat `🧠 Alasan keputusan`; **F (self-aware inline)** tandai `⚠️ Deteksi TERDEGRADASI` saat sumber rate-limit/error; **F (audit-trail)** keputusan analis dicatat `oleh <analis> pada <waktu WITA>` + riwayat eksekusi n8n.
 
 ### ⬜ BELUM dikerjakan (sisa)
 | Prioritas | Item | Kategori | Berat |
@@ -25,7 +25,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | Menengah | Justifikasi empiris **n8n vs Shuffle** + pemetaan **MITRE ATT&CK** | C | sedang |
 | Menengah | **Deteksi perilaku** (sandbox/exec-bit), **multi-sumber** (MISP/MalwareBazaar), re-scan, TTL cache | B | berat |
 | **#3** | **Hardening keamanan** (reverse-proxy+TLS, auth, segmentasi, secret mgmt) + **IaC** (Ansible) | D | sedang |
-| — | **F sisa**: pemantau kesehatan/coverage penuh + **audit-trail** analis (explainable & degradasi inline SUDAH) | F | sedang |
+| — | **F sisa**: pemantau kesehatan/coverage penuh (deteksi agent putus/webhook gagal) — explainable, degradasi inline & audit-trail SUDAH | F | sedang |
 | Lanjutan | **LLM-fallback** advisory + **RAG** anti-halusinasi; **trusted autonomy** (timeout/SLA) | F | berat |
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
 
