@@ -33,7 +33,7 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 
 | Status | Gap | Solusi / hasil |
 |--------|-----|----------------|
-| 🟢 **Awal terukur** (2026-07-02) | Klaim "unggul" belum terukur | **Pengukuran awal (data nyata, `docs/EVALUASI-METRIK.pdf`):** MTTR auto-isolate **≈1,57 dtk** (drop→karantina, cache hangat); **reduksi false-positive 100%** (5 file bersih → 5 alert FIM baseline vs 0 notifikasi SOAR). N=5 (indikatif). **Lanjutan:** MTTR phishing/HITL, VT cold vs cache, uji beban, false-negative zero-day, ulangi N≥30 |
+| 🟢 **Terukur** (2026-07-02) | Klaim "unggul" belum terukur | **Data nyata (`docs/EVALUASI-METRIK.pdf`):** MTTR malware auto-isolate **1,68 dtk** (N=15, cache hangat); MTTR phishing auto-block **2,13 dtk** (N=5, jalur GSB); **reduksi false-positive 100%** (N=8: 8 alert FIM baseline → 0 notifikasi SOAR). **Lanjutan:** MTTR HITL & jalur URLScan, VT cold vs cache, uji beban, false-negative zero-day, ulangi N≥30 |
 | "Kenapa n8n bukan Shuffle?" | Bandingkan **empiris** n8n vs Shuffle (fleksibilitas, latensi, biaya, maintenance) |
 | Cakupan deteksi | Pemetaan **MITRE ATT&CK** per playbook; uji **false-negative** |
 
