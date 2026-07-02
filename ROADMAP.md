@@ -88,7 +88,7 @@ Masalah industri 2025–2026: playbook rapuh/statis, *playbook rot* (silent-fail
 | Status | Gap industri | Kontribusi (dari fondasi proyek ini) |
 |--------|--------------|--------------------------------------|
 | 🟢 **Sebagian** (2026-07-02) | Automasi **gagal diam-diam** & tak sadar cakupan turun | **Self-aware (inline):** notifikasi menandai **`⚠️ Deteksi TERDEGRADASI`** saat VT rate-limit/error (`degraded`) → tak diam-diam. **Lanjutan:** pemantau kesehatan/coverage penuh (agent putus/webhook gagal) |
-| ✅ **SELESAI** (explainable, 2026-07-02) | **Black-box** merusak kepercayaan analis | Setiap notifikasi memuat **`🧠 Alasan keputusan`** (skor VT + tingkat keyakinan + jalur). Terverifikasi: auto-isolate → "VirusTotal 65/67 (≥20) → keyakinan tinggi, isolasi otomatis". **Lanjutan:** **audit-trail** keputusan analis (siapa/kapan) |
+| ✅ **SELESAI** (explainable, 2026-07-02) | **Black-box** merusak kepercayaan analis | Setiap notifikasi (malware **&** phishing) memuat **`🧠 Alasan`** (skor VT/GSB + keyakinan + jalur). Terverifikasi malware: "VirusTotal 65/67 (≥20) → keyakinan tinggi, isolasi otomatis"; phishing: "Google Safe Browsing menandai URL → auto-block". **Lanjutan:** **audit-trail** keputusan analis (siapa/kapan) |
 | ⬜ Lanjutan | Alert yang **tak cocok playbook** → diam/dilempar | **LLM-fallback** (Ollama) advisory + **RAG** anti-halusinasi + AI tak pernah eksekusi AR sendiri |
 | ✅ **Terukur** (di C) | **Alert fatigue** | Reduksi FP VT-gated **100%** (lihat `docs/EVALUASI-METRIK.pdf`) |
 | ⬜ Lanjutan | HITL = bottleneck vs otonomi berisiko | **Trusted autonomy**: timeout/SLA + otonomi adaptif per tingkat keyakinan |
