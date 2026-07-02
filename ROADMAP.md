@@ -31,9 +31,9 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 
 ## C. Gap bukti ilmiah (paling menaikkan nilai) — prioritas #2
 
-| Gap | Solusi |
-|-----|--------|
-| Klaim "unggul" belum terukur | **Metrik kuantitatif**: MTTR (deteksi→respons), **% reduksi false-positive** dari VT-gating (sebelum vs sesudah), *detection rate* atas korpus uji (EICAR/malware nyata + PhishTank/OpenPhish), uji beban (N alert serentak), latensi Ollama |
+| Status | Gap | Solusi / hasil |
+|--------|-----|----------------|
+| 🟢 **Awal terukur** (2026-07-02) | Klaim "unggul" belum terukur | **Pengukuran awal (data nyata, `docs/EVALUASI-METRIK.pdf`):** MTTR auto-isolate **≈1,57 dtk** (drop→karantina, cache hangat); **reduksi false-positive 100%** (5 file bersih → 5 alert FIM baseline vs 0 notifikasi SOAR). N=5 (indikatif). **Lanjutan:** MTTR phishing/HITL, VT cold vs cache, uji beban, false-negative zero-day, ulangi N≥30 |
 | "Kenapa n8n bukan Shuffle?" | Bandingkan **empiris** n8n vs Shuffle (fleksibilitas, latensi, biaya, maintenance) |
 | Cakupan deteksi | Pemetaan **MITRE ATT&CK** per playbook; uji **false-negative** |
 
