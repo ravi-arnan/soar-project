@@ -1,0 +1,18 @@
+flowchart TB
+    EP["Endpoint\n(Wazuh Agent - FIM)"]
+    WM["Wazuh Manager\n(SIEM + Active Response)"]
+    N8N["n8n\n(Mesin Orkestrasi SOAR)"]
+    TI["Threat Intelligence\nVirusTotal - Google Safe Browsing - URLScan.io"]
+    AI["AI Lokal\n(Ollama llama3.2:3b)"]
+    TG["Telegram Bot\n(Notifikasi + Tombol)"]
+    AN["Analis SOC\n(Keputusan Human-in-the-Loop)"]
+
+    EP -->|"log & alert"| WM
+    WM -->|"alert malware/phishing"| N8N
+    N8N -->|"verifikasi reputasi"| TI
+    N8N -->|"analisis & ringkasan"| AI
+    N8N -->|"notifikasi"| TG
+    TG -->|"tombol"| AN
+    AN -.->|"keputusan"| N8N
+    N8N -->|"Active Response"| WM
+    WM -->|"karantina / sinkhole"| EP
