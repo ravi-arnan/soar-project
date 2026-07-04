@@ -844,17 +844,16 @@ add_simple_table(
     center_from=1,
 )
 
-legend = doc.add_paragraph()
-base_paragraph_format(legend, justify=True, first_line_indent=False, space_after=12)
-legend.paragraph_format.space_before = Pt(4)
-r = legend.add_run(
-    "Keterangan: “Ya” = aspek tersedia; “Parsial” = tersedia sebagian "
-    "atau dengan keterbatasan (misalnya AI berbasis cloud atau respons "
-    "otomatis tanpa tingkat keyakinan multi-sumber); “Tidak” = aspek "
-    "belum tersedia. Baris Usulan (2026) merupakan satu-satunya pendekatan "
-    "yang memenuhi kelima aspek secara bersamaan."
+doc.add_paragraph().paragraph_format.space_after = Pt(6)
+
+add_body_paragraph(
+    doc,
+    "Tabel 4 merupakan rangkuman posisi kebaruan usulan dibandingkan "
+    "penelitian dan implementasi terdahulu pada lima aspek pembeda. Baris "
+    "Usulan (2026) merupakan satu-satunya pendekatan yang memenuhi kelima "
+    "aspek tersebut secara bersamaan, sedangkan pendekatan lain hanya "
+    "memenuhinya sebagian atau belum sama sekali.",
 )
-set_font(r, size=SIZE_SMALL)
 
 # ------------------------------------------------------------ signature --
 
