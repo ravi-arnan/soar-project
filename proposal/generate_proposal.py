@@ -206,9 +206,9 @@ def add_figure(doc, path, number, caption, width_in=5.74):
     cap.paragraph_format.space_before = Pt(6)
     cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r1 = cap.add_run(f"Gambar {number} ")
-    set_font(r1, bold=True)
+    set_font(r1, bold=True, size=SIZE_SMALL)
     r2 = cap.add_run(caption)
-    set_font(r2, bold=False)
+    set_font(r2, bold=False, size=SIZE_SMALL)
     return cap
 
 
