@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generator dokumen "Usulan Ide Tugas Akhir" — direplikasi persis dari format
+Generator dokumen "Usulan Ide Tugas Akhir", direplikasi persis dari format
 referensi (Usulan Ide_2305551013_Agus Arya Wiraguna.pdf):
 - Page size Letter (8.5x11 in), margin kiri 4 cm, atas/kanan/bawah 3 cm
 - Font Times New Roman 12pt, spasi 1.5, rata kiri-kanan (justify)
@@ -734,7 +734,7 @@ add_simple_table(
     ],
     [
         [
-            "Thakker dkk. (2025) — pertahanan otomatis serangan "
+            "Thakker dkk. (2025): pertahanan otomatis serangan "
             "application-layer pada Windows (Wazuh dan Shuffle)",
             "Mitigasi otomatis serangan application-layer pada endpoint "
             "Windows",
@@ -743,48 +743,48 @@ add_simple_table(
             "Active Response otomatis penuh; tanpa notifikasi interaktif",
         ],
         [
-            "Farrel (2024) — SIEM Wazuh dengan Active Response dan notifikasi "
+            "Farrel (2024): SIEM Wazuh dengan Active Response dan notifikasi "
             "Telegram untuk brute force",
             "Mitigasi serangan brute force pada sistem informasi",
             "Wazuh Active Response dengan notifikasi Telegram",
             "Active Response otomatis; notifikasi Telegram satu arah",
         ],
         [
-            "Sarker (2025) — otomasi SOC: Wazuh, n8n, VirusTotal, dan Gmail "
+            "Sarker (2025): otomasi SOC: Wazuh, n8n, VirusTotal, dan Gmail "
             "untuk deteksi file berbahaya",
             "Deteksi file berbahaya berbasis orkestrasi n8n",
             "Orkestrasi n8n dengan VirusTotal dan notifikasi Gmail",
             "Notifikasi email satu arah; tanpa mitigasi aktif",
         ],
         [
-            "n8n (n.d.) — template workflow: Wazuh ke VirusTotal dengan alert "
+            "n8n (n.d.): template workflow: Wazuh ke VirusTotal dengan alert "
             "Slack",
             "Notifikasi deteksi file berbahaya ke Slack",
             "Template workflow n8n dengan VirusTotal",
             "Notifikasi Slack satu arah; tanpa mitigasi",
         ],
         [
-            "Nadig & Vignesh (2026) — peningkatan Wazuh SIEM melalui integrasi "
+            "Nadig & Vignesh (2026): peningkatan Wazuh SIEM melalui integrasi "
             "SOAR untuk respons otomatis",
             "Respons ancaman otomatis melalui integrasi SOAR",
             "Integrasi Wazuh dengan SOAR; respons otomatis",
             "Respons otomatis; tanpa keterlibatan analis",
         ],
         [
-            "Alves dkk. (2026) — Wazuh untuk deteksi insiden: perancangan dan "
+            "Alves dkk. (2026): Wazuh untuk deteksi insiden: perancangan dan "
             "implementasi",
             "Perancangan dan implementasi deteksi insiden berbasis Wazuh",
             "Deteksi dan korelasi insiden pada Wazuh",
             "Berorientasi deteksi; minim otomatisasi respons",
         ],
         [
-            "Raed (2025) — SOC bertenaga AI: Wazuh, n8n, Claude AI, dan MCP",
+            "Raed (2025): SOC bertenaga AI: Wazuh, n8n, Claude AI, dan MCP",
             "SOC end-to-end dari deteksi hingga respons dengan bantuan AI",
             "Orkestrasi n8n dengan LLM Claude berbasis cloud (via MCP)",
             "Respons dibantu AI; tanpa kanal keputusan dua arah",
         ],
         [
-            "zhadyz (2025) — AI_SOC: SOC open-source berbasis LLM multi-agent "
+            "zhadyz (2025): AI_SOC: SOC open-source berbasis LLM multi-agent "
             "(Ollama, Wazuh, TheHive, RAG)",
             "SOC open-source dengan LLM multi-agent dan AI lokal",
             "LLM multi-agent, Ollama, Wazuh, dan TheHive",
