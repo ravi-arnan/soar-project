@@ -710,10 +710,10 @@ add_body_paragraph(
     "Kombinasi kelima aspek tersebut belum ditemukan secara bersamaan pada "
     "penelitian maupun implementasi Wazuh berbasis SOAR yang ada saat ini "
     "(Thakker, More, & Kumar, 2025; Nadig & Vignesh, 2026; Alves, Loureiro, "
-    "& Pedrosa, 2026). Untuk memperjelas hal tersebut, Tabel 3 memetakan "
-    "penelitian terkait beserta keterbatasan (gap) masing-masing, sedangkan "
-    "Tabel 4 menegaskan posisi kebaruan usulan yang menutup celah tersebut "
-    "pada kelima aspek pembeda.",
+    "& Pedrosa, 2026). Untuk memperjelas hal tersebut, Tabel 3 merangkum "
+    "penelitian dan implementasi terdahulu, kesenjangan (gap) masing-masing, "
+    "serta kontribusi yang ditawarkan proyek ini untuk menutup setiap "
+    "kesenjangan tersebut.",
 )
 
 cap = doc.add_paragraph()
@@ -721,138 +721,124 @@ base_paragraph_format(cap, justify=False, first_line_indent=False, space_after=6
 cap.paragraph_format.keep_with_next = True
 r1 = cap.add_run("Tabel 3 ")
 set_font(r1, bold=True, size=SIZE_SMALL)
-r2 = cap.add_run("Penelitian Terkait dan Keterbatasannya (Gap).")
-set_font(r2, size=SIZE_SMALL)
-
-add_simple_table(
-    doc,
-    [
-        "No",
-        "Peneliti dan Tahun",
-        "Judul",
-        "Pendekatan",
-        "Keterbatasan",
-    ],
-    [
-        [
-            "1",
-            "Thakker dkk. (2025)",
-            "Pertahanan otomatis terhadap serangan application-layer pada "
-            "sistem Windows",
-            "Integrasi Wazuh + Shuffle; pemblokiran otomatis",
-            "Otomatisasi penuh tanpa human-in-the-loop (false-positive "
-            "dieksekusi “buta”); satu kelas ancaman; tanpa AI lokal",
-        ],
-        [
-            "2",
-            "Farrel (2024)",
-            "SIEM Wazuh dengan Active Response dan notifikasi Telegram untuk "
-            "mitigasi brute force",
-            "Wazuh Active Response + notifikasi Telegram (satu arah)",
-            "Notifikasi satu arah sehingga analis harus pindah ke dasbor; "
-            "mitigasi otomatis; hanya serangan brute force",
-        ],
-        [
-            "3",
-            "Sarker (2025)",
-            "Otomasi SOC: integrasi Wazuh, n8n, VirusTotal, dan Gmail untuk "
-            "deteksi file berbahaya",
-            "Orkestrasi n8n + VirusTotal + notifikasi Gmail",
-            "Notifikasi satu arah (email) tanpa kanal keputusan interaktif; "
-            "fokus malware saja; tanpa AI lokal",
-        ],
-        [
-            "4",
-            "n8n (n.d.)",
-            "Template workflow deteksi file berbahaya: Wazuh ke VirusTotal "
-            "dengan alert Slack",
-            "Workflow n8n + VirusTotal + notifikasi Slack",
-            "Hanya notifikasi Slack satu arah; malware saja; tanpa mitigasi "
-            "aktif dua arah maupun AI lokal",
-        ],
-        [
-            "5",
-            "Nadig & Vignesh (2026)",
-            "Peningkatan kapabilitas Wazuh SIEM melalui integrasi SOAR untuk "
-            "respons ancaman otomatis",
-            "Integrasi Wazuh + SOAR; respons otomatis",
-            "Respons otomatis tanpa human-in-the-loop; belum berjenjang "
-            "berbasis verifikasi multi-sumber; tanpa AI lokal",
-        ],
-        [
-            "6",
-            "Alves dkk. (2026)",
-            "Wazuh untuk deteksi insiden: perancangan dan implementasi",
-            "Perancangan dan implementasi deteksi insiden berbasis Wazuh",
-            "Berfokus pada deteksi; minim orkestrasi mitigasi, kanal "
-            "human-in-the-loop, dan analisis AI",
-        ],
-        [
-            "7",
-            "Raed (2025)",
-            "SOC bertenaga AI: dari deteksi hingga respons otomatis dengan "
-            "Wazuh, n8n, Claude AI, dan MCP",
-            "Orkestrasi n8n + LLM Claude berbasis cloud (via MCP)",
-            "AI berbasis cloud sehingga berisiko pada kedaulatan data dan "
-            "biaya API; tanpa kanal keputusan interaktif dua arah",
-        ],
-        [
-            "8",
-            "zhadyz (2025)",
-            "AI_SOC: SOC open-source berbasis LLM multi-agent (Ollama, Wazuh, "
-            "TheHive, RAG)",
-            "LLM multi-agent + Ollama (AI lokal) + Wazuh + TheHive",
-            "Tanpa mitigasi aktif human-in-the-loop dua arah melalui chat; "
-            "belum berjenjang multi-sumber; multi-agent bukan lintas-"
-            "distribusi endpoint",
-        ],
-    ],
-    col_widths_in=[0.4, 1.0, 1.5, 1.3, 1.54],
+r2 = cap.add_run(
+    "Perbandingan Penelitian Terdahulu, Kesenjangan, dan Kontribusi Proyek."
 )
-doc.add_paragraph().paragraph_format.space_after = Pt(12)
-
-cap = doc.add_paragraph()
-base_paragraph_format(cap, justify=False, first_line_indent=False, space_after=6)
-cap.paragraph_format.keep_with_next = True
-r1 = cap.add_run("Tabel 4 ")
-set_font(r1, bold=True, size=SIZE_SMALL)
-r2 = cap.add_run("Posisi Kebaruan Usulan terhadap Penelitian Terdahulu.")
 set_font(r2, size=SIZE_SMALL)
 
 add_simple_table(
     doc,
     [
-        "Karya",
-        "Respons Berjenjang Multi-sumber",
-        "HITL Dua Arah Satu Kanal",
-        "Malware dan Phishing",
-        "AI Lokal On-premise",
-        "Multi-agent Lintas-Distribusi",
+        "Sumber",
+        "Fokus Utama",
+        "Metode",
+        "Fitur Respons dan Alert",
+        "Kesenjangan",
+        "Proyek Saya",
     ],
     [
-        ["Thakker dkk. (2025)", "Tidak", "Tidak", "Tidak", "Tidak", "Tidak"],
-        ["Farrel (2024)", "Tidak", "Tidak", "Tidak", "Tidak", "Tidak"],
-        ["Sarker (2025)", "Tidak", "Tidak", "Tidak", "Tidak", "Tidak"],
-        ["n8n (n.d.)", "Tidak", "Tidak", "Tidak", "Tidak", "Tidak"],
-        ["Nadig & Vignesh (2026)", "Parsial", "Tidak", "Tidak", "Tidak", "Tidak"],
-        ["Alves dkk. (2026)", "Tidak", "Tidak", "Tidak", "Tidak", "Tidak"],
-        ["Raed (2025)", "Parsial", "Tidak", "Parsial", "Tidak", "Tidak"],
-        ["zhadyz (2025)", "Parsial", "Tidak", "Parsial", "Ya", "Parsial"],
-        ["Usulan (2026)", "Ya", "Ya", "Ya", "Ya", "Ya"],
+        [
+            "Thakker dkk. (2025) — pertahanan otomatis serangan "
+            "application-layer pada Windows (Wazuh dan Shuffle)",
+            "Mitigasi otomatis serangan application-layer pada endpoint "
+            "Windows",
+            "Integrasi Wazuh dan Shuffle; pemblokiran otomatis berbasis "
+            "aturan",
+            "Active Response otomatis penuh; tanpa notifikasi interaktif",
+            "Eksekusi tanpa verifikasi analis (risiko false-positive); hanya "
+            "satu kelas ancaman",
+            "Respons berjenjang berbasis verifikasi multi-sumber dan mitigasi "
+            "human-in-the-loop dua arah sebelum eksekusi",
+        ],
+        [
+            "Farrel (2024) — SIEM Wazuh dengan Active Response dan notifikasi "
+            "Telegram untuk brute force",
+            "Mitigasi serangan brute force pada sistem informasi",
+            "Wazuh Active Response dengan notifikasi Telegram",
+            "Active Response otomatis; notifikasi Telegram satu arah",
+            "Notifikasi satu arah, analis harus pindah ke dasbor; hanya brute "
+            "force",
+            "Notifikasi Telegram interaktif dua arah; analis menyetujui atau "
+            "menolak mitigasi langsung dari chat",
+        ],
+        [
+            "Sarker (2025) — otomasi SOC: Wazuh, n8n, VirusTotal, dan Gmail "
+            "untuk deteksi file berbahaya",
+            "Deteksi file berbahaya berbasis orkestrasi n8n",
+            "Orkestrasi n8n dengan VirusTotal dan notifikasi Gmail",
+            "Notifikasi email satu arah; tanpa mitigasi aktif",
+            "Tidak ada kanal keputusan interaktif; fokus malware saja; tanpa "
+            "AI lokal",
+            "Mitigasi aktif (karantina dan sinkhole) melalui keputusan analis "
+            "serta analisis AI lokal",
+        ],
+        [
+            "n8n (n.d.) — template workflow: Wazuh ke VirusTotal dengan alert "
+            "Slack",
+            "Notifikasi deteksi file berbahaya ke Slack",
+            "Template workflow n8n dengan VirusTotal",
+            "Notifikasi Slack satu arah; tanpa mitigasi",
+            "Hanya notifikasi; malware saja; tanpa mitigasi dua arah maupun AI "
+            "lokal",
+            "Playbook lengkap dengan mitigasi aktif dua arah, dua kelas "
+            "ancaman, dan AI lokal",
+        ],
+        [
+            "Nadig & Vignesh (2026) — peningkatan Wazuh SIEM melalui integrasi "
+            "SOAR untuk respons otomatis",
+            "Respons ancaman otomatis melalui integrasi SOAR",
+            "Integrasi Wazuh dengan SOAR; respons otomatis",
+            "Respons otomatis; tanpa keterlibatan analis",
+            "Tanpa human-in-the-loop; belum berjenjang multi-sumber; tanpa AI "
+            "lokal",
+            "Respons berjenjang berbasis keyakinan dengan kendali analis dan "
+            "analisis AI lokal",
+        ],
+        [
+            "Alves dkk. (2026) — Wazuh untuk deteksi insiden: perancangan dan "
+            "implementasi",
+            "Perancangan dan implementasi deteksi insiden berbasis Wazuh",
+            "Deteksi dan korelasi insiden pada Wazuh",
+            "Berorientasi deteksi; minim otomatisasi respons",
+            "Minim orkestrasi mitigasi, kanal human-in-the-loop, dan analisis "
+            "AI",
+            "Menambahkan lapisan orkestrasi SOAR (n8n) untuk mitigasi aktif "
+            "dan analisis AI lokal",
+        ],
+        [
+            "Raed (2025) — SOC bertenaga AI: Wazuh, n8n, Claude AI, dan MCP",
+            "SOC end-to-end dari deteksi hingga respons dengan bantuan AI",
+            "Orkestrasi n8n dengan LLM Claude berbasis cloud (via MCP)",
+            "Respons dibantu AI; tanpa kanal keputusan dua arah",
+            "AI berbasis cloud (risiko kedaulatan data dan biaya API); tanpa "
+            "keputusan interaktif",
+            "Analisis AI on-premise (Ollama) untuk kedaulatan data dan "
+            "mitigasi human-in-the-loop dua arah",
+        ],
+        [
+            "zhadyz (2025) — AI_SOC: SOC open-source berbasis LLM multi-agent "
+            "(Ollama, Wazuh, TheHive, RAG)",
+            "SOC open-source dengan LLM multi-agent dan AI lokal",
+            "LLM multi-agent, Ollama, Wazuh, dan TheHive",
+            "Triase berbasis TheHive; tanpa mitigasi dua arah via chat",
+            "Tanpa mitigasi aktif human-in-the-loop dua arah; belum berjenjang "
+            "multi-sumber; multi-agent bukan lintas-distribusi endpoint",
+            "Mitigasi aktif dua arah via Telegram, respons berjenjang "
+            "multi-sumber, dan multi-agent lintas-distribusi endpoint",
+        ],
     ],
-    col_widths_in=[1.34, 0.88, 0.88, 0.88, 0.88, 0.88],
-    center_from=1,
+    col_widths_in=[1.1, 0.88, 0.88, 0.92, 0.94, 1.02],
 )
 
 doc.add_paragraph().paragraph_format.space_after = Pt(6)
 
 add_body_paragraph(
     doc,
-    "Tabel 4 merupakan rangkuman posisi kebaruan usulan dibandingkan "
-    "penelitian dan implementasi terdahulu pada lima aspek pembeda. Baris "
-    "Usulan (2026) merupakan satu-satunya pendekatan yang memenuhi kelima "
-    "aspek tersebut secara bersamaan, sedangkan pendekatan lain hanya "
-    "memenuhinya sebagian atau belum sama sekali.",
+    "Sebagaimana terlihat pada kolom Proyek Saya di Tabel 3, setiap "
+    "kesenjangan pada penelitian dan implementasi terdahulu ditutup oleh "
+    "kontribusi yang diusulkan. Kombinasi kelima aspek pembeda tersebut "
+    "belum ditemukan secara bersamaan pada karya sebelumnya sehingga menjadi "
+    "kebaruan utama proyek ini.",
 )
 
 # ------------------------------------------------------------ signature --
