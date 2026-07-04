@@ -711,9 +711,9 @@ add_body_paragraph(
     "penelitian maupun implementasi Wazuh berbasis SOAR yang ada saat ini "
     "(Thakker, More, & Kumar, 2025; Nadig & Vignesh, 2026; Alves, Loureiro, "
     "& Pedrosa, 2026). Untuk memperjelas hal tersebut, Tabel 3 merangkum "
-    "penelitian dan implementasi terdahulu, kesenjangan (gap) masing-masing, "
-    "serta kontribusi yang ditawarkan proyek ini untuk menutup setiap "
-    "kesenjangan tersebut.",
+    "fokus, metode, dan fitur respons penelitian serta implementasi "
+    "terdahulu, sedangkan Tabel 4 memetakan kesenjangan (gap) masing-masing "
+    "beserta kontribusi yang ditawarkan proyek ini untuk menutupnya.",
 )
 
 cap = doc.add_paragraph()
@@ -721,9 +721,7 @@ base_paragraph_format(cap, justify=False, first_line_indent=False, space_after=6
 cap.paragraph_format.keep_with_next = True
 r1 = cap.add_run("Tabel 3 ")
 set_font(r1, bold=True, size=SIZE_SMALL)
-r2 = cap.add_run(
-    "Perbandingan Penelitian Terdahulu, Kesenjangan, dan Kontribusi Proyek."
-)
+r2 = cap.add_run("Ringkasan Penelitian dan Implementasi Terdahulu.")
 set_font(r2, size=SIZE_SMALL)
 
 add_simple_table(
@@ -733,8 +731,6 @@ add_simple_table(
         "Fokus Utama",
         "Metode",
         "Fitur Respons dan Alert",
-        "Kesenjangan",
-        "Proyek Saya",
     ],
     [
         [
@@ -745,10 +741,6 @@ add_simple_table(
             "Integrasi Wazuh dan Shuffle; pemblokiran otomatis berbasis "
             "aturan",
             "Active Response otomatis penuh; tanpa notifikasi interaktif",
-            "Eksekusi tanpa verifikasi analis (risiko false-positive); hanya "
-            "satu kelas ancaman",
-            "Respons berjenjang berbasis verifikasi multi-sumber dan mitigasi "
-            "human-in-the-loop dua arah sebelum eksekusi",
         ],
         [
             "Farrel (2024) — SIEM Wazuh dengan Active Response dan notifikasi "
@@ -756,10 +748,6 @@ add_simple_table(
             "Mitigasi serangan brute force pada sistem informasi",
             "Wazuh Active Response dengan notifikasi Telegram",
             "Active Response otomatis; notifikasi Telegram satu arah",
-            "Notifikasi satu arah, analis harus pindah ke dasbor; hanya brute "
-            "force",
-            "Notifikasi Telegram interaktif dua arah; analis menyetujui atau "
-            "menolak mitigasi langsung dari chat",
         ],
         [
             "Sarker (2025) — otomasi SOC: Wazuh, n8n, VirusTotal, dan Gmail "
@@ -767,10 +755,6 @@ add_simple_table(
             "Deteksi file berbahaya berbasis orkestrasi n8n",
             "Orkestrasi n8n dengan VirusTotal dan notifikasi Gmail",
             "Notifikasi email satu arah; tanpa mitigasi aktif",
-            "Tidak ada kanal keputusan interaktif; fokus malware saja; tanpa "
-            "AI lokal",
-            "Mitigasi aktif (karantina dan sinkhole) melalui keputusan analis "
-            "serta analisis AI lokal",
         ],
         [
             "n8n (n.d.) — template workflow: Wazuh ke VirusTotal dengan alert "
@@ -778,10 +762,6 @@ add_simple_table(
             "Notifikasi deteksi file berbahaya ke Slack",
             "Template workflow n8n dengan VirusTotal",
             "Notifikasi Slack satu arah; tanpa mitigasi",
-            "Hanya notifikasi; malware saja; tanpa mitigasi dua arah maupun AI "
-            "lokal",
-            "Playbook lengkap dengan mitigasi aktif dua arah, dua kelas "
-            "ancaman, dan AI lokal",
         ],
         [
             "Nadig & Vignesh (2026) — peningkatan Wazuh SIEM melalui integrasi "
@@ -789,10 +769,6 @@ add_simple_table(
             "Respons ancaman otomatis melalui integrasi SOAR",
             "Integrasi Wazuh dengan SOAR; respons otomatis",
             "Respons otomatis; tanpa keterlibatan analis",
-            "Tanpa human-in-the-loop; belum berjenjang multi-sumber; tanpa AI "
-            "lokal",
-            "Respons berjenjang berbasis keyakinan dengan kendali analis dan "
-            "analisis AI lokal",
         ],
         [
             "Alves dkk. (2026) — Wazuh untuk deteksi insiden: perancangan dan "
@@ -800,20 +776,12 @@ add_simple_table(
             "Perancangan dan implementasi deteksi insiden berbasis Wazuh",
             "Deteksi dan korelasi insiden pada Wazuh",
             "Berorientasi deteksi; minim otomatisasi respons",
-            "Minim orkestrasi mitigasi, kanal human-in-the-loop, dan analisis "
-            "AI",
-            "Menambahkan lapisan orkestrasi SOAR (n8n) untuk mitigasi aktif "
-            "dan analisis AI lokal",
         ],
         [
             "Raed (2025) — SOC bertenaga AI: Wazuh, n8n, Claude AI, dan MCP",
             "SOC end-to-end dari deteksi hingga respons dengan bantuan AI",
             "Orkestrasi n8n dengan LLM Claude berbasis cloud (via MCP)",
             "Respons dibantu AI; tanpa kanal keputusan dua arah",
-            "AI berbasis cloud (risiko kedaulatan data dan biaya API); tanpa "
-            "keputusan interaktif",
-            "Analisis AI on-premise (Ollama) untuk kedaulatan data dan "
-            "mitigasi human-in-the-loop dua arah",
         ],
         [
             "zhadyz (2025) — AI_SOC: SOC open-source berbasis LLM multi-agent "
@@ -821,24 +789,87 @@ add_simple_table(
             "SOC open-source dengan LLM multi-agent dan AI lokal",
             "LLM multi-agent, Ollama, Wazuh, dan TheHive",
             "Triase berbasis TheHive; tanpa mitigasi dua arah via chat",
+        ],
+    ],
+    col_widths_in=[1.55, 1.35, 1.3, 1.54],
+)
+
+doc.add_paragraph().paragraph_format.space_after = Pt(12)
+
+cap = doc.add_paragraph()
+base_paragraph_format(cap, justify=False, first_line_indent=False, space_after=6)
+cap.paragraph_format.keep_with_next = True
+r1 = cap.add_run("Tabel 4 ")
+set_font(r1, bold=True, size=SIZE_SMALL)
+r2 = cap.add_run("Kesenjangan Penelitian Terdahulu dan Kontribusi Proyek.")
+set_font(r2, size=SIZE_SMALL)
+
+add_simple_table(
+    doc,
+    [
+        "Sumber",
+        "Kesenjangan",
+        "Proyek Saya",
+    ],
+    [
+        [
+            "Thakker dkk. (2025)",
+            "Eksekusi tanpa verifikasi analis (risiko false-positive); hanya "
+            "satu kelas ancaman",
+            "Respons berjenjang berbasis verifikasi multi-sumber dan mitigasi "
+            "human-in-the-loop dua arah sebelum eksekusi",
+        ],
+        [
+            "Farrel (2024)",
+            "Notifikasi satu arah, analis harus pindah ke dasbor; hanya brute "
+            "force",
+            "Notifikasi Telegram interaktif dua arah; analis menyetujui atau "
+            "menolak mitigasi langsung dari chat",
+        ],
+        [
+            "Sarker (2025)",
+            "Tidak ada kanal keputusan interaktif; fokus malware saja; tanpa "
+            "AI lokal",
+            "Mitigasi aktif (karantina dan sinkhole) melalui keputusan analis "
+            "serta analisis AI lokal",
+        ],
+        [
+            "n8n (n.d.)",
+            "Hanya notifikasi; malware saja; tanpa mitigasi dua arah maupun AI "
+            "lokal",
+            "Playbook lengkap dengan mitigasi aktif dua arah, dua kelas "
+            "ancaman, dan AI lokal",
+        ],
+        [
+            "Nadig & Vignesh (2026)",
+            "Tanpa human-in-the-loop; belum berjenjang multi-sumber; tanpa AI "
+            "lokal",
+            "Respons berjenjang berbasis keyakinan dengan kendali analis dan "
+            "analisis AI lokal",
+        ],
+        [
+            "Alves dkk. (2026)",
+            "Minim orkestrasi mitigasi, kanal human-in-the-loop, dan analisis "
+            "AI",
+            "Menambahkan lapisan orkestrasi SOAR (n8n) untuk mitigasi aktif "
+            "dan analisis AI lokal",
+        ],
+        [
+            "Raed (2025)",
+            "AI berbasis cloud (risiko kedaulatan data dan biaya API); tanpa "
+            "keputusan interaktif",
+            "Analisis AI on-premise (Ollama) untuk kedaulatan data dan "
+            "mitigasi human-in-the-loop dua arah",
+        ],
+        [
+            "zhadyz (2025)",
             "Tanpa mitigasi aktif human-in-the-loop dua arah; belum berjenjang "
             "multi-sumber; multi-agent bukan lintas-distribusi endpoint",
             "Mitigasi aktif dua arah via Telegram, respons berjenjang "
             "multi-sumber, dan multi-agent lintas-distribusi endpoint",
         ],
     ],
-    col_widths_in=[1.1, 0.88, 0.88, 0.92, 0.94, 1.02],
-)
-
-doc.add_paragraph().paragraph_format.space_after = Pt(6)
-
-add_body_paragraph(
-    doc,
-    "Sebagaimana terlihat pada kolom Proyek Saya di Tabel 3, setiap "
-    "kesenjangan pada penelitian dan implementasi terdahulu ditutup oleh "
-    "kontribusi yang diusulkan. Kombinasi kelima aspek pembeda tersebut "
-    "belum ditemukan secara bersamaan pada karya sebelumnya sehingga menjadi "
-    "kebaruan utama proyek ini.",
+    col_widths_in=[1.3, 2.22, 2.22],
 )
 
 # ------------------------------------------------------------ signature --
