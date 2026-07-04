@@ -584,7 +584,7 @@ set_font(r2, size=SIZE_SMALL)
 
 add_simple_table(
     doc,
-    ["Hasil Verifikasi (VirusTotal)", "Tingkat Keyakinan", "Tindakan"],
+    ["Hasil Verifikasi VirusTotal", "Tingkat Keyakinan", "Tindakan"],
     [
         [
             "malicious \u2265 20 mesin AV",
@@ -616,7 +616,7 @@ set_font(r2, size=SIZE_SMALL)
 
 add_simple_table(
     doc,
-    ["Hasil Verifikasi (GSB / URLScan)", "Tingkat Keyakinan", "Tindakan"],
+    ["Hasil Verifikasi GSB dan URLScan", "Tingkat Keyakinan", "Tindakan"],
     [
         ["Terdeteksi berbahaya", "BERBAHAYA", "Sinkhole domain otomatis + notifikasi"],
         [
@@ -728,10 +728,10 @@ add_simple_table(
     doc,
     [
         "No",
-        "Peneliti (Tahun)",
-        "Karya / Judul",
-        "Metode / Pendekatan",
-        "Keterbatasan (Gap)",
+        "Peneliti dan Tahun",
+        "Judul",
+        "Pendekatan",
+        "Keterbatasan",
     ],
     [
         [
@@ -822,11 +822,11 @@ set_font(r2, size=SIZE_SMALL)
 add_simple_table(
     doc,
     [
-        "Penelitian / Implementasi",
-        "Respons Berjenjang (Multi-sumber)",
-        "HITL Dua Arah (Satu Kanal)",
-        "Dua Kelas Ancaman (Malware & Phishing)",
-        "AI Lokal (On-premise)",
+        "Karya",
+        "Respons Berjenjang Multi-sumber",
+        "HITL Dua Arah Satu Kanal",
+        "Malware dan Phishing",
+        "AI Lokal On-premise",
         "Multi-agent Lintas-Distribusi",
     ],
     [
