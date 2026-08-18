@@ -1,0 +1,25 @@
+# Reverse proxy + TLS + auth di depan editor n8n (kategori D — hardening).
+# n8n TIDAK lagi publish port ke host; hanya Caddy yang terekspos (443).
+# TLS: kalau {$N8N_HOSTNAME} domain publik, Caddy auto-ACME; kalau *.local,
+# Caddy pakai internal CA (self-signed, cukup untuk LAN/lab).
+
+{$N8N_HOSTNAME} {
+	encode gzip
+
+	# Editor n8n hanya boleh diakses setelah basic-auth.
+	basic_auth {
+		{$CADDY_BASIC_AUTH_USER} {$CADDY_BASIC_AUTH_HASH}
+	}
+
+	# Webhook Wazuh tetap jalur INTERNAL (integratord -> n8n:5678 di network
+	# backend), tidak lewat sini. Caddy hanya melindungi UI manusia.
+	reverse_proxy n8n:5678
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

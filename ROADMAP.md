@@ -7,7 +7,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 
 ---
 
-## Status ringkas (per 2026-07-02)
+## Status ringkas (per 2026-07-06)
 
 ### ✅ SUDAH dikerjakan
 - **A#1** `block-domain` persist (permanen di template + config ter-version-control).
@@ -16,6 +16,8 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 - **C** metrik kuantitatif terukur (MTTR malware 1,68 dtk · phishing 2,13 dtk · FP suppression 100%).
 - **B#1** hybrid: file eksekutabel tak-dikenal VT → tombol review (tutup celah zero-day utama).
 - **F (explainable)** notifikasi malware **&** phishing memuat `🧠 Alasan keputusan`; **F (self-aware inline)** tandai `⚠️ Deteksi TERDEGRADASI` saat sumber rate-limit/error; **F (audit-trail)** keputusan analis dicatat `oleh <analis> pada <waktu WITA>` + riwayat eksekusi n8n.
+- **F (self-aware health monitor, 2026-07-06)** `scripts/health-monitor.py` — poll komponen inti (agent putus via Wazuh API, n8n, Ollama), alert Telegram HANYA saat status berubah (anti-spam), state persist. Service `health-monitor` di compose.
+- **D (hardening + IaC, 2026-07-06)** `deploy/hardened/` (Caddy reverse-proxy + TLS + basic-auth + segmentasi edge/backend, n8n tak publish port, `N8N_ENCRYPTION_KEY`) · **secret mgmt** `.env.example` · **IaC** `deploy/ansible/deploy-integration.yml` (idempoten).
 
 ### ⬜ BELUM dikerjakan (sisa)
 | Prioritas | Item | Kategori | Berat |
@@ -24,12 +26,12 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | Menengah | MTTR HITL & URLScan, VT cold-vs-cache, **uji beban**, false-negative rate, ulangi N≥30 | C | sedang |
 | Menengah | Justifikasi empiris **n8n vs Shuffle** + pemetaan **MITRE ATT&CK** | C | sedang |
 | Menengah | **Deteksi perilaku** (sandbox/exec-bit), **multi-sumber** (MISP/MalwareBazaar), re-scan, TTL cache | B | berat |
-| **#3** | **Hardening keamanan** (reverse-proxy+TLS, auth, segmentasi, secret mgmt) + **IaC** (Ansible) | D | sedang |
-| — | **F sisa**: pemantau kesehatan/coverage penuh (deteksi agent putus/webhook gagal) — explainable, degradasi inline & audit-trail SUDAH | F | sedang |
 | Lanjutan | **LLM-fallback** advisory + **RAG** anti-halusinasi; **trusted autonomy** (timeout/SLA) | F | berat |
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
 
-**Rekomendasi lanjut berikutnya:** **F** (self-aware + explainable) — orisinal, menjawab keluhan industri teratas, tanpa mengubah arsitektur berisiko. Alternatif: **D** (keamanan).
+**Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
+
+**Rekomendasi lanjut berikutnya:** **C** (bukti ilmiah — uji beban + N≥30 + MITRE mapping) untuk memperkuat klaim, atau **B** (multi-sumber intel) untuk tutup sisa false-negative.
 
 ---
 
@@ -63,12 +65,13 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | "Kenapa n8n bukan Shuffle?" | Bandingkan **empiris** n8n vs Shuffle (fleksibilitas, latensi, biaya, maintenance) |
 | Cakupan deteksi | Pemetaan **MITRE ATT&CK** per playbook; uji **false-negative** |
 
-## D. Gap keamanan platform SOAR itu sendiri — prioritas #3 ⬜ BELUM
+## D. Gap keamanan platform SOAR itu sendiri — prioritas #3 🟢 SEBAGIAN (2026-07-06)
 
-| Gap | Solusi |
-|-----|--------|
-| n8n rentan (CVE-2026-21858 "Ni8mare", CVSS 10.0; penyalahgunaan webhook) | Webhook **tidak diekspos publik** (poller keluar-saja di balik NAT — sudah), **reverse-proxy + TLS**, autentikasi, **segmentasi jaringan**, manajemen secret, versi ter-patch |
-| Reproducibility | **IaC** (Ansible / docker-compose lengkap) — bukan Coolify; validasi/uji workflow otomatis |
+| Status | Gap | Solusi |
+|--------|-----|--------|
+| ✅ **SELESAI** | n8n rentan (CVE-2026-21858 "Ni8mare", CVSS 10.0; penyalahgunaan webhook) | Webhook **tidak diekspos publik** (poller keluar-saja di balik NAT — sudah) + `deploy/hardened/`: **Caddy reverse-proxy + TLS + basic-auth** di depan editor, n8n **tak publish port** (hanya internal/Caddy), **segmentasi jaringan** edge/backend, **secret mgmt** (`.env.example` + `N8N_ENCRYPTION_KEY`, tanpa kredensial hardcode) |
+| ✅ **SELESAI** | Reproducibility | **IaC** `deploy/ansible/deploy-integration.yml` — playbook idempoten ganti langkah manual `docker cp`/`docker exec` (integration script, AR scripts, blok `<integration>` ossec.conf, restart+verif) |
+| ⬜ Operasional | Firewall + password default | Allow 1514/1515 dari subnet endpoint saja (DEPLOYMENT Step 7.1); **ganti password default Wazuh** sebelum produksi |
 
 ## E. Gap arsitektur (jangka menengah–panjang) ⬜ BELUM
 
@@ -87,7 +90,7 @@ Masalah industri 2025–2026: playbook rapuh/statis, *playbook rot* (silent-fail
 
 | Status | Gap industri | Kontribusi (dari fondasi proyek ini) |
 |--------|--------------|--------------------------------------|
-| 🟢 **Sebagian** (2026-07-02) | Automasi **gagal diam-diam** & tak sadar cakupan turun | **Self-aware (inline):** notifikasi menandai **`⚠️ Deteksi TERDEGRADASI`** saat VT rate-limit/error (`degraded`) → tak diam-diam. **Lanjutan:** pemantau kesehatan/coverage penuh (agent putus/webhook gagal) |
+| ✅ **SELESAI** (2026-07-06) | Automasi **gagal diam-diam** & tak sadar cakupan turun | **Self-aware (inline):** notifikasi menandai **`⚠️ Deteksi TERDEGRADASI`** saat VT rate-limit/error (`degraded`). **Self-aware (health monitor):** `scripts/health-monitor.py` poll agent (putus = blind spot), n8n, Ollama, Wazuh-API → Telegram alert HANYA saat status berubah (anti-spam), state persist lintas-restart |
 | ✅ **SELESAI** (explainable+audit, 2026-07-02) | **Black-box** merusak kepercayaan analis | Setiap notifikasi (malware **&** phishing) memuat **`🧠 Alasan`** (skor VT/GSB + keyakinan + jalur). **Audit-trail:** callback handler mencatat keputusan analis **`oleh <analis> pada <waktu WITA>`** di pesan Telegram + riwayat eksekusi n8n (action/agent/target/analis). Catatan: log file dari Code node tak tersedia (fs sandbox n8n) → audit via Telegram+execution-history |
 | ⬜ Lanjutan | Alert yang **tak cocok playbook** → diam/dilempar | **LLM-fallback** (Ollama) advisory + **RAG** anti-halusinasi + AI tak pernah eksekusi AR sendiri |
 | ✅ **Terukur** (di C) | **Alert fatigue** | Reduksi FP VT-gated **100%** (lihat `docs/EVALUASI-METRIK.pdf`) |

@@ -45,5 +45,27 @@ services:
     depends_on:
       - n8n
 
+  # Self-aware health monitor (kategori F): deteksi agent putus / n8n / Ollama /
+  # Wazuh-API down, alert Telegram HANYA saat status berubah (anti-spam). Cek
+  # keluar-saja; tak ada port yang diekspos.
+  health-monitor:
+    image: python:3.12-alpine
+    container_name: health-monitor
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - .env
+    volumes:
+      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
+      - health_state:/state
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python3", "/scripts/health-monitor.py"]
+    depends_on:
+      - n8n
+
 volumes:
   n8n_data:
+  health_state:

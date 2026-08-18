@@ -1,0 +1,93 @@
+# Varian PRODUKSI-HARDENED (kategori D). Beda dari compose demo root:
+#   - Caddy reverse-proxy + TLS + basic-auth di depan editor n8n
+#   - n8n TIDAK publish 5678 ke host (hanya di network internal)
+#   - segmentasi jaringan: `edge` (Caddy<->publik) vs `backend` (n8n<->poller)
+#   - N8N_ENCRYPTION_KEY dari secret, secure cookie, protocol https
+#   - NODE_TLS_REJECT_UNAUTHORIZED dihapus (lihat catatan Wazuh CA di bawah)
+#
+# Jalankan dari root repo:  docker compose -f deploy/hardened/docker-compose.yml up -d
+# Isi .env dulu (lihat .env.example): N8N_ENCRYPTION_KEY, N8N_HOSTNAME,
+# CADDY_BASIC_AUTH_USER, CADDY_BASIC_AUTH_HASH (caddy hash-password).
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    env_file: [../../.env]
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge, backend]
+    depends_on: [n8n]
+
+  n8n:
+    image: n8nio/n8n
+    container_name: n8n
+    restart: unless-stopped
+    dns: ["8.8.8.8", "1.1.1.1"]
+    # Tidak ada `ports:` — n8n hanya reachable via Caddy (edge) & internal (backend).
+    env_file: [../../.env]
+    environment:
+      - N8N_HOST=${N8N_HOSTNAME}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - N8N_SECURE_COOKIE=true
+      - WEBHOOK_URL=https://${N8N_HOSTNAME}/
+      - GENERIC_TIMEZONE=Asia/Makassar
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_RUNNERS_TASK_TIMEOUT=300
+      - N8N_RUNNERS_MAX_CONCURRENCY=10
+      # ponytail: Wazuh API 55000 self-signed. Fix bersih = mount CA Wazuh ke
+      # /etc/ssl/certs & set NODE_EXTRA_CA_CERTS, bukan matikan verifikasi global.
+      # - NODE_EXTRA_CA_CERTS=/run/secrets/wazuh-ca.pem
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ../../scripts:/scripts
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [backend]
+
+  tg-callback-poller:
+    image: python:3.12-alpine
+    container_name: tg-callback-poller
+    restart: unless-stopped
+    dns: ["8.8.8.8", "1.1.1.1"]
+    env_file: [../../.env]
+    environment:
+      - N8N_WEBHOOK=http://n8n:5678/webhook/tg-callback
+    volumes:
+      - ../../scripts:/scripts:ro
+    command: ["python3", "/scripts/tg-callback-poller.py"]
+    networks: [backend]
+    depends_on: [n8n]
+
+  health-monitor:
+    image: python:3.12-alpine
+    container_name: health-monitor
+    restart: unless-stopped
+    dns: ["8.8.8.8", "1.1.1.1"]
+    env_file: [../../.env]
+    volumes:
+      - ../../scripts:/scripts:ro
+      - health_state:/state
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python3", "/scripts/health-monitor.py"]
+    networks: [backend]
+    depends_on: [n8n]
+
+networks:
+  edge:      # hanya Caddy yang menyentuh dunia luar
+  backend:   # n8n + worker; tidak ada port publish langsung
+    internal: false  # butuh egress DNS/Telegram/VT; set true kalau egress via proxy
+
+volumes:
+  n8n_data:
+  caddy_data:
+  caddy_config:
+  health_state:

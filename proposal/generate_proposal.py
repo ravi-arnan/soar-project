@@ -326,7 +326,13 @@ rows_data = [
     ("Judul", [(JUDUL, False)]),
     (
         "Dosen Pembimbing",
-        [("1. Ir. I Nyoman Piarsa, ST., MT., IPM.", False)],
+        [
+            (
+                "1. Ir. I Nyoman Piarsa, ST., MT., IPM.\n"
+                "2. A.A. Kt Agung Cahyawan Wiranatha, S.T., M.T.",
+                False,
+            )
+        ],
     ),
 ]
 
@@ -888,6 +894,22 @@ for _ in range(4):
 p = doc.add_paragraph()
 base_paragraph_format(p, justify=False, first_line_indent=False)
 r = p.add_run("(Ir. I Nyoman Piarsa, ST., MT., IPM.)")
+set_font(r)
+
+doc.add_paragraph().paragraph_format.space_after = Pt(0)
+doc.add_paragraph().paragraph_format.space_after = Pt(0)
+
+p = doc.add_paragraph()
+base_paragraph_format(p, justify=False, first_line_indent=False)
+r = p.add_run("Calon Pembimbing 2,")
+set_font(r)
+
+for _ in range(4):
+    doc.add_paragraph().paragraph_format.space_after = Pt(0)
+
+p = doc.add_paragraph()
+base_paragraph_format(p, justify=False, first_line_indent=False)
+r = p.add_run("(A.A. Kt Agung Cahyawan Wiranatha, S.T., M.T.)")
 set_font(r)
 
 doc.add_page_break()
