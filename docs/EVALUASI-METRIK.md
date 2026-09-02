@@ -81,3 +81,54 @@ Ketiga angka mendukung klaim keunggulan pada tabel perbandingan (respons berjenj
 3. **Uji beban**: N alert serentak → throughput, antrean, latensi Ollama.
 4. **False-negative rate** atas korpus malware nyata + zero-day.
 5. Ulangi seluruh eksperimen dengan **N ≥ 30**.
+
+### 8.1 Script Benchmark (`scripts/benchmark-soar.py`)
+
+Script otomatis untuk menjalankan seluruh pengukuran lanjutan di atas:
+
+```bash
+# MTTR malware N=30 (VT cache hangat)
+python3 scripts/benchmark-soar.py --mode mttr-malware --n 30 --delay 2
+
+# MTTR phishing N=10 (GSB + URLScan)
+python3 scripts/benchmark-soar.py --mode mttr-phishing --n 10 --delay 5
+
+# Load test: 20 alert serentak, 5 thread
+python3 scripts/benchmark-soar.py --mode load --n 20 --concurrency 5
+
+# VT cold vs cache
+python3 scripts/benchmark-soar.py --mode vt-cold --n 10
+
+# False-negative rate
+python3 scripts/benchmark-soar.py --mode fn-rate --n 15
+
+# Semua mode sekaligus
+python3 scripts/benchmark-soar.py --mode all --n 30
+```
+
+**Output:** JSON ke stdout + tabel ringkasan ke stderr.
+**Env vars:** `N8N_WEBHOOK_MALWARE`, `N8N_WEBHOOK_PHISHING`, `WAZUH_API`, `AGENT_ID`, `AGENT_NAME`.
+
+### 8.2 Pemetaan MITRE ATT&CK (`docs/MITRE-ATTACK-MAPPING.md`)
+
+Pemetaan teknik ATT&CK ke setiap playbook:
+- **T1566.002** (Phishing Link) → Deteksi Phishing + Proaktif Phishing
+- **T1189** (Drive-by Compromise) → GSB + URLScan verification
+- **T1204.002** (Malicious File) → FIM malware detection
+- **T1027** (Obfuscation) → VT hash lookup
+- **T1036** (Masquerading) → G2 exec-bit detection
+- **T1484** (Domain Policy) → AR quarantine/block
+- **T1005** (Local Data) → FIM file monitoring
+- **T1059** (Scripting) → risky extension detection
+- **T1070.004** (File Deletion) → quarantine remediation
+- **T1499** (Availability) → health monitor
+
+Total: **10 teknik unik** tercakup (lihat `docs/MITRE-ATTACK-MAPPING.md`).
+
+### 8.3 Justifikasi n8n vs Shuffle (`docs/N8N-VS-SHUFFLE.md`)
+
+Perbandingan empiris 6 aspek: fleksibilitas code execution, state persistence, integrasi security, observability, deployment, HITL.
+- **n8n: 3.8/5** vs **Shuffle: 2.5/5** (rata-rata tertimbang)
+- Keunggulan utama n8n: state persistence (`staticData`) + code execution fleksibel + resource ringan
+- Keunggulan utama Shuffle: built-in security Apps (Wazuh, VT, URLScan)
+- Kesimpulan: n8n lebih sesuai untuk penelitian (fleksibilitas) + resource terbatas

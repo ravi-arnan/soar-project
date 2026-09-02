@@ -19,22 +19,21 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 - **F (self-aware health monitor, 2026-07-06)** `scripts/health-monitor.py` — poll komponen inti (agent putus via Wazuh API, n8n, Ollama), alert Telegram HANYA saat status berubah (anti-spam), state persist. Service `health-monitor` di compose.
 - **D (hardening + IaC, 2026-07-06)** `deploy/hardened/` (Caddy reverse-proxy + TLS + basic-auth + segmentasi edge/backend, n8n tak publish port, `N8N_ENCRYPTION_KEY`) · **secret mgmt** `.env.example` · **IaC** `deploy/ansible/deploy-integration.yml` (idempoten).
 - **H (pemeliharaan stack, 2026-09-02)** n8n di-update `2.35.7 → 2.36.9` — berada di atas semua versi patch CVE 2026 (Ni8mare/CVE-2026-21858 fixed di 1.121.0, CVE-2026-21877 di 1.121.3, CVE-2026-27495 di 1.123.22/2.x). Image python:3.12-alpine, caddy:2-alpine, Wazuh 4.9.2 di-pull ulang; seluruh container di-recreate & sehat (indexer cluster GREEN, 3 workflow n8n aktif).
+- **C (bukti ilmiah, 2026-09-02)** Script benchmark (`scripts/benchmark-soar.py`) dibuat — 5 mode pengukuran (mttr-malware, mttr-phishing, load, vt-cold, fn-rate). Pemetaan MITRE ATT&CK (`docs/MITRE-ATTACK-MAPPING.md`: 10 teknik). Justifikasi n8n vs Shuffle (`docs/N8N-VS-SHUFFLE.md`: n8n 3.8/5 vs Shuffle 2.5/5). Evaluasi-metrik diperbarui.
 
 ### ⬜ BELUM dikerjakan (sisa)
 | Prioritas | Item | Kategori | Berat |
 |-----------|------|----------|-------|
 | — | **A#2** event pertama terlewat pasca-restart agent | A | dimitigasi (fix sejati = buffer/queue di E) |
-| Menengah | MTTR HITL & URLScan, VT cold-vs-cache, **uji beban**, false-negative rate, ulangi N≥30 | C | sedang |
-| Menengah | Justifikasi empiris **n8n vs Shuffle** + pemetaan **MITRE ATT&CK** | C | sedang |
+| Menengah | **Jalankan** benchmark N≥30 + load test + VT cold-vs-cache (script sudah ada: `scripts/benchmark-soar.py`) | C | sedang |
 | Menengah | **Deteksi perilaku** (sandbox/exec-bit), **multi-sumber** (MISP/MalwareBazaar), re-scan, TTL cache | B | berat |
 | Lanjutan | **LLM-fallback** advisory + **RAG** anti-halusinasi; **trusted autonomy** (timeout/SLA) | F | berat |
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
-| Menengah | **Deteksi magic-byte** (ELF/MZ tanpa ekstensi) → HITL | G2 | sedang |
 | Ditunda pasca-TA | **Upgrade Wazuh 4.9.2 → 4.14.7** terjadwal (agent ikut) | H3 | berat |
 
 **Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
 
-**Rekomendasi lanjut berikutnya:** **C** (bukti ilmiah — uji beban + N≥30 + MITRE mapping) untuk memperkuat klaim, atau **B** (multi-sumber intel) untuk tutup sisa false-negative.
+**Rekomendasi lanjut berikutnya:** **B** (multi-sumber intel) untuk tutup sisa false-negative, atau **jalankan benchmark N≥30** untuk memperkuat klaim ilmiah.
 
 ---
 
@@ -65,8 +64,10 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | Status | Gap | Solusi / hasil |
 |--------|-----|----------------|
 | 🟢 **Terukur** (2026-07-02) | Klaim "unggul" belum terukur | **Data nyata (`docs/EVALUASI-METRIK.pdf`):** MTTR malware auto-isolate **1,68 dtk** (N=15, cache hangat); MTTR phishing auto-block **2,13 dtk** (N=5, jalur GSB); **reduksi false-positive 100%** (N=8: 8 alert FIM baseline → 0 notifikasi SOAR). **Lanjutan:** MTTR HITL & jalur URLScan, VT cold vs cache, uji beban, false-negative zero-day, ulangi N≥30 |
-| "Kenapa n8n bukan Shuffle?" | Bandingkan **empiris** n8n vs Shuffle (fleksibilitas, latensi, biaya, maintenance) |
-| Cakupan deteksi | Pemetaan **MITRE ATT&CK** per playbook; uji **false-negative** |
+| ✅ **Selesai** (2026-09-02) | Justifikasi empiris **n8n vs Shuffle** | **`docs/N8N-VS-SHUFFLE.md`:** perbandingan 6 aspek (code execution, state, integrasi, observability, deployment, HITL). n8n 3.8/5 vs Shuffle 2.5/5. Bukti dalam kode (staticData cache, Code node HTTP, SQLite)
+| ✅ **Selesai** (2026-09-02) | Pemetaan **MITRE ATT&CK** | **`docs/MITRE-ATTACK-MAPPING.md`:** 10 teknik unik (T1566.002, T1189, T1204.002, T1027, T1036, T1484, T1005, T1059, T1070.004, T1499). Visual matrix coverage + gap analysis
+| ✅ **Selesai** (2026-09-02) | Script benchmark (uji beban + N≥30) | **`scripts/benchmark-soar.py`:** 5 mode (mttr-malware, mttr-phishing, load, vt-cold, fn-rate). Output JSON + tabel. Tinggal jalankan dengan N≥30
+| ⬜ Belum dijalankan | **Jalankan benchmark N≥30** | Perlu environment live (VT API key, Wazuh running). Output ke `docs/EVALUASI-METRIK.pdf`
 
 ## D. Gap keamanan platform SOAR itu sendiri — prioritas #3 🟢 SEBAGIAN (2026-07-06)
 
@@ -124,15 +125,16 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 
 ## Prioritas eksekusi (sepadan-usaha)
 
-1. **Perbaiki 3 bug keandalan (A)** — kredibel, berbasis bukti, cepat.
-2. **Tambah metrik kuantitatif (C)** — membuktikan klaim "unggul".
-3. **Deteksi hybrid/multi-sinyal (B)** — tutup celah false-negative zero-day.
-4. **Housekeeping versi (H2 ✅)** — pin versi n8n sudah dibereskan; pertahankan kebiasaan `pull + up -d` terjadwal.
-5. **Perluasan cakupan (G1, lalu G2)** — phishing proaktif + magic-byte → masuk window milestone M2–M3.
-6. **Hardening keamanan + IaC (D)** — kematangan & reproducibility.
-7. **Kontribusi self-aware + explainable (F)** — kebaruan menjawab keluhan teratas industri.
-8. **Arsitektur queue-mode + HA (E)** — jangka menengah.
-9. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
+1. ✅ **Perbaiki 3 bug keandalan (A)** — selesai (2026-07-02).
+2. ✅ **Tambah metrik kuantitatif (C)** — dasar selesai (2026-07-02), lanjutan selesai (2026-09-02: script benchmark + MITRE mapping + n8n vs Shuffle).
+3. **Jalankan benchmark N≥30** — script sudah ada, tinggal eksekusi di environment live.
+4. **Deteksi hybrid/multi-sinyal (B)** — tutup celah false-negative zero-day.
+5. ✅ **Housekeeping versi (H1–H2)** — selesai (2026-09-02).
+6. ✅ **Perluasan cakupan (G1 + G2)** — selesai (2026-09-02).
+7. ✅ **Hardening keamanan + IaC (D)** — sebagian selesai (2026-07-06).
+8. ✅ **Kontribusi self-aware + explainable (F)** — sebagian selesai (2026-07-06).
+9. **Arsitektur queue-mode + HA (E)** — jangka menengah.
+10. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
 
 ## Prinsip arah tesis
 > SOAR open-source yang **confidence-based, transparan, dan sadar-degradasi** untuk menekan alert fatigue tanpa silent-failure — dengan human-in-the-loop yang dapat dipertanggungjawabkan.
