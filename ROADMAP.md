@@ -21,6 +21,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 - **H (pemeliharaan stack, 2026-09-02)** n8n di-update `2.35.7 → 2.36.9` — berada di atas semua versi patch CVE 2026 (Ni8mare/CVE-2026-21858 fixed di 1.121.0, CVE-2026-21877 di 1.121.3, CVE-2026-27495 di 1.123.22/2.x). Image python:3.12-alpine, caddy:2-alpine, Wazuh 4.9.2 di-pull ulang; seluruh container di-recreate & sehat (indexer cluster GREEN, 3 workflow n8n aktif).
 - **C (bukti ilmiah, 2026-09-02)** Script benchmark (`scripts/benchmark-soar.py`) dibuat — 5 mode pengukuran (mttr-malware, mttr-phishing, load, vt-cold, fn-rate). Pemetaan MITRE ATT&CK (`docs/MITRE-ATTACK-MAPPING.md`: 10 teknik). Justifikasi n8n vs Shuffle (`docs/N8N-VS-SHUFFLE.md`: n8n 3.8/5 vs Shuffle 2.5/5). Evaluasi-metrik diperbarui.
 - **B (multi-sumber + re-scan, 2026-09-02)** Script MalwareBazaar (`scripts/apply-b-malwarebazaar.py`): tambah node HTTP ke `mb-api.abuse.ch`, ensemble VT+MB (VT atau MB mendeteksi → THREAT), severity MB-aware, output fields MB. Script TTL diferensial (`scripts/apply-b-ttl-rescan.py`): malicious 7 hari, clean 24 jam, unknown 6 jam. Seluruh script perlu dijalankan di environment live + buat credential MalwareBazaar di n8n.
+- **F (LLM-fallback advisory, 2026-09-02)** Flag `needs_advisory` di Rangkum Hasil (VT unverified, borderline 1-4 malicious, review_unknown non-exec). Build Payload generate advisory prompt → Ollama → Telegram. AI hanya advisory, tidak eksekusi AR. Push ke n8n via MCP.
 
 ### ⬜ BELUM dikerjakan (sisa)
 | Prioritas | Item | Kategori | Berat |
@@ -28,7 +29,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | — | **A#2** event pertama terlewat pasca-restart agent | A | dimitigasi (fix sejati = buffer/queue di E) |
 | Menengah | **Jalankan** benchmark N≥30 + load test + VT cold-vs-cache (script: `scripts/benchmark-soar.py`) | C | sedang |
 | Menengah | **Jalankan** apply-b-malwarebazaar + apply-b-ttl-rescan + buat credential MB di n8n | B | sedang |
-| Lanjutan | **LLM-fallback** advisory + **RAG** anti-halusinasi; **trusted autonomy** (timeout/SLA) | F | berat |
+| ✅ Sebagian (2026-09-02) | **LLM-fallback** advisory (sudah selesai); **RAG** anti-halusinasi + **trusted autonomy** (timeout/SLA) | F | berat |
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
 | Ditunda pasca-TA | **Upgrade Wazuh 4.9.2 → 4.14.7** terjadwal (agent ikut) | H3 | berat |
 
@@ -97,7 +98,7 @@ Masalah industri 2025–2026: playbook rapuh/statis, *playbook rot* (silent-fail
 |--------|--------------|--------------------------------------|
 | ✅ **SELESAI** (2026-07-06) | Automasi **gagal diam-diam** & tak sadar cakupan turun | **Self-aware (inline):** notifikasi menandai **`⚠️ Deteksi TERDEGRADASI`** saat VT rate-limit/error (`degraded`). **Self-aware (health monitor):** `scripts/health-monitor.py` poll agent (putus = blind spot), n8n, Ollama, Wazuh-API → Telegram alert HANYA saat status berubah (anti-spam), state persist lintas-restart |
 | ✅ **SELESAI** (explainable+audit, 2026-07-02) | **Black-box** merusak kepercayaan analis | Setiap notifikasi (malware **&** phishing) memuat **`🧠 Alasan`** (skor VT/GSB + keyakinan + jalur). **Audit-trail:** callback handler mencatat keputusan analis **`oleh <analis> pada <waktu WITA>`** di pesan Telegram + riwayat eksekusi n8n (action/agent/target/analis). Catatan: log file dari Code node tak tersedia (fs sandbox n8n) → audit via Telegram+execution-history |
-| ⬜ Lanjutan | Alert yang **tak cocok playbook** → diam/dilempar | **LLM-fallback** (Ollama) advisory + **RAG** anti-halusinasi + AI tak pernah eksekusi AR sendiri |
+| ✅ **Selesai** (2026-09-02) | Alert yang **tak cocok playbook** → diam/dilempar | **LLM-fallback advisory** (Ollama): flag `needs_advisory` di Rangkum Hasil (VT unverified, borderline 1-4 malicious, review_unknown non-exec). Build Payload generate prompt advisory → Ollama → Telegram. AI hanya **advisory**, tak pernah eksekusi AR sendiri. |
 | ✅ **Terukur** (di C) | **Alert fatigue** | Reduksi FP VT-gated **100%** (lihat `docs/EVALUASI-METRIK.pdf`) |
 | ⬜ Lanjutan | HITL = bottleneck vs otonomi berisiko | **Trusted autonomy**: timeout/SLA + otonomi adaptif per tingkat keyakinan |
 
@@ -128,14 +129,15 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 
 1. ✅ **Perbaiki 3 bug keandalan (A)** — selesai (2026-07-02).
 2. ✅ **Tambah metrik kuantitatif (C)** — dasar selesai (2026-07-02), lanjutan selesai (2026-09-02: script benchmark + MITRE mapping + n8n vs Shuffle).
-3. **Jalankan benchmark N≥30** — script sudah ada, tinggal eksekusi di environment live.
-4. ✅ **Deteksi hybrid/multi-sinyal (B)** — script MalwareBazaar + TTL re-scan selesai (2026-09-02). Tinggal jalankan di environment live.
+3. ✅ **LLM-fallback advisory (F)** — selesai (2026-09-02): needs_advisory flag + advisory prompt + push ke n8n.
+4. ✅ **Deteksi hybrid/multi-sinyal (B)** — selesai (2026-09-02): MalwareBazaar + TTL re-scan + push ke n8n.
 5. ✅ **Housekeeping versi (H1–H2)** — selesai (2026-09-02).
 6. ✅ **Perluasan cakupan (G1 + G2)** — selesai (2026-09-02).
 7. ✅ **Hardening keamanan + IaC (D)** — sebagian selesai (2026-07-06).
-8. ✅ **Kontribusi self-aware + explainable (F)** — sebagian selesai (2026-07-06).
-9. **Arsitektur queue-mode + HA (E)** — jangka menengah.
-10. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
+8. **Jalankan benchmark N≥30** — script sudah ada, tinggal eksekusi di environment live.
+9. **RAG anti-halusinasi + Trusted autonomy (F)** — jangka menengah.
+10. **Arsitektur queue-mode + HA (E)** — jangka menengah.
+11. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
 
 ## Prinsip arah tesis
 > SOAR open-source yang **confidence-based, transparan, dan sadar-degradasi** untuk menekan alert fatigue tanpa silent-failure — dengan human-in-the-loop yang dapat dipertanggungjawabkan.
