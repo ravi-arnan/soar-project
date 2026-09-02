@@ -20,20 +20,21 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 - **D (hardening + IaC, 2026-07-06)** `deploy/hardened/` (Caddy reverse-proxy + TLS + basic-auth + segmentasi edge/backend, n8n tak publish port, `N8N_ENCRYPTION_KEY`) · **secret mgmt** `.env.example` · **IaC** `deploy/ansible/deploy-integration.yml` (idempoten).
 - **H (pemeliharaan stack, 2026-09-02)** n8n di-update `2.35.7 → 2.36.9` — berada di atas semua versi patch CVE 2026 (Ni8mare/CVE-2026-21858 fixed di 1.121.0, CVE-2026-21877 di 1.121.3, CVE-2026-27495 di 1.123.22/2.x). Image python:3.12-alpine, caddy:2-alpine, Wazuh 4.9.2 di-pull ulang; seluruh container di-recreate & sehat (indexer cluster GREEN, 3 workflow n8n aktif).
 - **C (bukti ilmiah, 2026-09-02)** Script benchmark (`scripts/benchmark-soar.py`) dibuat — 5 mode pengukuran (mttr-malware, mttr-phishing, load, vt-cold, fn-rate). Pemetaan MITRE ATT&CK (`docs/MITRE-ATTACK-MAPPING.md`: 10 teknik). Justifikasi n8n vs Shuffle (`docs/N8N-VS-SHUFFLE.md`: n8n 3.8/5 vs Shuffle 2.5/5). Evaluasi-metrik diperbarui.
+- **B (multi-sumber + re-scan, 2026-09-02)** Script MalwareBazaar (`scripts/apply-b-malwarebazaar.py`): tambah node HTTP ke `mb-api.abuse.ch`, ensemble VT+MB (VT atau MB mendeteksi → THREAT), severity MB-aware, output fields MB. Script TTL diferensial (`scripts/apply-b-ttl-rescan.py`): malicious 7 hari, clean 24 jam, unknown 6 jam. Seluruh script perlu dijalankan di environment live + buat credential MalwareBazaar di n8n.
 
 ### ⬜ BELUM dikerjakan (sisa)
 | Prioritas | Item | Kategori | Berat |
 |-----------|------|----------|-------|
 | — | **A#2** event pertama terlewat pasca-restart agent | A | dimitigasi (fix sejati = buffer/queue di E) |
-| Menengah | **Jalankan** benchmark N≥30 + load test + VT cold-vs-cache (script sudah ada: `scripts/benchmark-soar.py`) | C | sedang |
-| Menengah | **Deteksi perilaku** (sandbox/exec-bit), **multi-sumber** (MISP/MalwareBazaar), re-scan, TTL cache | B | berat |
+| Menengah | **Jalankan** benchmark N≥30 + load test + VT cold-vs-cache (script: `scripts/benchmark-soar.py`) | C | sedang |
+| Menengah | **Jalankan** apply-b-malwarebazaar + apply-b-ttl-rescan + buat credential MB di n8n | B | sedang |
 | Lanjutan | **LLM-fallback** advisory + **RAG** anti-halusinasi; **trusted autonomy** (timeout/SLA) | F | berat |
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
 | Ditunda pasca-TA | **Upgrade Wazuh 4.9.2 → 4.14.7** terjadwal (agent ikut) | H3 | berat |
 
 **Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
 
-**Rekomendasi lanjut berikutnya:** **B** (multi-sumber intel) untuk tutup sisa false-negative, atau **jalankan benchmark N≥30** untuk memperkuat klaim ilmiah.
+**Rekomendasi lanjut berikutnya:** **Jalankan script B** (MalwareBazaar + TTL re-scan) di environment live, lalu **jalankan benchmark N≥30** untuk data numerik.
 
 ---
 
@@ -53,8 +54,8 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 |--------|-----|--------|--------|
 | ✅ **SELESAI** (2026-07-02) | **Zero-day / file baru → 0/70** | ⚠️ **False-negative** (jahat dianggap bersih → disuppress diam-diam) | Node `Rangkum Hasil` kini: file **eksekutabel/berisiko** (ekstensi .sh/.exe/.ps1/… ) yang **tak dikenal VT** → `review_unknown=true` → **THREAT jalur tombol (HITL)**, bukan silent/auto. File jinak non-eksekutabel tetap sunyi. **Terverifikasi:** `.sh` unknown → Telegram Alert (tombol); `.txt` unknown → sunyi. **Batas:** file eksekutabel **tanpa ekstensi** (ELF) belum tertangkap → lanjutan: deteksi magic-byte/exec-bit |
 | ⬜ Lanjutan | Hanya melihat **hash dikenal** (ganti 1 byte → hash baru) | Reputasi hash mudah dielakkan | **Deteksi perilaku** (rule Wazuh, sandbox lokal spt CAPEv2) |
-| ⬜ Lanjutan | *Detection lag* (verdict berubah seiring waktu) | Cache bisa menyajikan verdict basi | **Re-scan terjadwal** + turunkan TTL cache verdict "bersih" |
-| ⬜ Lanjutan | Ketergantungan 1 sumber | Single point of intel-failure | **Multi-sinyal/ensemble**: MalwareBazaar, Hybrid Analysis, **MISP** |
+| ✅ Script siap (2026-09-02) | *Detection lag* (verdict berubah seiring waktu) | Cache bisa menyajikan verdict basi | **TTL diferensial** (`scripts/apply-b-ttl-rescan.py`): malicious 7 hari, clean 24 jam, unknown 6 jam. Verdict bersih di-cache lebih singkat → re-scan lebih cepat → turunkan FN rate |
+| ✅ Script siap (2026-09-02) | Ketergantungan 1 sumber | Single point of intel-failure | **MalwareBazaar** sebagai sumber kedua (`scripts/apply-b-malwarebazaar.py`): ensemble VT+MB (VT atau MB mendeteksi → THREAT). Perlu buat credential MB di n8n + jalankan script |
 | ✅ Sudah ada | Rate limit / downtime | Analisis gagal | Ditangani `vt_unverified` (jangan dianggap bersih) |
 
 **Prinsip:** perlakukan VT/GSB/URLScan sebagai **corroboration multi-sinyal**, bukan otoritas tunggal.
@@ -128,7 +129,7 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 1. ✅ **Perbaiki 3 bug keandalan (A)** — selesai (2026-07-02).
 2. ✅ **Tambah metrik kuantitatif (C)** — dasar selesai (2026-07-02), lanjutan selesai (2026-09-02: script benchmark + MITRE mapping + n8n vs Shuffle).
 3. **Jalankan benchmark N≥30** — script sudah ada, tinggal eksekusi di environment live.
-4. **Deteksi hybrid/multi-sinyal (B)** — tutup celah false-negative zero-day.
+4. ✅ **Deteksi hybrid/multi-sinyal (B)** — script MalwareBazaar + TTL re-scan selesai (2026-09-02). Tinggal jalankan di environment live.
 5. ✅ **Housekeeping versi (H1–H2)** — selesai (2026-09-02).
 6. ✅ **Perluasan cakupan (G1 + G2)** — selesai (2026-09-02).
 7. ✅ **Hardening keamanan + IaC (D)** — sebagian selesai (2026-07-06).
