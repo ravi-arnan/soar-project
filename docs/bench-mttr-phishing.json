@@ -1,0 +1,137 @@
+{
+  "mode": "mttr_phishing",
+  "stats": {
+    "label": "MTTR Phishing (GSB + URLScan)",
+    "n": 10,
+    "mean": 0.03,
+    "median": 0.03,
+    "min": 0.03,
+    "max": 0.04,
+    "stdev": 0.01,
+    "p95": 0.04,
+    "p99": 0.04,
+    "samples": [
+      0.02546446599990304,
+      0.02547759099979885,
+      0.02631808400110458,
+      0.030541255000571255,
+      0.031329691999417264,
+      0.03391529399959836,
+      0.03882507399976021,
+      0.03951668999980029,
+      0.04205933500088577,
+      0.0432380740003282
+    ],
+    "unit": "detik"
+  },
+  "runs": [
+    {
+      "run": 1,
+      "url": "https://www.amtso.org/check-desktop-phishing-page/",
+      "elapsed_ms": 42.06,
+      "elapsed_sec": 0.0421,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:40:27.292089+00:00"
+    },
+    {
+      "run": 2,
+      "url": "https://www.amtso.org/check-desktop-phishing-sample/",
+      "elapsed_ms": 43.24,
+      "elapsed_sec": 0.0432,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:40:32.335906+00:00"
+    },
+    {
+      "run": 3,
+      "url": "https://www.amtso.org/check-desktop-phishing-page/",
+      "elapsed_ms": 26.32,
+      "elapsed_sec": 0.0263,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:40:37.362677+00:00"
+    },
+    {
+      "run": 4,
+      "url": "https://www.amtso.org/check-desktop-phishing-sample/",
+      "elapsed_ms": 30.54,
+      "elapsed_sec": 0.0305,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:40:42.393787+00:00"
+    },
+    {
+      "run": 5,
+      "url": "https://www.amtso.org/check-desktop-phishing-page/",
+      "elapsed_ms": 31.33,
+      "elapsed_sec": 0.0313,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:40:47.425872+00:00"
+    },
+    {
+      "run": 6,
+      "url": "https://www.amtso.org/check-desktop-phishing-sample/",
+      "elapsed_ms": 33.92,
+      "elapsed_sec": 0.0339,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:40:52.460220+00:00"
+    },
+    {
+      "run": 7,
+      "url": "https://www.amtso.org/check-desktop-phishing-page/",
+      "elapsed_ms": 38.83,
+      "elapsed_sec": 0.0388,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:40:57.499434+00:00"
+    },
+    {
+      "run": 8,
+      "url": "https://www.amtso.org/check-desktop-phishing-sample/",
+      "elapsed_ms": 25.48,
+      "elapsed_sec": 0.0255,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:41:02.525195+00:00"
+    },
+    {
+      "run": 9,
+      "url": "https://www.amtso.org/check-desktop-phishing-page/",
+      "elapsed_ms": 39.52,
+      "elapsed_sec": 0.0395,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:41:07.565355+00:00"
+    },
+    {
+      "run": 10,
+      "url": "https://www.amtso.org/check-desktop-phishing-sample/",
+      "elapsed_ms": 25.46,
+      "elapsed_sec": 0.0255,
+      "response": {
+        "message": "Workflow was started"
+      },
+      "timestamp": "2026-09-02T14:41:12.591097+00:00"
+    }
+  ],
+  "metadata": {
+    "timestamp": "2026-09-02T14:41:12.591536+00:00",
+    "mode": "mttr-phishing",
+    "n": 10,
+    "agent": "ravi-zorin",
+    "n8n_webhook_malware": "http://localhost:5678/webhook/wazuh-alert",
+    "n8n_webhook_phishing": "http://localhost:5678/webhook/wazuh-phishing"
+  }
+}

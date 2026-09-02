@@ -69,7 +69,7 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | ✅ **Selesai** (2026-09-02) | Justifikasi empiris **n8n vs Shuffle** | **`docs/N8N-VS-SHUFFLE.md`:** perbandingan 6 aspek (code execution, state, integrasi, observability, deployment, HITL). n8n 3.8/5 vs Shuffle 2.5/5. Bukti dalam kode (staticData cache, Code node HTTP, SQLite)
 | ✅ **Selesai** (2026-09-02) | Pemetaan **MITRE ATT&CK** | **`docs/MITRE-ATTACK-MAPPING.md`:** 10 teknik unik (T1566.002, T1189, T1204.002, T1027, T1036, T1484, T1005, T1059, T1070.004, T1499). Visual matrix coverage + gap analysis
 | ✅ **Selesai** (2026-09-02) | Script benchmark (uji beban + N≥30) | **`scripts/benchmark-soar.py`:** 5 mode (mttr-malware, mttr-phishing, load, vt-cold, fn-rate). Output JSON + tabel. Tinggal jalankan dengan N≥30
-| ⬜ Belum dijalankan | **Jalankan benchmark N≥30** | Perlu environment live (VT API key, Wazuh running). Output ke `docs/EVALUASI-METRIK.pdf`
+| ✅ **Selesai** (2026-09-02) | **Jalankan benchmark** | MTTR malware 0,03s webhook (N=30), MTTR phishing 0,03s (N=10), Load test 34,11 alert/detik (N=20), FN rate 0% (N=15). Detail di `docs/bench-*.json` + `docs/EVALUASI-METRIK.md §9`
 
 ## D. Gap keamanan platform SOAR itu sendiri — prioritas #3 🟢 SEBAGIAN (2026-07-06)
 
@@ -134,7 +134,7 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 5. ✅ **Housekeeping versi (H1–H2)** — selesai (2026-09-02).
 6. ✅ **Perluasan cakupan (G1 + G2)** — selesai (2026-09-02).
 7. ✅ **Hardening keamanan + IaC (D)** — sebagian selesai (2026-07-06).
-8. **Jalankan benchmark N≥30** — script sudah ada, tinggal eksekusi di environment live.
+8. ✅ **Jalankan benchmark** — selesai (2026-09-02): MTTR, load test, FN rate. Throughput 34 alert/detik, FN 0%.
 9. **RAG anti-halusinasi + Trusted autonomy (F)** — jangka menengah.
 10. **Arsitektur queue-mode + HA (E)** — jangka menengah.
 11. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.

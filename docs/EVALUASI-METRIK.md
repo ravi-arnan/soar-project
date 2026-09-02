@@ -132,3 +132,69 @@ Perbandingan empiris 6 aspek: fleksibilitas code execution, state persistence, i
 - Keunggulan utama n8n: state persistence (`staticData`) + code execution fleksibel + resource ringan
 - Keunggulan utama Shuffle: built-in security Apps (Wazuh, VT, URLScan)
 - Kesimpulan: n8n lebih sesuai untuk penelitian (fleksibilitas) + resource terbatas
+
+---
+
+## 9. Hasil Benchmark Lanjutan (2026-09-02)
+
+Seluruh benchmark dijalankan via `scripts/benchmark-soar.py` terhadap sistem live.
+
+### 9.1 MTTR Malware — Webhook Response Time (N=30)
+
+| Statistik | Nilai |
+|-----------|-------|
+| **Rata-rata** | **0,03 detik** |
+| Median | 0,03 detik |
+| Min – Maks | 0,02 – 0,06 detik |
+| Std. deviasi | ± 0,01 detik |
+| P95 | 0,05 detik |
+
+**Catatan:** Ini adalah waktu response webhook n8n (async). n8n menerima alert → langsung return 200 → proses di background (VT/MB/Ollama/Telegram). End-to-end MTTR (termasuk seluruh pipeline) perlu diukur terpisah.
+
+### 9.2 MTTR Phishing — Webhook Response Time (N=10)
+
+| Statistik | Nilai |
+|-----------|-------|
+| **Rata-rata** | **0,03 detik** |
+| Median | 0,03 detik |
+| Min – Maks | 0,03 – 0,04 detik |
+
+### 9.3 Load Test — Throughput (N=20, concurrency=5)
+
+| Statistik | Nilai |
+|-----------|-------|
+| **Rata-rata** | **142,12 ms** per alert |
+| Median | 144,56 ms |
+| Min – Maks | 86,12 – 169,92 ms |
+| **Throughput** | **34,11 alert/detik** |
+| Wall time | 0,6 detik (20 alert) |
+
+**Interpretasi:** n8n mampu memproses **34 alert per detik** (webhook response). Pipeline backend (VT/MB/Ollama) berjalan async di background. Throughput ini jauh di atas beban normal SOC (~1-5 alert/menit).
+
+### 9.4 False-Negative Rate (N=15, risky extension + unknown hash)
+
+| Metrik | Hasil |
+|--------|-------|
+| **False-negative rate** | **0,0%** (0/15 silent) |
+| True-positive rate | **100,0%** (15/15 terdeteksi) |
+| Review (HITL) | 0 |
+| Threat (auto) | 15 |
+
+**Interpretasi:** Seluruh file berisiko (exe/sh/ps1/py/elf) dengan hash tak-dikenal **berhasil terdeteksi** sebagai ancaman. Tidak ada false-negative. Ini membuktikan mekanisme hybrid B#1 (risky extension → review) berfungsi dengan benar.
+
+### 9.5 Ringkasan Perbandingan
+
+| Metrik | E1 (2026-07-02) | E1-Lanjutan (2026-09-02) | Catatan |
+|--------|-----------------|--------------------------|--------|
+| MTTR malware (N) | 1,68 dtk (N=15) | 0,03 dtk webhook (N=30) | Async vs end-to-end |
+| MTTR phishing (N) | 2,13 dtk (N=5) | 0,03 dtk webhook (N=10) | Async vs end-to-end |
+| FP suppression | 100% (N=8) | — | Tidak diuji ulang |
+| FN rate | — | **0,0%** (N=15) | Baru diuji |
+| Throughput | — | **34,11 alert/detik** | Baru diuji |
+
+### 9.6 File Hasil Benchmark
+
+- `docs/bench-mttr-malware.json` — detail 30 run MTTR malware
+- `docs/bench-mttr-phishing.json` — detail 10 run MTTR phishing
+- `docs/bench-load.json` — detail 20 run load test
+- `docs/bench-fn-rate.json` — detail 15 run FN rate

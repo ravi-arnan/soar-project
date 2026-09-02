@@ -1,0 +1,209 @@
+{
+  "mode": "load",
+  "stats": {
+    "label": "Load Test (concurrency=5)",
+    "n": 20,
+    "mean": 142.12,
+    "median": 144.56,
+    "min": 86.12,
+    "max": 169.92,
+    "stdev": 24.74,
+    "p95": 169.92,
+    "p99": 169.92,
+    "samples": [
+      86.12,
+      94.7,
+      106.68,
+      117.45,
+      127.64,
+      138.87,
+      139.69,
+      140.89,
+      141.63,
+      144.47,
+      144.65,
+      145.35,
+      155.43,
+      158.84,
+      160.56,
+      165.16,
+      166.39,
+      168.09,
+      169.79,
+      169.92
+    ],
+    "unit": "ms",
+    "wall_total_ms": 586.42,
+    "throughput_per_sec": 34.11
+  },
+  "runs": [
+    {
+      "run": 2,
+      "hash": "2bdb588306f83a9d7a6a77cf89802b615880dcde21a67490b8f331335a13bbcc",
+      "elapsed_ms": 86.12,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 3,
+      "hash": "89a5465162a1d106ca4210e7a1c395d5908223cc840269aa86fcddb93491cbe9",
+      "elapsed_ms": 94.7,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 1,
+      "hash": "e2c1ef6b03e7e67af2ed355c7412eb1aba031897ddfabd0d6556f4d098bd748f",
+      "elapsed_ms": 106.68,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 5,
+      "hash": "c1cf5a22751101ff5d2cab7ad898c7d02f330d519c24006cd33c817127ec3c56",
+      "elapsed_ms": 117.45,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 4,
+      "hash": "24e9a7d30b885132c650399ebd1ba997a885ff8505ce4c5f86f14d13bbe067d4",
+      "elapsed_ms": 127.64,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 6,
+      "hash": "36d07fe262aa30f3477e62274d696d40a2a5cebd53af2512d1d39a00a582bf80",
+      "elapsed_ms": 165.16,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 7,
+      "hash": "d143da3bcb6aacc5f0dfbc3e20bfa684c57a758b1980de01b7b45052f240bdac",
+      "elapsed_ms": 166.39,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 8,
+      "hash": "8e807b5d3fe84c49b23508b2825ef60c76e91a31d7f4b4d97ca6867ce89b74a7",
+      "elapsed_ms": 168.09,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 9,
+      "hash": "ff9243239ec034400f59cf7f259d76717b6c73d4b35505ac0dfbbef83cb0cd66",
+      "elapsed_ms": 169.92,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 10,
+      "hash": "94ad256ad7edc1e22695abde75c927d1faa5106b30a8a3113ced543f29c3df3a",
+      "elapsed_ms": 169.79,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 11,
+      "hash": "b7288808106b801a7981dd27fa301ab05cf19159c4a152ed151e2c98b0c42998",
+      "elapsed_ms": 141.63,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 12,
+      "hash": "1555ee838870078319b9d46e5b89aa649778d5b843a4015f6ba1fe6bb98bd54c",
+      "elapsed_ms": 140.89,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 13,
+      "hash": "49485e3086076e2c74ff44b6165efd2718292184b526af9b95af8d8b1d18518d",
+      "elapsed_ms": 138.87,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 14,
+      "hash": "23f69b8840b560323a08d3281225c484cc340fb35a404efac4b9c8523ade25e3",
+      "elapsed_ms": 144.47,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 15,
+      "hash": "5e0eb27905e744b893625d5dde36c3580a25d63ca1dc30fddbfc9d192be50ff3",
+      "elapsed_ms": 145.35,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 16,
+      "hash": "50924b85db744a8d2f0cae908282995cdbcd2368b86eb6932b11bc2002bbd304",
+      "elapsed_ms": 160.56,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 17,
+      "hash": "64d959d4d793b5ece1898645a186bdf98ce0891c712b3f0f7b7b6c049ff1e74b",
+      "elapsed_ms": 158.84,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 18,
+      "hash": "857dd91560efc81f7f113297630dea7f497b94f441bbdfd5d3e7cafb2e73b07e",
+      "elapsed_ms": 155.43,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 19,
+      "hash": "e380cfdf668046bcdb0c5cac1dfd69f86cc9fcbfe34f88ed4cc5f77eb01eef3b",
+      "elapsed_ms": 144.65,
+      "response": {
+        "message": "Workflow was started"
+      }
+    },
+    {
+      "run": 20,
+      "hash": "f809010f5cbd6f03bb888a6946e8387fecb7443efa1956b76ef9d4b1461de590",
+      "elapsed_ms": 139.69,
+      "response": {
+        "message": "Workflow was started"
+      }
+    }
+  ],
+  "metadata": {
+    "timestamp": "2026-09-02T14:40:04.628349+00:00",
+    "mode": "load",
+    "n": 20,
+    "agent": "ravi-zorin",
+    "n8n_webhook_malware": "http://localhost:5678/webhook/wazuh-alert",
+    "n8n_webhook_phishing": "http://localhost:5678/webhook/wazuh-phishing"
+  }
+}
