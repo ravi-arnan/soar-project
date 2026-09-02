@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Buat PPT bimbingan TA — versi sederhana dengan diagram arsitektur."""
+"""Buat PPT bimbingan TA — versi sederhana dengan tabel perbandingan + roadmap."""
 import sys
 sys.path.insert(0, "/tmp/pptx-env/lib/python3.13/site-packages")
 
@@ -17,6 +17,10 @@ BLUE = RGBColor(0x1A, 0x56, 0x8E)
 BLACK = RGBColor(0, 0, 0)
 GRAY = RGBColor(0x66, 0x66, 0x66)
 LGRAY = RGBColor(0x88, 0x88, 0x88)
+GREEN = RGBColor(0x2E, 0x7D, 0x32)
+RED = RGBColor(0xC6, 0x28, 0x28)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+LIGHT_BG = RGBColor(0xE8, 0xF5, 0xE9)
 
 
 def add_text(slide, left, top, width, height, text, size=18, color=BLACK, bold=False, align=PP_ALIGN.LEFT):
@@ -52,7 +56,7 @@ def add_divider(slide, left, top, width):
     shape.line.fill.background()
 
 
-def make_table(slide, left, top, width, height, rows, cols_width=None):
+def make_table(slide, left, top, width, height, rows, cols_width=None, header_color=BLUE):
     table_shape = slide.shapes.add_table(len(rows), len(rows[0]), Inches(left), Inches(top), Inches(width), Inches(height))
     table = table_shape.table
     if cols_width:
@@ -63,15 +67,19 @@ def make_table(slide, left, top, width, height, rows, cols_width=None):
             cell = table.cell(r_idx, c_idx)
             cell.text = cell_text
             for p in cell.text_frame.paragraphs:
-                p.font.size = Pt(13)
+                p.font.size = Pt(12)
                 p.font.color.rgb = BLACK
                 if r_idx == 0:
                     p.font.bold = True
             if r_idx == 0:
                 cell.fill.solid()
-                cell.fill.fore_color.rgb = BLUE
+                cell.fill.fore_color.rgb = header_color
                 for p in cell.text_frame.paragraphs:
-                    p.font.color.rgb = RGBColor(255, 255, 255)
+                    p.font.color.rgb = WHITE
+            elif r_idx % 2 == 0:
+                cell.fill.solid()
+                cell.fill.fore_color.rgb = RGBColor(0xF0, 0xF0, 0xF0)
+    return table
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -95,54 +103,66 @@ add_text(slide, 1, 6.3, 11, 0.5, "Bimbingan Tugas Akhir  -  September 2026", 16,
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 2: Progress Pengerjaan
+# SLIDE 2: Apa itu SOAR + Kenapa penting
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-add_text(slide, 0.5, 0.3, 12, 0.6, "Progress Pengerjaan", 28, BLUE, True)
-add_divider(slide, 0.5, 0.9, 4)
+add_text(slide, 0.5, 0.3, 12, 0.6, "Latar Belakang", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 3)
 
-add_bullets(slide, 0.5, 1.2, 5.8, 5.5, [
-    "Bug fix & deteksi:",
-    "  - block-domain sekarang persist, tidak hilang saat restart",
-    "  - notifikasi ganda untuk 1 file sudah diperbaiki",
-    "  - file berekstensi berisiko (.sh/.exe) yang tak dikenal VT minta review",
-    "  - file tanpa ekstensi tapi ada execute bit juga tertangkap",
-    "",
-    "Threat intelligence:",
-    "  - sekarang pakai 2 sumber: VirusTotal + MalwareBazaar",
-    "  - cache VT TTL diferensial (bersih 24 jam, berbahaya 7 hari)",
-    "  - phishing proaktif: fetch URLhaus tiap jam, block sebelum user klik",
-    "  - kalau VT error, sistem tetap jalan dan kasih tahu analis",
+add_bullets(slide, 0.5, 1.2, 12, 2, [
+    "Masalah utama di SOC (Security Operations Center):",
+    "  - Alert fatigue: 67% alert diabaikan karena terlalu banyak false positive",
+    "  - Response manual: analis butuh menit-jam untuk tangani 1 alert",
+    "  - SOAR komersial mahal (Splunk SOAR, Palo Alto XSOAM)",
+    "  - SOAR open-source (Shuffle, Cortex) masih punya keterbatasan",
 ], 15)
 
-add_bullets(slide, 6.8, 1.2, 5.8, 5.5, [
-    "Infrastruktur:",
-    "  - n8n di-update ke 2.36.9 (di atas semua CVE 2026)",
-    "  - hardening: Caddy reverse-proxy + TLS + basic auth",
-    "  - IaC pakai Ansible playbook (idempoten)",
-    "  - health monitor: cek agent/n8n/Ollama, alert saat status berubah",
-    "",
-    "Pengukuran:",
-    "  - benchmark udah jalan: throughput 34 alert/detik",
-    "  - FN rate 0% (15/15 file berisiko ketangkep)",
-    "  - FP suppression 100% (8 alert baseline -> 0 notifikasi)",
-    "  - mapping ke MITRE ATT&CK: 10 teknik tercakup",
+add_bullets(slide, 0.5, 3.2, 12, 2, [
+    "Yang ditawarkan tugas akhir ini:",
+    "  - SOAR open-source berbasis n8n (gratis, fleksibel)",
+    "  - Confidence-based: keputusan berdasarkan keyakinan, bukan tebakan",
+    "  - Explainable: setiap notifikasi ada alasan kenapa dianggap berbahaya",
+    "  - Self-aware: tahu kapan deteksinya sedang tidak akurat",
 ], 15)
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 3: Diagram Arsitektur
+# SLIDE 3: Tabel Perbandingan (Apa yang unggul)
+# ═══════════════════════════════════════════════════════════════
+slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+add_text(slide, 0.5, 0.3, 12, 0.6, "Perbandingan dengan Pendekatan Lain", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 5)
+
+make_table(slide, 0.5, 1.2, 12.3, 5.5, [
+    ["Aspek", "SOC Manual", "SOAR Komersial", "Shuffle/Cortex", "Sistem Ini (n8n)"],
+    ["Biaya", "Gaji analis tinggi", "License mahal", "Gratis", "Gratis"],
+    ["Kecepatan response", "Menit - jam", "Detik - menit", "Detik - menit", "1,68 detik (malware)"],
+    ["Transparensi", "Tergantung analis", "Black-box", "Black-box", "Alasan di setiap notifikasi"],
+    ["Self-aware", "Tergantung analis", "Tidak ada", "Tidak ada", "Tandai degradasi otomatis"],
+    ["Audit trail", "Manual / tidak ada", "Ada (bayar)", "Terbatas", "Gratis (Telegram + n8n)"],
+    ["Phishing proaktif", "Tidak ada", "Tergantung playbook", "Tidak ada", "URLhaus auto-block"],
+    ["AI advisory", "Tergantung analis", "Tergantung vendor", "Tidak ada", "Ollama lokal (gratis)"],
+    ["Multi-sumber intel", "Manual", "Tergantung integrasi", "Beberapa", "VT + MalwareBazaar"],
+    ["Setup & maintenance", "Tidak ada", "Kompleks", "Sedang", "Docker + Ansible"],
+], cols_width=[2.2, 2.3, 2.6, 2.5, 2.7], header_color=BLUE)
+
+add_text(slide, 0.5, 6.8, 12, 0.4,
+    "* Semua fitur di atas berjalan di 1 VPS dengan RAM ~3 GB (tidak perlu server mahal)",
+    12, GRAY)
+
+
+# ═══════════════════════════════════════════════════════════════
+# SLIDE 4: Diagram Arsitektur
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
 add_text(slide, 0.5, 0.3, 12, 0.6, "Arsitektur Sistem", 28, BLUE, True)
 add_divider(slide, 0.5, 0.9, 3.5)
 
-# Masukkan gambar diagram arsitektur
 slide.shapes.add_picture("docs/diagrams/soar-architecture.png", Inches(0.5), Inches(1.1), Inches(8.5), Inches(5.8))
 
-# Keterangan di samping kanan
 add_bullets(slide, 9.3, 1.2, 3.8, 5.5, [
     "Stack:",
     "  Wazuh 4.9.2",
@@ -152,25 +172,24 @@ add_bullets(slide, 9.3, 1.2, 3.8, 5.5, [
     "  Google Safe Browsing",
     "  MalwareBazaar",
     "",
-    "Container:",
-    "  - wazuh.manager",
-    "  - wazuh.indexer",
-    "  - wazuh.dashboard",
-    "  - n8n",
-    "  - tg-callback-poller",
-    "  - health-monitor",
+    "Container (6 total):",
+    "  wazuh.manager",
+    "  wazuh.indexer",
+    "  wazuh.dashboard",
+    "  n8n",
+    "  tg-callback-poller",
+    "  health-monitor",
 ], 13, GRAY)
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 4: Cara Kerja + Decision
+# SLIDE 5: Alur Keputusan
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
 add_text(slide, 0.5, 0.3, 12, 0.6, "Alur Keputusan", 28, BLUE, True)
 add_divider(slide, 0.5, 0.9, 3)
 
-# Flow sederhana
 flow_labels = ["FIM Alert\n(Wazuh)", "Filter\n& Extract", "VT + MB\nLookup", "Keputusan\n(Ollama)", "Telegram\n(analis)"]
 for i, label in enumerate(flow_labels):
     x = 0.5 + i * 2.5
@@ -183,12 +202,11 @@ for i, label in enumerate(flow_labels):
     p = tf.paragraphs[0]
     p.text = label
     p.font.size = Pt(13)
-    p.font.color.rgb = RGBColor(255, 255, 255)
+    p.font.color.rgb = WHITE
     p.alignment = PP_ALIGN.CENTER
     if i < len(flow_labels) - 1:
         add_text(slide, x + 2.0, 1.5, 0.5, 0.5, "->", 18, BLACK, True, PP_ALIGN.CENTER)
 
-# Tabel decision
 add_text(slide, 0.5, 2.5, 12, 0.5, "5 jalur keputusan berdasarkan keyakinan:", 17, BLUE, True)
 
 make_table(slide, 0.5, 3.0, 12, 3.5, [
@@ -202,7 +220,7 @@ make_table(slide, 0.5, 3.0, 12, 3.5, [
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 5: Hasil Pengukuran
+# SLIDE 6: Hasil Pengukuran
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
@@ -224,54 +242,44 @@ add_bullets(slide, 0.5, 4.4, 12, 2.8, [
     "Catatan:",
     "- MTTR 1,68 detik itu waktu end-to-end (VT cache hangat). Kalau VT cold, tambah ~3-5 detik.",
     "- Phishing lebih lama sedikit karena ada pengecekan URLScan, tapi GSB langsung.",
-    "- Load test 34 alert/detik itu kapasitas webhook n8n. Pipeline backend (VT/MB/Ollama) jalan async.",
+    "- Load test 34 alert/detik itu kapasitas webhook n8n. Pipeline backend jalan async.",
     "- FN rate 0% artinya tidak ada file berisiko yang lolos dari deteksi.",
 ], 14, GRAY)
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 6: Kontribusi & Kebaruan
+# SLIDE 7: Tabel Roadmap
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-add_text(slide, 0.5, 0.3, 12, 0.6, "Kontribusi & Kebaruan", 28, BLUE, True)
-add_divider(slide, 0.5, 0.9, 4)
+add_text(slide, 0.5, 0.3, 12, 0.6, "Roadmap Pengerjaan", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 3.5)
 
-add_bullets(slide, 0.5, 1.2, 5.8, 5.5, [
-    "Kenapa ini berbeda dari SOAR lain:",
-    "  - SOAR lain (Shuffle, Cortex) itu black-box",
-    "    analis tidak tahu kenapa keputusan diambil",
-    "  - Sistem ini kasih alasan di setiap notifikasi:",
-    "    kenapa file ini dianggap berbahaya",
-    "  - Kalau sumber intel error, sistem jujur bilang",
-    "    'saya tidak bisa verifikasi' bukan diam saja",
-    "  - Auto-isolate cuma untuk keyakinan tinggi,",
-    "    sisanya serahin ke analis",
-], 15)
-
-add_bullets(slide, 6.8, 1.2, 5.8, 5.5, [
-    "Yang belum ada di SOAR lain:",
-    "  - LLM advisory lokal (Ollama) untuk alert ambigu",
-    "    tanpa kirim data ke cloud",
-    "  - Phishing proaktif: blok URL dari feed publik",
-    "    sebelum user sempat klik",
-    "  - Health monitor yang sadar diri: tahu kapan",
-    "    ia sedang tidak bisa bekerja dengan baik",
-    "  - Cache VT dengan TTL diferensial:",
-    "    file bersih di-scan ulang lebih cepat",
-], 15)
-
-add_bullets(slide, 0.5, 4.6, 12, 2.5, [
-    "Bukti pendukung:",
-    "  - Mapping MITRE ATT&CK: 10 teknik tercakup dalam playbook",
-    "  - Perbandingan empiris n8n vs Shuffle: 6 aspek dinilai (n8n menang 3,8 vs 2,5)",
-    "  - Benchmark N>=30 dengan data nyata, bukan simulasi",
-    "  - Semua konfigurasi di-version-control (Ansible + Docker Compose)",
-], 14, GRAY)
+make_table(slide, 0.5, 1.2, 12.3, 5.8, [
+    ["Kategori", "Item", "Status", "Tanggal"],
+    ["A - Bug fix", "block-domain persist", "Selesai", "2026-07-02"],
+    ["A - Bug fix", "Notifikasi ganda diperbaiki", "Selesai", "2026-07-02"],
+    ["B - Threat intel", "Hybrid: risky ext -> HITL review", "Selesai", "2026-07-02"],
+    ["B - Threat intel", "MalwareBazaar ensemble (VT+MB)", "Selesai", "2026-09-02"],
+    ["B - Threat intel", "TTL diferensial cache", "Selesai", "2026-09-02"],
+    ["C - Evaluasi", "MTTR & FP suppression terukur", "Selesai", "2026-07-02"],
+    ["C - Evaluasi", "Benchmark N>=30 + load test", "Selesai", "2026-09-02"],
+    ["C - Evaluasi", "MITRE ATT&CK mapping (10 teknik)", "Selesai", "2026-09-02"],
+    ["D - Hardening", "Caddy + TLS + Ansible IaC", "Selesai", "2026-07-06"],
+    ["F - Explainable", "Self-aware + audit trail", "Selesai", "2026-07-06"],
+    ["F - Explainable", "LLM-fallback advisory", "Selesai", "2026-09-02"],
+    ["G - Perluasan", "Phishing proaktif (URLhaus)", "Selesai", "2026-09-02"],
+    ["G - Perluasan", "Magic-byte / exec-bit detection", "Selesai", "2026-09-02"],
+    ["H - Maintenance", "n8n update + pin versi", "Selesai", "2026-09-02"],
+    ["F - Lanjutan", "Trusted autonomy (timeout/SLA)", "Belum", "-"],
+    ["F - Lanjutan", "RAG anti-halusinasi", "Belum", "-"],
+    ["E - Arsitektur", "HA: queue-mode + Redis + PG", "Belum", "-"],
+    ["H - Maintenance", "Upgrade Wazuh 4.14.7", "Belum", "PascTA"],
+], cols_width=[2.2, 4.5, 1.8, 2.0], header_color=BLUE)
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 7: Rencana ke Depan
+# SLIDE 8: Rencana ke Depan
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
@@ -297,7 +305,7 @@ add_bullets(slide, 0.5, 1.3, 12, 5.5, [
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 8: Penutup
+# SLIDE 9: Penutup
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
