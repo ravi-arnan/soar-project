@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Buat PPT bimbingan TA — versi sederhana seperti buatan mahasiswa."""
+"""Buat PPT bimbingan TA — versi sederhana dengan diagram arsitektur."""
 import sys
 sys.path.insert(0, "/tmp/pptx-env/lib/python3.13/site-packages")
 
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
+from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE
@@ -13,8 +13,13 @@ prs = Presentation()
 prs.slide_width = Inches(13.333)
 prs.slide_height = Inches(7.5)
 
+BLUE = RGBColor(0x1A, 0x56, 0x8E)
+BLACK = RGBColor(0, 0, 0)
+GRAY = RGBColor(0x66, 0x66, 0x66)
+LGRAY = RGBColor(0x88, 0x88, 0x88)
 
-def add_text(slide, left, top, width, height, text, size=18, color=RGBColor(0,0,0), bold=False, align=PP_ALIGN.LEFT):
+
+def add_text(slide, left, top, width, height, text, size=18, color=BLACK, bold=False, align=PP_ALIGN.LEFT):
     txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
     tf = txBox.text_frame
     tf.word_wrap = True
@@ -27,22 +32,24 @@ def add_text(slide, left, top, width, height, text, size=18, color=RGBColor(0,0,
     return txBox
 
 
-def add_bullets(slide, left, top, width, height, items, size=16, color=RGBColor(0,0,0), bold_first=False):
+def add_bullets(slide, left, top, width, height, items, size=15, color=BLACK):
     txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
     tf = txBox.text_frame
     tf.word_wrap = True
     for i, item in enumerate(items):
-        if i == 0:
-            p = tf.paragraphs[0]
-        else:
-            p = tf.add_paragraph()
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.text = item
         p.font.size = Pt(size)
         p.font.color.rgb = color
-        p.space_before = Pt(6)
-        if bold_first and i == 0:
-            p.font.bold = True
+        p.space_before = Pt(5)
     return txBox
+
+
+def add_divider(slide, left, top, width):
+    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(left), Inches(top), Inches(width), Pt(2))
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = BLUE
+    shape.line.fill.background()
 
 
 def make_table(slide, left, top, width, height, rows, cols_width=None):
@@ -57,15 +64,14 @@ def make_table(slide, left, top, width, height, rows, cols_width=None):
             cell.text = cell_text
             for p in cell.text_frame.paragraphs:
                 p.font.size = Pt(13)
-                p.font.color.rgb = RGBColor(0, 0, 0)
+                p.font.color.rgb = BLACK
                 if r_idx == 0:
                     p.font.bold = True
             if r_idx == 0:
                 cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
+                cell.fill.fore_color.rgb = BLUE
                 for p in cell.text_frame.paragraphs:
                     p.font.color.rgb = RGBColor(255, 255, 255)
-    return table
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -75,21 +81,17 @@ slide = prs.slides.add_slide(prs.slide_layouts[6])
 
 add_text(slide, 1, 1.5, 11, 1.5,
     "Implementasi Sistem SOAR Open-Source\nBerbasis n8n untuk Deteksi dan Respons\nAncaman Malware dan Phishing",
-    32, RGBColor(0, 0, 0), True, PP_ALIGN.CENTER)
+    32, BLACK, True, PP_ALIGN.CENTER)
 
 add_text(slide, 1, 4.0, 11, 0.5,
     "dengan Mitigasi Aktif Human-in-the-Loop",
-    20, RGBColor(0x55, 0x55, 0x55), False, PP_ALIGN.CENTER)
+    20, GRAY, False, PP_ALIGN.CENTER)
 
-# garis
-shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(4), Inches(4.8), Inches(5), Pt(2))
-shape.fill.solid()
-shape.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
-shape.line.fill.background()
+add_divider(slide, 4, 4.8, 5)
 
-add_text(slide, 1, 5.2, 11, 0.5, "Ravi Arnan Irianto", 22, RGBColor(0, 0, 0), True, PP_ALIGN.CENTER)
-add_text(slide, 1, 5.7, 11, 0.5, "2305551076", 18, RGBColor(0x55, 0x55, 0x55), False, PP_ALIGN.CENTER)
-add_text(slide, 1, 6.3, 11, 0.5, "Bimbingan Tugas Akhir  -  September 2026", 16, RGBColor(0x88, 0x88, 0x88), False, PP_ALIGN.CENTER)
+add_text(slide, 1, 5.2, 11, 0.5, "Ravi Arnan Irianto", 22, BLACK, True, PP_ALIGN.CENTER)
+add_text(slide, 1, 5.7, 11, 0.5, "2305551076", 18, GRAY, False, PP_ALIGN.CENTER)
+add_text(slide, 1, 6.3, 11, 0.5, "Bimbingan Tugas Akhir  -  September 2026", 16, LGRAY, False, PP_ALIGN.CENTER)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -97,13 +99,8 @@ add_text(slide, 1, 6.3, 11, 0.5, "Bimbingan Tugas Akhir  -  September 2026", 16,
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-add_text(slide, 0.5, 0.3, 12, 0.6, "Progress Pengerjaan", 28, RGBColor(0x1A, 0x56, 0x8E), True)
-
-# Garis bawah judul
-shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.9), Inches(4), Pt(2))
-shape.fill.solid()
-shape.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
-shape.line.fill.background()
+add_text(slide, 0.5, 0.3, 12, 0.6, "Progress Pengerjaan", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 4)
 
 add_bullets(slide, 0.5, 1.2, 5.8, 5.5, [
     "Bug fix & deteksi:",
@@ -135,66 +132,84 @@ add_bullets(slide, 6.8, 1.2, 5.8, 5.5, [
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 3: Arsitektur / Cara Kerja
+# SLIDE 3: Diagram Arsitektur
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-add_text(slide, 0.5, 0.3, 12, 0.6, "Cara Kerja Sistem", 28, RGBColor(0x1A, 0x56, 0x8E), True)
+add_text(slide, 0.5, 0.3, 12, 0.6, "Arsitektur Sistem", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 3.5)
 
-shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.9), Inches(3.5), Pt(2))
-shape.fill.solid()
-shape.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
-shape.line.fill.background()
+# Masukkan gambar diagram arsitektur
+slide.shapes.add_picture("docs/diagrams/soar-architecture.png", Inches(0.5), Inches(1.1), Inches(8.5), Inches(5.8))
 
-add_text(slide, 0.5, 1.2, 12, 0.5,
-    "Stack: Wazuh 4.9.2 + n8n 2.36.9 + Ollama llama3.2:3b + VirusTotal + GSB + MalwareBazaar",
-    14, RGBColor(0x66, 0x66, 0x66))
+# Keterangan di samping kanan
+add_bullets(slide, 9.3, 1.2, 3.8, 5.5, [
+    "Stack:",
+    "  Wazuh 4.9.2",
+    "  n8n 2.36.9",
+    "  Ollama llama3.2:3b",
+    "  VirusTotal API",
+    "  Google Safe Browsing",
+    "  MalwareBazaar",
+    "",
+    "Container:",
+    "  - wazuh.manager",
+    "  - wazuh.indexer",
+    "  - wazuh.dashboard",
+    "  - n8n",
+    "  - tg-callback-poller",
+    "  - health-monitor",
+], 13, GRAY)
 
-# Flow sederhana pakai kotak biasa
-flow_labels = ["Endpoint\n(FIM/Log)", "Wazuh\nManager", "n8n\nWorkflow", "VT + MB\nEnsemble", "Ollama\n(AI lokal)", "Telegram\n(analis)"]
+
+# ═══════════════════════════════════════════════════════════════
+# SLIDE 4: Cara Kerja + Decision
+# ═══════════════════════════════════════════════════════════════
+slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+add_text(slide, 0.5, 0.3, 12, 0.6, "Alur Keputusan", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 3)
+
+# Flow sederhana
+flow_labels = ["FIM Alert\n(Wazuh)", "Filter\n& Extract", "VT + MB\nLookup", "Keputusan\n(Ollama)", "Telegram\n(analis)"]
 for i, label in enumerate(flow_labels):
-    x = 0.3 + i * 2.15
-    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(1.9), Inches(1.8), Inches(0.9))
+    x = 0.5 + i * 2.5
+    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(1.3), Inches(2.0), Inches(0.9))
     shape.fill.solid()
-    shape.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
+    shape.fill.fore_color.rgb = BLUE
     shape.line.fill.background()
     tf = shape.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = label
-    p.font.size = Pt(12)
+    p.font.size = Pt(13)
     p.font.color.rgb = RGBColor(255, 255, 255)
     p.alignment = PP_ALIGN.CENTER
-
     if i < len(flow_labels) - 1:
-        add_text(slide, x + 1.8, 2.1, 0.35, 0.5, "->", 18, RGBColor(0, 0, 0), True, PP_ALIGN.CENTER)
+        add_text(slide, x + 2.0, 1.5, 0.5, 0.5, "->", 18, BLACK, True, PP_ALIGN.CENTER)
 
 # Tabel decision
-add_text(slide, 0.5, 3.2, 12, 0.5, "Keputusan berdasarkan keyakinan:", 17, RGBColor(0x1A, 0x56, 0x8E), True)
+add_text(slide, 0.5, 2.5, 12, 0.5, "5 jalur keputusan berdasarkan keyakinan:", 17, BLUE, True)
 
-make_table(slide, 0.5, 3.7, 12, 3.2, [
-    ["Situasi", "Yang dilakukan"],
-    ["VT deteksi >= 20", "Langsung isolasi file otomatis"],
-    ["VT deteksi 5-19 atau MB match", "Kirim ke Telegram, analis pilih tombol"],
-    ["VT deteksi 1-4 atau file risky unknown", "Kirim notifikasi + minta saran AI"],
-    ["VT error / rate-limit", "Tandai degradasi, minta verifikasi manual"],
-    ["VT bersih + MB bersih", "Diam saja (tidak ganggu analis)"],
-], cols_width=[5, 7])
+make_table(slide, 0.5, 3.0, 12, 3.5, [
+    ["Kondisi", "Tindakan", "Keterangan"],
+    ["VT >= 20 malicious", "Auto isolate", "Keyakinan tinggi, langsung karantina file"],
+    ["VT 5-19 / MB match", "HITL Telegram", "Analis pilih: Isolasi atau Abaikan"],
+    ["VT 1-4 / risky unknown", "HITL + LLM advisory", "Saran AI ditambahkan ke notifikasi"],
+    ["VT error / rate-limit", "Degrade + advisory", "Sistem jujur: 'tidak bisa verifikasi'"],
+    ["VT bersih + MB bersih", "Silent", "Tidak ganggu analis"],
+], cols_width=[3.5, 2.5, 6])
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 4: Hasil Pengukuran
+# SLIDE 5: Hasil Pengukuran
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-add_text(slide, 0.5, 0.3, 12, 0.6, "Hasil Pengukuran", 28, RGBColor(0x1A, 0x56, 0x8E), True)
+add_text(slide, 0.5, 0.3, 12, 0.6, "Hasil Pengukuran", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 3.5)
 
-shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.9), Inches(3.5), Pt(2))
-shape.fill.solid()
-shape.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
-shape.line.fill.background()
-
-add_text(slide, 0.5, 1.1, 12, 0.4, "Uji coba dijalankan langsung di sistem live (bukan simulasi)", 14, RGBColor(0x66, 0x66, 0x66))
+add_text(slide, 0.5, 1.1, 12, 0.4, "Uji coba dijalankan langsung di sistem live (bukan simulasi)", 14, GRAY)
 
 make_table(slide, 0.5, 1.6, 12, 2.5, [
     ["Metrik", "Hasil", "Keterangan"],
@@ -211,20 +226,16 @@ add_bullets(slide, 0.5, 4.4, 12, 2.8, [
     "- Phishing lebih lama sedikit karena ada pengecekan URLScan, tapi GSB langsung.",
     "- Load test 34 alert/detik itu kapasitas webhook n8n. Pipeline backend (VT/MB/Ollama) jalan async.",
     "- FN rate 0% artinya tidak ada file berisiko yang lolos dari deteksi.",
-], 14, RGBColor(0x55, 0x55, 0x55))
+], 14, GRAY)
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 5: Kontribusi / Kebaruan
+# SLIDE 6: Kontribusi & Kebaruan
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-add_text(slide, 0.5, 0.3, 12, 0.6, "Kontribusi & Kebaruan", 28, RGBColor(0x1A, 0x56, 0x8E), True)
-
-shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.9), Inches(4), Pt(2))
-shape.fill.solid()
-shape.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
-shape.line.fill.background()
+add_text(slide, 0.5, 0.3, 12, 0.6, "Kontribusi & Kebaruan", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 4)
 
 add_bullets(slide, 0.5, 1.2, 5.8, 5.5, [
     "Kenapa ini berbeda dari SOAR lain:",
@@ -256,20 +267,16 @@ add_bullets(slide, 0.5, 4.6, 12, 2.5, [
     "  - Perbandingan empiris n8n vs Shuffle: 6 aspek dinilai (n8n menang 3,8 vs 2,5)",
     "  - Benchmark N>=30 dengan data nyata, bukan simulasi",
     "  - Semua konfigurasi di-version-control (Ansible + Docker Compose)",
-], 14, RGBColor(0x55, 0x55, 0x55))
+], 14, GRAY)
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 6: Rencana ke Depan
+# SLIDE 7: Rencana ke Depan
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-add_text(slide, 0.5, 0.3, 12, 0.6, "Rencana ke Depan", 28, RGBColor(0x1A, 0x56, 0x8E), True)
-
-shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.9), Inches(3.5), Pt(2))
-shape.fill.solid()
-shape.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
-shape.line.fill.background()
+add_text(slide, 0.5, 0.3, 12, 0.6, "Rencana ke Depan", 28, BLUE, True)
+add_divider(slide, 0.5, 0.9, 3.5)
 
 add_bullets(slide, 0.5, 1.3, 12, 5.5, [
     "Trusted Autonomy",
@@ -290,23 +297,20 @@ add_bullets(slide, 0.5, 1.3, 12, 5.5, [
 
 
 # ═══════════════════════════════════════════════════════════════
-# SLIDE 7: Penutup
+# SLIDE 8: Penutup
 # ═══════════════════════════════════════════════════════════════
 slide = prs.slides.add_slide(prs.slide_layouts[6])
 
-add_text(slide, 1, 2.0, 11, 1, "Terima Kasih", 40, RGBColor(0, 0, 0), True, PP_ALIGN.CENTER)
+add_text(slide, 1, 2.0, 11, 1, "Terima Kasih", 40, BLACK, True, PP_ALIGN.CENTER)
 
-shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(4.5), Inches(3.2), Inches(4), Pt(2))
-shape.fill.solid()
-shape.fill.fore_color.rgb = RGBColor(0x1A, 0x56, 0x8E)
-shape.line.fill.background()
+add_divider(slide, 4.5, 3.2, 4)
 
 add_text(slide, 1.5, 3.8, 10, 1.2,
     "Sistem ini dibangun dengan prinsip:\nbukan menggantikan analis, tapi membantu analis\nambil keputusan lebih cepat dengan informasi yang cukup.",
-    18, RGBColor(0x55, 0x55, 0x55), False, PP_ALIGN.CENTER)
+    18, GRAY, False, PP_ALIGN.CENTER)
 
-add_text(slide, 1, 5.3, 11, 0.5, "Ravi Arnan Irianto  |  2305551076", 18, RGBColor(0, 0, 0), True, PP_ALIGN.CENTER)
-add_text(slide, 1, 5.8, 11, 0.5, "raviarnankeren@gmail.com", 14, RGBColor(0x88, 0x88, 0x88), False, PP_ALIGN.CENTER)
+add_text(slide, 1, 5.3, 11, 0.5, "Ravi Arnan Irianto  |  2305551076", 18, BLACK, True, PP_ALIGN.CENTER)
+add_text(slide, 1, 5.8, 11, 0.5, "raviarnankeren@gmail.com", 14, LGRAY, False, PP_ALIGN.CENTER)
 
 
 # ─── Simpan ───
