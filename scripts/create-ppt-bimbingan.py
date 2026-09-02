@@ -255,7 +255,7 @@ slide = prs.slides.add_slide(prs.slide_layouts[6])
 add_text(slide, 0.5, 0.3, 12, 0.6, "Roadmap Pengerjaan", 28, BLUE, True)
 add_divider(slide, 0.5, 0.9, 3.5)
 
-make_table(slide, 0.5, 1.2, 12.3, 5.8, [
+make_table(slide, 0.5, 1.1, 12.3, 6.1, [
     ["Kategori", "Item", "Status", "Tanggal"],
     ["A - Bug fix", "block-domain persist", "Selesai", "2026-07-02"],
     ["A - Bug fix", "Notifikasi ganda diperbaiki", "Selesai", "2026-07-02"],
