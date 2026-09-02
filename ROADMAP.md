@@ -3,11 +3,11 @@
 Konsolidasi **gap (kesenjangan/masalah)** dan **solusi** untuk proyek:
 *Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop* — Ravi Arnan Irianto (2305551076).
 
-Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) Keamanan platform, (E) Arsitektur, (F) Kontribusi terhadap masalah industri.
+Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) Keamanan platform, (E) Arsitektur, (F) Kontribusi terhadap masalah industri, (G) Perluasan cakupan deteksi (penguatan TA), (H) Pemeliharaan & modernisasi stack.
 
 ---
 
-## Status ringkas (per 2026-07-06)
+## Status ringkas (per 2026-09-02)
 
 ### ✅ SUDAH dikerjakan
 - **A#1** `block-domain` persist (permanen di template + config ter-version-control).
@@ -18,6 +18,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 - **F (explainable)** notifikasi malware **&** phishing memuat `🧠 Alasan keputusan`; **F (self-aware inline)** tandai `⚠️ Deteksi TERDEGRADASI` saat sumber rate-limit/error; **F (audit-trail)** keputusan analis dicatat `oleh <analis> pada <waktu WITA>` + riwayat eksekusi n8n.
 - **F (self-aware health monitor, 2026-07-06)** `scripts/health-monitor.py` — poll komponen inti (agent putus via Wazuh API, n8n, Ollama), alert Telegram HANYA saat status berubah (anti-spam), state persist. Service `health-monitor` di compose.
 - **D (hardening + IaC, 2026-07-06)** `deploy/hardened/` (Caddy reverse-proxy + TLS + basic-auth + segmentasi edge/backend, n8n tak publish port, `N8N_ENCRYPTION_KEY`) · **secret mgmt** `.env.example` · **IaC** `deploy/ansible/deploy-integration.yml` (idempoten).
+- **H (pemeliharaan stack, 2026-09-02)** n8n di-update `2.35.7 → 2.36.9` — berada di atas semua versi patch CVE 2026 (Ni8mare/CVE-2026-21858 fixed di 1.121.0, CVE-2026-21877 di 1.121.3, CVE-2026-27495 di 1.123.22/2.x). Image python:3.12-alpine, caddy:2-alpine, Wazuh 4.9.2 di-pull ulang; seluruh container di-recreate & sehat (indexer cluster GREEN, 3 workflow n8n aktif).
 
 ### ⬜ BELUM dikerjakan (sisa)
 | Prioritas | Item | Kategori | Berat |
@@ -28,6 +29,8 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | Menengah | **Deteksi perilaku** (sandbox/exec-bit), **multi-sumber** (MISP/MalwareBazaar), re-scan, TTL cache | B | berat |
 | Lanjutan | **LLM-fallback** advisory + **RAG** anti-halusinasi; **trusted autonomy** (timeout/SLA) | F | berat |
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
+| Menengah | **Deteksi magic-byte** (ELF/MZ tanpa ekstensi) → HITL | G2 | sedang |
+| Ditunda pasca-TA | **Upgrade Wazuh 4.9.2 → 4.14.7** terjadwal (agent ikut) | H3 | berat |
 
 **Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
 
@@ -96,6 +99,27 @@ Masalah industri 2025–2026: playbook rapuh/statis, *playbook rot* (silent-fail
 | ✅ **Terukur** (di C) | **Alert fatigue** | Reduksi FP VT-gated **100%** (lihat `docs/EVALUASI-METRIK.pdf`) |
 | ⬜ Lanjutan | HITL = bottleneck vs otonomi berisiko | **Trusted autonomy**: timeout/SLA + otonomi adaptif per tingkat keyakinan |
 
+## G. Perluasan cakupan deteksi (penguatan TA, selaras milestone M2–M3)
+
+Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** dan **phishing via log akses URL**. Belum mencakup vektor lain — bukan kelemahan, tapi pilihan desain. Prioritas perluasan diurutkan nilai/effort. (Item multi-sumber/re-scan/sandbox sudah tercakup di bagian B — tidak diduplikasi di sini.)
+
+| Prioritas | Item | Status sekarang | Aksi | Berat |
+|-----------|------|-----------------|------|-------|
+| 1 | **G1 — Phishing proaktif** (url/domain *belum* sempat diklik) | Reaktif: baru mendeteksi URL yang muncul di log akses | ✅ **SELESAI (2026-09-02):** workflow n8n `Proaktif Phishing (URLhaus)` — Schedule tiap jam → feed URLhaus CSV (`csv_recent/`, publik) → parse/filter `malware_download` (max 15/siklus) → verifikasi **GSB** per URL → **auto-`!block-domain`** ke agent 001 (via Wazuh API inline) untuk threat GSB; yang GSB `unavailable` → masuk **review** (tidak diklaim aman); bersih → silent. Cache 24 jam (staticData) anti-rescan. 1 notifikasi ringkasan Telegram per siklus (anti-spam). Teruji: feed→parse→GSB→review/block→notif. | sedang |
+| 2 | **G2 — Magic-byte untuk file tanpa ekstensi** | B#1 baru menangkap file berekstensi (.sh/.exe/.ps1/…); ELF/MZ **tanpa ekstensi** lolos & disenyapkan | ✅ **SELESAI (2026-09-02):** deteksi **execute-bit via `perm_after`** dari alert FIM (check_all) — node `Ekstrak Alert` ekstrak `perm_after`/`no_ext`/`is_exec`; `Rangkum Hasil` perluas `review_unknown`: file **tanpa ekstensi + executable + VT unknown** → `risky_exec` → jalur tombol HITL, bukan sunyi. Teruji: file exec tanpa ekstensi + VT unknown → **REVIEW (tombol)**; file non-exec tanpa ekstensi → **sunyi** (tanpa FP) | sedang |
+| 3 (opsional) | **G3 — Phishing email** (lampiran + tautan body) | Belum ada | Aturan Wazuh atas log mail/proxy; lampiran dialihkan ke pipeline malware (hash VT); tautan ke pipeline phishing | berat |
+| 4 (opsional) | **G4 — Deteksi perilaku ringan** (auditd) sbg pemicu kedua | Hanya FIM (file jatuh ke disk) | Rule eksekusi mencurigakan (execve via auditd) → enrichment VT + HITL. Menangkap malware yang *berjalan*, bukan cuma *tersimpan* | berat |
+
+## H. Pemeliharaan & modernisasi stack
+
+| Status | Item | Catatan |
+|--------|------|---------|
+| ✅ **SELESAI** (2026-09-02) | **H1 — Update image & recreate** | n8n `2.35.7 → 2.36.9` (di atas semua versi patch CVE 2026); python/caddy/Wazuh di-pull; container di-recreate & sehat (indexer GREEN) |
+| ✅ **SELESAI** (2026-09-02) | **H2 — Pin versi n8n** | `image: n8nio/n8n` → `n8nio/n8n:2.36.9` di `docker-compose.yml` root & `deploy/hardened/docker-compose.yml`. Digest tag = digest image berjalan (`a9e2e3c8…`), container di-recreate & sehat (healthz 200) |
+| ⬜ Ditunda pasca-TA | **H3 — Upgrade Wazuh 4.9.2 → 4.14.7** | Stable terbaru jalur 4.x (30 Jul 2026). Ikuti panduan resmi `upgrading-wazuh-docker` (path cert dashboard/indexer berubah, update image + `wazuh_manager.conf`). **Agent wajib di-upgrade bareng** (kompatibilitas versi — risiko seperti insiden 4.14.5 dulu). Uji di lingkungan terpisah dulu |
+| ⬜ Jangan dikejar | **H4 — Wazuh 5.0** | Masih **beta** (beta5, 1 Sep 2026) & breaking besar: engine sendiri, hapus Filebeat, path `/var/wazuh-manager`, hapus agent ID 000 → berdampak integratord + AR path lama. Evaluasi pasca-TA |
+| Catatan | **H5 — Alternatif "lebih ringan"** | Tidak ada pengganti Wazuh setara yang lebih ringan: osquery/Falco/Velociraptor = fungsi lebih sedikit; Elastic/Graylog/Security Onion = selevel/lebih berat (Graylog SSPL). Resource sekarang sehat (~2,7 GB: indexer 1,5 GB, manager 0,5 GB, dashboard 0,2 GB, n8n 0,37 GB) |
+
 ---
 
 ## Prioritas eksekusi (sepadan-usaha)
@@ -103,9 +127,12 @@ Masalah industri 2025–2026: playbook rapuh/statis, *playbook rot* (silent-fail
 1. **Perbaiki 3 bug keandalan (A)** — kredibel, berbasis bukti, cepat.
 2. **Tambah metrik kuantitatif (C)** — membuktikan klaim "unggul".
 3. **Deteksi hybrid/multi-sinyal (B)** — tutup celah false-negative zero-day.
-4. **Hardening keamanan + IaC (D)** — kematangan & reproducibility.
-5. **Kontribusi self-aware + explainable (F)** — kebaruan menjawab keluhan teratas industri.
-6. **Arsitektur queue-mode + HA (E)** — jangka menengah.
+4. **Housekeeping versi (H2 ✅)** — pin versi n8n sudah dibereskan; pertahankan kebiasaan `pull + up -d` terjadwal.
+5. **Perluasan cakupan (G1, lalu G2)** — phishing proaktif + magic-byte → masuk window milestone M2–M3.
+6. **Hardening keamanan + IaC (D)** — kematangan & reproducibility.
+7. **Kontribusi self-aware + explainable (F)** — kebaruan menjawab keluhan teratas industri.
+8. **Arsitektur queue-mode + HA (E)** — jangka menengah.
+9. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
 
 ## Prinsip arah tesis
 > SOAR open-source yang **confidence-based, transparan, dan sadar-degradasi** untuk menekan alert fatigue tanpa silent-failure — dengan human-in-the-loop yang dapat dipertanggungjawabkan.

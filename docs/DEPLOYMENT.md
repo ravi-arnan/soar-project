@@ -6,7 +6,7 @@ Panduan setup SOAR project dari nol — untuk reproducibility (thesis bab Implem
 
 ### Server Side (laptop utama / VPS)
 
-- **Linux** (Ubuntu 22.04 LTS / Debian 12 / Rocky 9 / Fedora Server)
+- **Linux** (Ubuntu 22.04 LTS / Debian 12 / Rocky 9 / Fedora Server / NixOS 25.05+)
 - **Docker Engine** ≥ 20.10 + Docker Compose v2
 - **RAM** minimum 12 GB (rekomendasi 16 GB)
 - **Disk** minimum 80 GB SSD
@@ -22,7 +22,36 @@ Panduan setup SOAR project dari nol — untuk reproducibility (thesis bab Implem
 
 - **VirusTotal API key** — free tier (`https://www.virustotal.com/gui/my-apikey`)
 - **Telegram Bot Token** — via BotFather (`https://core.telegram.org/bots#botfather`)
-- **Telegram Chat ID** — ambil via `@get_id_bot`
+- **Telegram Chat ID** — ambil via `@get_id_bot`. Ini id **tujuan** (akun atau
+  grup penerima alert), bukan id bot: DM = angka positif, grup = negatif
+  (`-100...`). Bot hanya pengirimnya.
+
+### Khusus host NixOS
+
+Dua default NixOS membuat container tidak bisa menghubungi host, dan gejalanya
+menyesatkan: `wazuh-integratord` tetap "running", alert hanya tidak pernah
+sampai. Tambahkan di `/etc/nixos/configuration.nix`, lalu
+`sudo nixos-rebuild switch`:
+
+```nix
+networking.firewall.trustedInterfaces = [ "docker0" "br-+" ];
+services.ollama.host = "0.0.0.0";
+```
+
+- `br-+` wajib, `docker0` saja tidak cukup: setiap project Compose membuat
+  bridge sendiri bernama `br-<id>`, sementara `docker0` justru tidak terpakai.
+  Tanpa wildcard ini, bahkan port yang sudah di-publish pun timeout dari dalam
+  container.
+- `services.ollama.host` default `127.0.0.1` sehingga tak terjangkau container.
+  Yang menjaganya tetap privat adalah firewall di atas: port 11434 tidak pernah
+  dimasukkan ke `allowedTCPPorts`.
+
+Verifikasi dari dalam container (dua-duanya harus membalas):
+
+```bash
+docker exec n8n sh -c 'wget -qO- http://host.docker.internal:5678/healthz'
+docker exec n8n sh -c 'wget -qO- http://host.docker.internal:11434/api/version'
+```
 
 ## Step 1 — Setup Server Stack
 
@@ -114,7 +143,15 @@ ollama pull llama3.2:3b
 ollama list
 ```
 
-Ollama otomatis listen di `http://172.17.0.1:11434` (host docker0 interface), accessible dari container.
+Installer resmi menjalankan Ollama dengan bind `0.0.0.0`, sehingga container
+menjangkaunya lewat `host.docker.internal:11434` (compose sudah menyetel
+`extra_hosts: host-gateway`). Paket bawaan distribusi bisa berbeda — NixOS
+mem-bind `127.0.0.1` dan tidak terjangkau dari container (lihat
+[Khusus host NixOS](#khusus-host-nixos)). Periksa dulu:
+
+```bash
+ss -ltn | grep 11434   # harus 0.0.0.0:11434 atau *:11434, bukan 127.0.0.1
+```
 
 ## Step 2 — Setup Wazuh Integration
 
@@ -149,7 +186,18 @@ Edit `ossec.conf` di Wazuh manager container, tambah `<integration>` blocks sebe
 </integration>
 ```
 
-> Catatan: IP `172.20.0.1` adalah gateway docker network `single-node_default`. Sesuaikan kalau network setup berbeda.
+> **Jangan salin IP ini mentah-mentah.** `172.20.0.1` hanyalah gateway
+> `single-node_default` di mesin tempat panduan ini ditulis; Docker
+> mengalokasikan subnet per-host, jadi di mesin lain bisa `172.19.0.1`. Salah IP
+> adalah kegagalan senyap: `wazuh-integratord` tetap "running" dan alert hanya
+> tidak pernah sampai ke n8n. Ambil dan uji nilainya:
+>
+> ```bash
+> GW=$(docker network inspect single-node_default \
+>       -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+> docker exec single-node-wazuh.manager-1 \
+>   curl -s -o /dev/null -w '%{http_code}\n' http://$GW:5678/healthz   # harus 200
+> ```
 
 Restart manager:
 ```bash

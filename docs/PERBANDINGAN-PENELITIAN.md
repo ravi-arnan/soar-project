@@ -19,6 +19,12 @@
 | 7 | Kerangka Human–AI Collaboration in SOC — *arXiv, 2025 (konseptual)* | Konseptual | – | Umum | – | ✔ (konsep approval) | ✔ (konsep) | ✔ (level otonomi) | ✔ (konsep) | – |
 | 8 | Wazuh terdistribusi *high-availability* — *Springer CCIS, 2026* | ✘ (fokus deteksi/HA) | Wazuh | Deteksi umum | – | ✘ | – (fokus deteksi) | ✘ | ✘ | ✔ (terdistribusi/HA) |
 | 9 | Wazuh + Shuffle SOAR — *IJERT/ACSCON, 2026* | Shuffle | Wazuh | Umum | – | ✘ (otomatis) | ✔ | ✘ | ✘ | – |
+| 10 | AI-Powered SOAR: Wazuh + n8n + VirusTotal/OTX + Gemini + TheHive — *proyek (GitHub)* | n8n | Wazuh | Umum (FIM) | VirusTotal + AlienVault OTX | ✘ (otomatis; notifikasi grup) | ✔ (parsial: case TheHive + eskalasi; detail aksi tak dirinci) | ✘ | ✔ **cloud** (Gemini 2.5 Flash) | – |
+| 11 | Project Casefile: Wazuh → n8n → AI triage → DFIR-IRIS, AR disetujui analis — *proyek (GitHub)* | n8n | Wazuh | Umum (brute force SSH) | – | ✔ (approval analis di IRIS) | ✔ (firewall-drop / disable-account, pasca-approval) | ✘ | ✔ **cloud** (Claude API) | ✔ (homelab: Linux + Windows) |
+| 12 | SOC open-source semi-otomatis Wazuh + n8n (HITL + audit trail) — *proyek (GitHub)* | n8n | Wazuh | Gangguan layanan kritis (DNS/DHCP) | – | ✔ (tombol approve/reject + audit ke SIEM) | ✔ (restart layanan, pasca-approval) | ✘ | ✘ | – |
+| 13 | Automated SOC IR Lab: Wazuh + n8n + AbuseIPDB + Telegram — *proyek (GitHub)* | n8n | Wazuh | Auth failure (Windows 4625, SSH) | AbuseIPDB | ✘ (1-arah) | ✘ (direncanakan) | ✘ | ✘ | ✔ (Windows + Kali) |
+| 14 | SOAR berbasis Shuffle + CrowdSec pada server Pemkab — *TA, Politeknik Caltex Riau* | Shuffle | Wazuh | Umum (serangan server) | CrowdSec | ✘ | ✔ (bouncer blokir IP) | ✘ | ✘ | – |
+| 15 | Keamanan siber Wazuh + Shuffle + YARA, pusat data Pemkot Tangerang — *jurnal nasional (APTII Router)* | Shuffle | Wazuh | Umum (70 endpoint) | – (rule YARA lokal) | ✘ | – | ✘ | ✘ | ✔ (70 endpoint) |
 
 > **Catatan kolom "Sumber intel/reputasi":** tanda **–** berarti karya tersebut **tidak memakai feed reputasi/threat-intelligence eksternal** (mis. VirusTotal/GSB/URLScan) — **bukan** berarti tidak mendeteksi. Deteksinya tetap berjalan, umumnya lewat **rule/korelasi bawaan Wazuh** (dan sebagian menambah triase LLM atau model IDS). Kolom ini khusus melacak **pengayaan reputasi eksternal** yang dipakai untuk memutuskan tingkat keyakinan respons — yang menjadi salah satu pembeda karya ini (Wazuh mendeteksi → diverifikasi ke reputasi multi-sumber sebelum merespons). Konsekuensinya, pembanding yang murni rule-based lebih rentan *false-positive*, sedangkan pendekatan berbasis reputasi menambah keterbatasan tersendiri (lihat sub-bagian *Keandalan sumber Threat Intelligence*).
 
@@ -26,17 +32,18 @@
 
 | Diferensiator | Penjelasan | Pembanding yang belum punya |
 |---------------|-----------|------------------------------|
-| **Respons berjenjang berbasis keyakinan (VT-gated)** | Otoritas keputusan = konsensus VirusTotal/GSB, bukan noise FIM. Auto-isolasi (≥20) / tombol (1–19) / **sunyi** (bersih) → menekan *alert fatigue* & false positive | 1, 2, 3, 5, 6, 8, 9 |
-| **Human-in-the-loop interaktif 2-arah** | Tombol Telegram [Isolasi]/[Blokir]/[Abaikan] langsung memicu Active Response — bukan sekadar notifikasi | 1, 2 (1-arah), 3, 6 (1-arah), 8, 9 |
-| **Dua kelas ancaman + dua AR berbeda** | Malware → `quarantine-file`; Phishing → **sinkhole domain** (`/etc/hosts`) | Mayoritas hanya 1 ancaman / 1 AR |
-| **AI analisis lokal (kedaulatan data, biaya nol)** | Ollama on-premise → data tidak keluar infrastruktur, tanpa biaya API | 2, 3, 6, 8, 9 (tanpa AI); 4 (AI cloud) |
-| **n8n sebagai mesin SOAR (akademik)** | Jurnal sejenis umumnya Shuffle/TheHive (termasuk 2026); n8n masih jarang di ranah akademik | 1, 5, 9 |
-| **Multi-agent lintas distribusi + open-source penuh** | Ubuntu + Rocky 9 lapor ke 1 manager; seluruh stack open-source, biaya nol | Jarang disebut eksplisit (kec. 8 yang fokus HA) |
+| **Respons berjenjang berbasis keyakinan (VT-gated)** | Otoritas keputusan = konsensus VirusTotal/GSB, bukan noise FIM. Auto-isolasi (≥20) / tombol (1–19) / **sunyi** (bersih) → menekan *alert fatigue* & false positive | 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15 |
+| **Human-in-the-loop interaktif 2-arah** | Tombol Telegram [Isolasi]/[Blokir]/[Abaikan] langsung memicu Active Response — bukan sekadar notifikasi | 1, 2 (1-arah), 3, 6 (1-arah), 8, 9, 10, 13, 14, 15; 11 & 12 sudah HITL tetapi **lewat antarmuka IRIS/web**, bukan tombol di kanal analis |
+| **Dua kelas ancaman + dua AR berbeda** | Malware → `quarantine-file`; Phishing → **sinkhole domain** (`/etc/hosts`) | Mayoritas hanya 1 ancaman / 1 AR (11, 12, 14 juga) |
+| **AI analisis lokal (kedaulatan data, biaya nol)** | Ollama on-premise → data tidak keluar infrastruktur, tanpa biaya API | 2, 3, 6, 8, 9, 12, 13, 14, 15 (tanpa AI); 4, 10, 11 (AI cloud) |
+| **n8n sebagai mesin SOAR (akademik)** | Jurnal sejenis umumnya Shuffle/TheHive (termasuk 2026); n8n masih jarang di ranah akademik | 1, 5, 9, 14, 15 |
+| **Multi-agent lintas distribusi + open-source penuh** | Ubuntu + Rocky 9 lapor ke 1 manager; seluruh stack open-source, biaya nol | Jarang disebut eksplisit (kec. 8 yang fokus HA; 11 & 13 lab VM saja) |
 
 ## Catatan untuk sidang
 - Kebaruan bersifat **integratif** (kombinasi + desain), bukan fundamental — sampaikan jujur.
 - Perkuat klaim "unggul" dengan **metrik kuantitatif** (MTTR, % reduksi false-positive dari VT-gating, throughput/latensi) — belum dimiliki mayoritas pembanding level blog.
-- **Posisi 2026:** riset Wazuh terbaru (2026) masih (a) berbasis **Shuffle** (IJERT/ACSCON), atau (b) fokus **infrastruktur/high-availability** (Springer CCIS) — belum ada yang menggabungkan n8n + malware & phishing + HITL 2-arah + AI lokal + respons berjenjang VT-gated. Diferensiator karya ini tetap valid.
+- **Posisi 2026:** riset Wazuh terbaru (2026) masih (a) berbasis **Shuffle** (IJERT/ACSCON, TA Indonesia), (b) fokus **infrastruktur/high-availability** (Springer CCIS), atau (c) proyek praktisi n8n+AI yang **belum menggabungkan seluruh** elemen: malware & phishing sekaligus, HITL 2-arah **di kanal analis**, AI **lokal**, dan respons berjenjang VT-gated. Pembanding terdekat (10: otomatis penuh tanpa HITL; 11: HITL via IRIS + AI cloud; 12: HITL via web tanpa AI/reputasi) masing-masing hanya menutup sebagian — kombinasi penuh tetap belum ada.
+- **Keunggulan metrik pembanding (pakai untuk mematok target):** #10 melaporkan MTTR turun dari ~15 menit (manual) menjadi **<10 detik** (otomatis); #11 melaporkan alert→case terstruktur ~**7 dtk** dan akurasi triase AI 3/4 vs ground truth. Karya ini belum punya angka setara — jadikan acuan untuk bab evaluasi agar klaim kuantitatif tidak kalah.
 - **Pertimbangan keamanan platform (WAJIB diantisipasi):** riset 2026 menyorot penyalahgunaan n8n & kerentanan kritis **CVE-2026-21858 ("Ni8mare", CVSS 10.0)** — RCE/arbitrary file read via webhook. Mitigasi pada sistem ini: webhook n8n **tidak diekspos publik** (poller keluar-saja di balik NAT), n8n versi ter-patch, dan akses dibatasi lokal. Bahas di bab keterbatasan/keamanan sebagai bentuk kesadaran risiko.
 
 ## Pengembangan Lanjutan & Penguatan Proyek
@@ -112,3 +119,11 @@ Prinsip: perlakukan VT/GSB/URLScan sebagai **corroboration multi-sinyal**, bukan
 12. *Enhancing Wazuh SIEM Capabilities through SOAR* (Wazuh + Shuffle), IJERT — Proc. ACSCON, Vol. 14 No. 06, 2026 — https://www.ijert.org/research/IJERTCONV14IS060090.pdf
 13. Cisco Talos, *The n8n n8mare: How threat actors are misusing AI workflow automation* (2026) + CVE-2026-21858 "Ni8mare" (CVSS 10.0) — https://blog.talosintelligence.com/the-n8n-n8mare/
 14. *Incident Response Planning Using a Lightweight Large Language Model with Reduced Hallucination* (arXiv, 2025) — https://arxiv.org/pdf/2508.05188
+15. R. Aditya, *AI-Powered SOAR: Automated Threat Intel & Incident Response* (Wazuh + n8n + VirusTotal/OTX + Gemini + TheHive, GitHub, 2025) — https://github.com/reza3ACT/AI-Powered-SOAR-Automated-Threat-Intel-Incident-Response
+16. E. Fuentes, *Project Casefile: AI-powered SOAR pipeline — Wazuh → n8n → Claude triage → DFIR-IRIS case management with human-approved active response* (GitHub) — https://github.com/enak223/project-casefile
+17. *SOC open-source — détection Wazuh + réponse semi-automatisée n8n (human-in-the-loop)* (GitHub) — https://github.com/tech2021-tech/soc-wazuh-n8n
+18. *Automated SOC Incident Response Lab using Wazuh, n8n, AbuseIPDB, and Telegram* (GitHub) — https://github.com/yara43/soc-wazuh-n8n-telegram-automation
+19. *Implementasi Security Orchestration, Automation and Response (SOAR) Berbasis Shuffle dan CrowdSec pada Server Pemerintah Kabupaten XYZ* (TA, Politeknik Caltex Riau) — https://repository.lib.pcr.ac.id/id/eprint/3392/
+20. *Implementasi dan Evaluasi Sistem Keamanan Siber Berbasis Wazuh, Shuffle, dan YARA pada Pusat Data Pemerintah Kota Tangerang*, Jurnal Router, APTII — https://journal.aptii.or.id/index.php/Router/article/download/752/716
+21. S. Singh, M. Tariq, et al., *LLMs in the SOC: An Empirical Study of Human-AI Collaboration in Security Operations Centres* (arXiv:2508.18947, 2025) — https://arxiv.org/abs/2508.18947
+22. H. R. Srinivas, S. Kirk, et al., *AI-Augmented SOC: A Survey of LLMs and Agents for Security Automation*, MDPI (2025) — https://www.mdpi.com/2624-800X/5/4/95
