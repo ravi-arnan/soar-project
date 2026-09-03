@@ -248,17 +248,22 @@ HTML = r"""<!doctype html>
   .topbar .right .live .pulse{width:7px;height:7px;border-radius:50%;background:#7fd4a0;animation:pl 1.5s infinite}
   @keyframes pl{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}
 
-  /* Sidebar kiri ala OpenSearch Dashboards collapsible */
+  /* Sidebar kiri ala OpenSearch Dashboards: toggle statis, TIDAK overlay hover */
   .side{position:fixed;top:48px;left:0;bottom:0;width:64px;background:#011a2f;padding-top:12px;display:flex;flex-direction:column;gap:4px;z-index:40;transition:width .15s}
-  .side:hover{width:200px}
+  body.x .side{width:200px}
   .side a.item{display:flex;align-items:center;gap:12px;color:#8ea9c1;padding:10px 20px;font-size:12.5px;white-space:nowrap;overflow:hidden;border-left:3px solid transparent}
   .side a.item:hover{color:#fff;background:#0d2b47}
   .side a.item.active{color:#fff;border-left-color:#00a9e0;background:#0d2b47}
   .side a.item i{width:16px;height:16px;flex:none}
   .side .lbl{opacity:0;transition:.15s}
-  .side:hover .lbl{opacity:1}
+  body.x .side .lbl{opacity:1}
+  .side .tog{margin-top:auto;color:#8ea9c1;background:none;border:0;border-top:1px solid #0d2b47;padding:12px 24px;cursor:pointer;font-size:12px;display:flex;gap:12px;align-items:center;white-space:nowrap}
+  .side .tog:hover{color:#fff}
+  .side .tog i{width:16px;height:16px;flex:none}
 
-  .main{margin-left:64px;padding:20px 24px 40px}
+  .main{margin-left:64px;padding:20px 24px 40px;transition:margin-left .15s}
+  body.x .main{margin-left:200px}
+  @media(max-width:900px){.side{width:64px}body.x .side{width:64px}body.x .side .lbl{opacity:0}.main{margin-left:64px}body.x .main{margin-left:64px}}
   .crumbs{font-size:12.5px;color:#69707d;margin-bottom:14px}
   .crumbs b{color:#00618a}
 
@@ -356,6 +361,7 @@ HTML = r"""<!doctype html>
   <a class="item" data-view="agents" href="#agents"><i data-lucide="monitor-smartphone"></i><span class="lbl">Agents</span></a>
   <a class="item" data-view="threat" href="#threat"><i data-lucide="shield-alert"></i><span class="lbl">Threat Events</span></a>
   <a class="item" data-view="health" href="#health"><i data-lucide="activity"></i><span class="lbl">Health</span></a>
+  <button class="tog" onclick="document.body.classList.toggle('x');lucide.createIcons()" title="Buka/tutup menu"><i data-lucide="chevrons-right" id="togi"></i><span class="lbl">Buka menu</span></button>
 </nav>
 
 <div class="main">
