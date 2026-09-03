@@ -63,6 +63,10 @@ HEARTBEAT_TTL = (
     120  # detik, lewat ini dianggap disconnected (2x interval heartbeat 60s)
 )
 
+# Ring buffer event (max 200): alert file dari agent / n8n webhook-log
+EVENTS = []
+EVENTS_MAX = 200
+
 # Cache Wazuh agents
 WAZUH_CACHE = {"data": [], "fetched_at": 0}
 WAZUH_TTL = 30
@@ -193,6 +197,12 @@ def build_fleet(cfg):
         "wazuh_api": len(wazuh_agents) > 0,
     }
 
+    # Severity summary untuk donut chart (dari EVENTS)
+    sev_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "UNVERIFIED": 0, "INFO": 0}
+    for ev in EVENTS:
+        sev = ev.get("severity", "INFO")
+        if sev in sev_counts:
+            sev_counts[sev] += 1
     active = sum(1 for a in fleet if a["status"] == "active")
     rust_count = sum(1 for a in fleet if a["type"] == "rust")
     wazuh_count = sum(1 for a in fleet if a["type"] == "wazuh")
@@ -207,6 +217,8 @@ def build_fleet(cfg):
             "rust": rust_count,
             "wazuh": wazuh_count,
             "capacity_demo": "100 workstation ready (scalable, hash-only 1-2 KB per event)",
+            "events_total": len(EVENTS),
+            "severity": sev_counts,
         },
         "agents": fleet,
     }
@@ -217,135 +229,334 @@ HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Wazuh — Fleet Monitor (100 Workstation)</title>
+<title>Wazuh — Fleet Monitor</title>
 <script src="https://unpkg.com/lucide@latest"></script>
 <style>
-  /* Wazuh Dashboard palette — tiru OpenSearch Dashboards + Wazuh plugin (light theme) */
+  /* ===== Wazuh Dashboard asli (OpenSearch Dashboards light + Wazuh plugin) ===== */
   *{box-sizing:border-box}
-  body{font-family:Inter, ui-sans-system, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin:0; background:#f5f7fa; color:#2f343f}
-  /* Top nav ala Wazuh: dark navy, logo wazuh. */
-  .wz-header{background:#011a2f; color:#fff; padding:0 16px; height:48px; display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid #00a9e0}
-  .wz-brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.02em}
-  .wz-brand span.wz-logo{font-size:20px;letter-spacing:.01em}
-  .wz-brand span.wz-logo b{color:#00a9e0}
-  .wz-brand small{font-weight:400;opacity:.75;font-size:12px;margin-left:8px}
-  .wz-header-right{font-size:11px;opacity:.8;display:flex;gap:12px;align-items:center}
-  .wz-subnav{background:#fff;border-bottom:1px solid #d3dae6;padding:10px 16px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-  .wz-subnav .breadcrumb{font-size:13px;color:#00a9e0}
-  .wz-subnav .meta{font-size:11px;color:#6a717d;margin-left:auto;display:flex;gap:12px;align-items:center}
-  /* Cards ala Wazuh overview: putih, border tipis, shadow halus */
-  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;padding:16px}
-  .card{background:#fff;border:1px solid #d3dae6;border-radius:4px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-  .card .label{font-size:11px;letter-spacing:.06em;color:#6a717d;text-transform:uppercase;font-weight:600}
-  .card .value{font-size:24px;font-weight:700;margin-top:4px;color:#011a2f}
-  .card .hint{font-size:11px;color:#6a717d;margin-top:2px}
-  .status-ok{color:#00a86b} .status-warn{color:#ff8f1c} .status-bad{color:#db2828}
-  /* Health bar ala Wazuh */
-  .health{background:#fff;border:1px solid #d3dae6;border-radius:4px;margin:0 16px;padding:10px 14px;display:flex;gap:18px;flex-wrap:wrap;font-size:12px;align-items:center}
-  .health span{display:inline-flex;align-items:center;gap:6px}
-  .health .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-  /* Table ala Wazuh Agents */
-  .panel{background:#fff;border:1px solid #d3dae6;border-radius:4px;margin:16px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
-  .panel-head{padding:12px 14px;border-bottom:1px solid #d3dae6;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff}
-  .panel-head h2{margin:0;font-size:13px;font-weight:700;color:#011a2f;display:flex;align-items:center;gap:8px}
-  .panel-head .spacer{flex:1}
-  .btn{appearance:none;border:1px solid transparent;background:#00a9e0;color:#fff;padding:6px 12px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
-  .btn:hover{background:#0095c7}
-  .btn-secondary{background:#fff;color:#00658f;border-color:#00a9e0}
-  .btn-secondary:hover{background:#e6f7ff}
-  table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th{background:#f8f9fb;color:#5a6470;font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid #d3dae6;font-size:11px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
-  td{padding:8px 10px;border-bottom:1px solid #eef1f6;color:#2f343f}
-  tr:hover td{background:#f2f8ff}
-  .badge{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;border:1px solid}
-  .badge-active{background:#e6f4ea;color:#137333;border-color:#b7e1c5}
-  .badge-disc{background:#fce8e6;color:#a50e0e;border-color:#f5c6c2}
-  .badge-rust{background:#e8f0fe;color:#1967d2;border-color:#c2d6ff}
-  .badge-wazuh{background:#f1f3f4;color:#3c4043;border-color:#dadce0}
-  .mono{font-family:ui-monospace, "Cascadia Code", Menlo, monospace; font-size:11px}
-  .muted{color:#6a717d}
-  .wrap-foot{padding:10px 14px;background:#f8f9fb;border-top:1px solid #d3dae6;font-size:11px;color:#6a717d}
+  body{font-family:"Open Sans",Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;margin:0;background:#fafbfd;color:#1a1c21;font-size:14px}
   a{color:#00a9e0;text-decoration:none} a:hover{text-decoration:underline}
+
+  /* Top bar Wazuh: navy #011a2f, aksen biru #00a9e0 */
+  .topbar{background:#011a2f;height:48px;display:flex;align-items:center;padding:0 18px;position:sticky;top:0;z-index:50}
+  .topbar .logo{display:flex;align-items:center;gap:10px;color:#fff;font-size:19px;font-weight:700}
+  .topbar .logo b{color:#00a9e0;font-weight:700}
+  .topbar .logo .app{font-weight:400;font-size:13px;color:#8ea9c1;margin-left:2px}
+  .topbar .badge100{background:#00a9e0;color:#fff;font-size:10px;letter-spacing:.08em;padding:2px 8px;border-radius:3px;font-weight:700}
+  .topbar .right{margin-left:auto;display:flex;gap:16px;color:#8ea9c1;font-size:11.5px;align-items:center}
+  .topbar .right .live{display:inline-flex;align-items:center;gap:5px;color:#7fd4a0}
+  .topbar .right .live .pulse{width:7px;height:7px;border-radius:50%;background:#7fd4a0;animation:pl 1.5s infinite}
+  @keyframes pl{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}
+
+  /* Sidebar kiri ala OpenSearch Dashboards collapsible */
+  .side{position:fixed;top:48px;left:0;bottom:0;width:64px;background:#011a2f;padding-top:12px;display:flex;flex-direction:column;gap:4px;z-index:40;transition:width .15s}
+  .side:hover{width:200px}
+  .side a.item{display:flex;align-items:center;gap:12px;color:#8ea9c1;padding:10px 20px;font-size:12.5px;white-space:nowrap;overflow:hidden;border-left:3px solid transparent}
+  .side a.item:hover{color:#fff;background:#0d2b47}
+  .side a.item.active{color:#fff;border-left-color:#00a9e0;background:#0d2b47}
+  .side a.item i{width:16px;height:16px;flex:none}
+  .side .lbl{opacity:0;transition:.15s}
+  .side:hover .lbl{opacity:1}
+
+  .main{margin-left:64px;padding:20px 24px 40px}
+  .crumbs{font-size:12.5px;color:#69707d;margin-bottom:14px}
+  .crumbs b{color:#00618a}
+
+  h1.pv{font-size:20px;font-weight:600;margin:0 0 4px;color:#011a2f}
+  .pvsub{font-size:12.5px;color:#69707d;margin-bottom:16px}
+
+  /* KPI cards ala Wazuh overview */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:18px}
+  .kpi{background:#fff;border:1px solid #d3dae6;border-radius:4px;padding:14px 16px;box-shadow:0 1px 2px rgba(0,26,47,.06)}
+  .kpi .t{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#69707d;font-weight:700}
+  .kpi .v{font-size:26px;font-weight:700;color:#011a2f;margin-top:4px}
+  .kpi .v.ok{color:#0b8a4b}.kpi .v.warn{color:#b26b00}.kpi .v.bad{color:#bd2719}
+  .kpi .h{font-size:11px;color:#8b8f99;margin-top:3px}
+
+  .row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:18px}
+  @media(max-width:1100px){.row{grid-template-columns:1fr}}
+
+  .panel{background:#fff;border:1px solid #d3dae6;border-radius:4px;box-shadow:0 1px 2px rgba(0,26,47,.06)}
+  .panel .hd{padding:12px 16px;border-bottom:1px solid #d3dae6;display:flex;align-items:center;gap:8px}
+  .panel .hd h2{margin:0;font-size:14px;font-weight:600;color:#011a2f;display:flex;gap:8px;align-items:center}
+  .panel .hd .sub{font-size:11.5px;color:#69707d}
+  .panel .bd{padding:14px 16px}
+
+  /* Donut severity ala Wazuh (pure CSS conic-gradient) */
+  .donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+  .donut{width:150px;height:150px;border-radius:50%;position:relative;flex:none}
+  .donut::after{content:attr(data-total);position:absolute;inset:26px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#011a2f}
+  .lg{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
+  .lg .li{display:flex;align-items:center;gap:8px}
+  .lg .sw{width:10px;height:10px;border-radius:2px;flex:none}
+  .lg .n{color:#4c525b;margin-left:auto;font-weight:600}
+
+  /* Bar chart threat ala Wazuh */
+  .bars{display:flex;flex-direction:column;gap:10px}
+  .bar-row{display:grid;grid-template-columns:120px 1fr 46px;gap:10px;align-items:center;font-size:12.5px}
+  .bar-track{background:#eef1f6;border-radius:3px;height:16px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:3px;transition:width .4s}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#f5f7fa;color:#565d66;text-align:left;padding:9px 12px;border-bottom:1px solid #d3dae6;font-size:11px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;white-space:nowrap}
+  td{padding:9px 12px;border-bottom:1px solid #edf0f4;color:#26292e}
+  tbody tr:hover td{background:#f2f9ff}
+  .tbl-scroll{max-height:560px;overflow:auto}
+
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:11px;font-size:11.5px;font-weight:600;border:1px solid}
+  .c-ok{background:#e6f4ea;color:#0b8a4b;border-color:#b7e1c5}
+  .c-no{background:#fce8e6;color:#a50e0e;border-color:#f5c6c2}
+  .c-rust{background:#e8f0fe;color:#1a5dc8;border-color:#c2d6ff}
+  .c-wz{background:#f1f3f4;color:#3c4043;border-color:#dadce0}
+  .c-crit{background:#fce8e6;color:#a50e0e;border-color:#f5c6c2}
+  .c-high{background:#fef3e2;color:#a65c00;border-color:#f8d9a8}
+  .c-med{background:#fdf4d0;color:#8a6d00;border-color:#eee3a3}
+  .c-unv{background:#ede7fe;color:#5b21b6;border-color:#d8ccf7}
+  .c-info{background:#e8f0fe;color:#1a5dc8;border-color:#c2d6ff}
+
+  .mono{font-family:ui-monospace,"Cascadia Code",Menlo,monospace;font-size:11.5px}
+  .muted{color:#69707d}
+
+  /* News feed ala Wazuh dashboard */
+  .feed{display:flex;flex-direction:column;gap:0}
+  .feed .fi{display:grid;grid-template-columns:64px 1fr auto;gap:10px;padding:10px 4px;border-bottom:1px solid #edf0f4;font-size:12.5px;align-items:start}
+  .feed .fi:last-child{border-bottom:0}
+  .feed .tm{color:#69707d;font-size:11px;white-space:nowrap}
+  .feed .msg{color:#26292e}
+  .feed .msg .f{color:#0b6b9e;font-weight:600}
+
+  .btn{appearance:none;border:1px solid transparent;background:#00a9e0;color:#fff;padding:7px 13px;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+  .btn:hover{background:#0294cb}
+  .btn.sec{background:#fff;color:#00618a;border-color:#00a9e0}
+  .btn.sec:hover{background:#e6f7ff}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .toolbar .sp{flex:1}
+
+  /* Views */
+  .view{display:none}
+  .view.on{display:block}
+
+  .legend-foot{font-size:11px;color:#8b8f99;margin-top:10px;border-top:1px solid #edf0f4;padding-top:8px}
 </style>
 </head>
 <body>
-<!-- Header plek Wazuh Dashboard -->
-<div class="wz-header">
-  <div class="wz-brand"><span class="wz-logo">wazuh<span>.</span></span> <small>Fleet Monitor</small> <span style="background:#00a9e0;color:#fff;font-size:10px;padding:2px 6px;border-radius:3px;margin-left:8px;letter-spacing:.06em">100 WORKSTATION</span></div>
-  <div class="wz-header-right"><span><i data-lucide="clock" style="width:12px;height:12px;vertical-align:-2px"></i> <span id="generated">-</span></span> <span>auto refresh 5s • <span id="countdown">5</span>s</span> <span style="opacity:.6">|</span> <span>SOAR • n8n otak • hash-only</span></div>
-</div>
-<div class="wz-subnav">
-  <span class="breadcrumb"><i data-lucide="layout-dashboard" style="width:13px;height:13px;vertical-align:-2px"></i> Management / Fleet Monitor</span>
-  <span class="meta"><i data-lucide="info" style="width:12px;height:12px"></i> Visualisasi pakai desain Wazuh • <a href="https://127.0.0.1:443" target="_blank">buka Wazuh Dashboard asli</a> untuk forensik</span>
-</div>
 
-<div class="cards" id="cards"></div>
-<div class="health" id="health"></div>
-
-<div class="panel">
-  <div class="panel-head">
-    <h2><i data-lucide="monitor-smartphone" style="width:15px;height:15px;color:#00a9e0"></i> Agents ({{total}})</h2>
-    <span class="muted" style="font-size:11px">Wazuh ~50 MB vs Rust 5.3 MB • polling Wazuh API 30s + heartbeat Rust 60s</span>
-    <span class="spacer"></span>
-    <button class="btn" onclick="load()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh</button>
-    <button class="btn-secondary btn" onclick="simulate()"><i data-lucide="users" style="width:12px;height:12px"></i> Simulasi 100 PC</button>
+<div class="topbar">
+  <div class="logo"><span>wazuh<b>.</b></span><span class="app">Fleet Monitor</span></div>
+  <span class="badge100">100 WORKSTATION</span>
+  <div class="right">
+    <span class="live"><span class="pulse"></span> live</span>
+    <span><i data-lucide="clock" style="width:12px;height:12px;vertical-align:-2px"></i> <span id="generated">-</span></span>
+    <span>refresh <span id="countdown">5</span>s</span>
   </div>
-<table>
-<thead><tr><th>ID</th><th>Nama</th><th>Tipe</th><th>Status</th><th>IP</th><th>Versi</th><th>Last KeepAlive</th><th>Binary</th><th>RAM</th></tr></thead>
-<tbody id="tbody"><tr><td colspan=9 class="muted" style="padding:24px;text-align:center">loading agents...</td></tr></tbody>
-</table>
-  <div class="wrap-foot">POST <span class="mono">/api/heartbeat</span> untuk Rust agent &bull; GET <span class="mono">/api/fleet</span> JSON &bull; Desain meniru Wazuh Dashboard (OpenSearch Dashboards, light theme, header #011a2f, aksen #00a9e0) agar dospem langsung familiar. Rust agent kirim heartbeat 60s + file event hash-only 1-2 KB ke n8n.</div>
+</div>
+
+<nav class="side">
+  <a class="item active" data-view="overview" href="#overview"><i data-lucide="layout-dashboard"></i><span class="lbl">Overview</span></a>
+  <a class="item" data-view="agents" href="#agents"><i data-lucide="monitor-smartphone"></i><span class="lbl">Agents</span></a>
+  <a class="item" data-view="threat" href="#threat"><i data-lucide="shield-alert"></i><span class="lbl">Threat Events</span></a>
+  <a class="item" data-view="health" href="#health"><i data-lucide="activity"></i><span class="lbl">Health</span></a>
+</nav>
+
+<div class="main">
+  <div class="crumbs">Server management / <b id="crumb">Overview</b></div>
+
+  <!-- ================= OVERVIEW ================= -->
+  <section class="view on" id="v-overview">
+    <h1 class="pv">Overview</h1>
+    <div class="pvsub">Ringkasan fleet 100 workstation: agen ringan Rust hash-only ke n8n (otak), arahan dospem.</div>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="row">
+      <div class="panel">
+        <div class="hd"><h2><i data-lucide="shield-alert" style="color:#00a9e0"></i> Threat severity</h2><span class="sub">dari event feed</span></div>
+        <div class="bd">
+          <div class="donut-wrap">
+            <div class="donut" id="donut" data-total="0"></div>
+            <div class="lg" id="lg"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="hd"><h2><i data-lucide="gauge" style="color:#00a9e0"></i> Efisiensi agen</h2><span class="sub">Rust vs Wazuh</span></div>
+        <div class="bd">
+          <div class="bars" id="eff"></div>
+          <div class="legend-foot">Wazuh Agent ~50 MB RAM + enroll 1514/1515 · soar-agent 5.3 MB binary, RSS 5.2 MB, hash-only 1-2 KB/event, scp + systemd tanpa enroll.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="hd"><h2><i data-lucide="newspaper" style="color:#00a9e0"></i> Latest events</h2><span class="sub">news feed</span>
+        <span style="margin-left:auto" class="sub">lihat semua di tab Threat Events</span></div>
+      <div class="bd"><div class="feed" id="feed5"></div></div>
+    </div>
+  </section>
+
+  <!-- ================= AGENTS ================= -->
+  <section class="view" id="v-agents">
+    <h1 class="pv">Agents</h1>
+    <div class="pvsub">Polling Wazuh API 30s + heartbeat Rust 60s. Badge biru = agen ringan Rust, abu = Wazuh.</div>
+    <div class="toolbar">
+      <input id="q" placeholder="Cari nama / IP / ID..." oninput="renderAgents()" style="padding:7px 10px;border:1px solid #d3dae6;border-radius:4px;font-size:12.5px;width:220px">
+      <button class="btn sec" onclick="load()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh</button>
+      <button class="btn" onclick="simulate()"><i data-lucide="users" style="width:12px;height:12px"></i> Simulasi 100 PC</button>
+      <span class="sub muted" style="font-size:11.5px">POST /api/heartbeat untuk real agent</span>
+    </div>
+    <div class="panel">
+      <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>ID</th><th>Nama</th><th>Tipe</th><th>Status</th><th>IP</th><th>Versi</th><th>Last keep alive</th><th>Binary</th><th>RAM</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= THREAT EVENTS ================= -->
+  <section class="view" id="v-threat">
+    <h1 class="pv">Threat Events</h1>
+    <div class="pvsub">Feed event file (hash) dari agen + pipeline n8n: VT ensemble + Gemini 2.5 + HITL Telegram.</div>
+    <div class="toolbar">
+      <select id="sevf" onchange="renderEvents()" style="padding:7px 10px;border:1px solid #d3dae6;border-radius:4px;font-size:12.5px">
+        <option value="">Semua severity</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>UNVERIFIED</option><option>INFO</option>
+      </select>
+      <span class="sp"></span>
+      <span class="muted" style="font-size:11.5px" id="evcount"></span>
+    </div>
+    <div class="panel">
+      <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>Waktu</th><th>Agent</th><th>File</th><th>Hash</th><th>Severity</th><th>Status</th></tr></thead>
+        <tbody id="evbody"></tbody>
+      </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= HEALTH ================= -->
+  <section class="view" id="v-health">
+    <h1 class="pv">Health</h1>
+    <div class="pvsub">Self-aware monitoring (kategori F): n8n otak, Gemini API, Wazuh API.</div>
+    <div class="kpis" id="hkpis"></div>
+    <div class="panel">
+      <div class="bd" style="display:flex;gap:22px;flex-wrap:wrap;font-size:13px" id="hlist"></div>
+    </div>
+  </section>
 </div>
 
 <script>
-let timer=5;
+let DATA=null, timer=5;
+
+const SEV_META={CRITICAL:['#bd2719','c-crit'],HIGH:['#d97706','c-high'],MEDIUM:['#eab308','c-med'],UNVERIFIED:['#7c3aed','c-unv'],INFO:['#00a9e0','c-info']};
+
 async function load(){
   try{
-    const r=await fetch('/api/fleet'); const j=await r.json();
-    document.getElementById('generated').textContent=j.generated_at;
-    // cards
-    const s=j.stats, h=j.health;
-    document.getElementById('cards').innerHTML=`
-      <div class="card"><div class="label">Total Agents</div><div class="value">${s.total}</div><div class="hint">${s.rust} Rust ringan + ${s.wazuh} Wazuh</div></div>
-      <div class="card"><div class="label">Active</div><div class="value status-ok">${s.active}</div><div class="hint">${s.disconnected} disconnected</div></div>
-      <div class="card"><div class="label">Coverage</div><div class="value" style="font-size:12px;line-height:1.3">${s.capacity_demo}</div><div class="hint">scalable tanpa Docker per klien</div></div>
-      <div class="card"><div class="label">Efisiensi</div><div class="value" style="font-size:16px">90% lebih ringan</div><div class="hint">5.3 MB vs 50 MB • 5.2 MB RAM</div></div>
-    `;
-     document.getElementById('health').innerHTML=`
-      <span><span class="dot" style="background:${h.n8n?'#00a86b':'#db2828'}"></span> n8n ${h.n8n?'OK':'DOWN'}</span>
-      <span><span class="dot" style="background:${h.gemini?'#00a86b':'#db2828'}"></span> Gemini ${h.gemini?'API OK':'no key'}</span>
-      <span><span class="dot" style="background:${h.wazuh_api?'#00a86b':'#db2828'}"></span> Wazuh API ${h.wazuh_api?'OK':'DOWN'}</span>
-      <span class="muted mono" style="margin-left:auto">fleet: ${j.agents.length} agents • LLM Gemini 2.0 Flash (hemat 4GB) • header #011a2f</span>
-    `;
-    const tb=document.getElementById('tbody'); tb.innerHTML='';
-    if(j.agents.length===0) tb.innerHTML='<tr><td colspan=9 class="muted">belum ada agent (nyalakan Wazuh agent / soar-agent)</td></tr>';
-    else j.agents.forEach(a=>{
-      const isActive=a.status==='active';
-      tb.innerHTML+=`<tr>
-        <td class="mono">${a.id}</td>
-        <td>${a.name}</td>
-        <td><span class="badge ${a.type==='rust'?'badge-rust':'badge-wazuh'}">${a.type}</span></td>
-        <td><span class="badge ${isActive?'badge-active':'badge-disc'}"><i data-lucide="${isActive?'activity':'wifi-off'}" style="width:12px;height:12px"></i> ${a.status}</span></td>
-        <td class="mono">${a.ip}</td>
-        <td class="mono">${a.version}</td>
-        <td class="mono muted">${(a.lastKeepAlive||'-').slice(0,19)}</td>
-        <td class="mono">${a.binary}</td>
-        <td class="mono">${a.ram}</td>
-      </tr>`;
-    });
+    const [f,e]=await Promise.all([fetch('/api/fleet').then(r=>r.json()),fetch('/api/events').then(r=>r.json())]);
+    DATA={...f,events:(e.events||[])};
+    document.getElementById('generated').textContent=new Date(f.generated_at).toLocaleTimeString('id-ID');
+    renderOverview();renderAgents();renderEvents();renderHealth();
     lucide.createIcons();
-  }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan=9 class="status-bad">error: ${e}</td></tr>` }
+  }catch(err){console.error(err)}
   timer=5;
 }
+
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+function renderOverview(){
+  const s=DATA.stats,h=DATA.health;
+  document.getElementById('kpis').innerHTML=`
+    <div class="kpi"><div class="t">Total agents</div><div class="v">${s.total}</div><div class="h">${s.rust} Rust ringan + ${s.wazuh} Wazuh</div></div>
+    <div class="kpi"><div class="t">Active</div><div class="v ok">${s.active}</div><div class="h">${s.disconnected} disconnected</div></div>
+    <div class="kpi"><div class="t">Events</div><div class="v">${s.events_total}</div><div class="h">file hash terdeteksi</div></div>
+    <div class="kpi"><div class="t">Efisiensi</div><div class="v">90%</div><div class="h">5.3 MB vs 50 MB per agen</div></div>`;
+
+  // Donut severity
+  const sev=DATA.stats.severity||{};const keys=Object.keys(sev);
+  let acc=0;const total=keys.reduce((a,k)=>a+sev[k],0);
+  const parts=keys.map(k=>{const c=SEV_META[k][0];const v=sev[k];const st=acc;acc+=v;return `${c} ${st/total*360}deg ${(st+v)/total*360}deg`}).filter((x,i)=>sev[keys[i]]>0);
+  const donut=document.getElementById('donut');
+  donut.style.background=total>0?`conic-gradient(${parts.join(',')})`:'#eef1f6';
+  donut.dataset.total=total;
+  document.getElementById('lg').innerHTML=keys.map(k=>`<div class="li"><span class="sw" style="background:${SEV_META[k][0]}"></span>${k}<span class="n">${sev[k]}</span></div>`).join('');
+
+  // Efisiensi bars
+  document.getElementById('eff').innerHTML=`
+    <div class="bar-row"><span>Wazuh Agent</span><div class="bar-track"><div class="bar-fill" style="width:100%;background:#bd2719"></div></div><span>50 MB</span></div>
+    <div class="bar-row"><span>soar-agent</span><div class="bar-track"><div class="bar-fill" style="width:10.6%;background:#0b8a4b"></div></div><span>5.3 MB</span></div>
+    <div class="bar-row"><span>RSS Rust</span><div class="bar-track"><div class="bar-fill" style="width:10.4%;background:#00a9e0"></div></div><span>5.2 MB</span></div>`;
+
+  // Feed 5 terakhir
+  const ev=DATA.events.slice(0,5);
+  document.getElementById('feed5').innerHTML=ev.length?ev.map(e=>{
+    const sm=SEV_META[e.severity||'INFO']||SEV_META.INFO;
+    return `<div class="fi"><span class="tm">${new Date(e.ts).toLocaleTimeString('id-ID')}</span>
+      <span class="msg"><span class="f">${esc(e.agent)}</span> · ${esc((e.path||'').split('/').pop()||'-')} <span class="mono muted">${esc((e.hash||'').slice(0,12))}...</span></span>
+      <span class="chip ${sm[1]}">${esc(e.severity||'INFO')}</span></div>`}).join('')
+    :'<div class="fi muted">Belum ada event. Drop file di ~/Downloads agen, atau lihat simulasi tombol Agents.</div>';
+}
+
+function renderAgents(){
+  const q=(document.getElementById('q').value||'').toLowerCase();
+  const tb=document.getElementById('tbody');
+  const rows=DATA.agents.filter(a=>!q||[a.id,a.name,a.ip].join(' ').toLowerCase().includes(q));
+  tb.innerHTML=rows.length?rows.map(a=>`<tr>
+    <td class="mono">${esc(a.id)}</td><td>${esc(a.name)}</td>
+    <td><span class="chip ${a.type==='rust'?'c-rust':'c-wz'}">${esc(a.type)}</span></td>
+    <td><span class="chip ${a.status==='active'?'c-ok':'c-no'}">${esc(a.status)}</span></td>
+    <td class="mono">${esc(a.ip)}</td><td class="mono">${esc(a.version)}</td>
+    <td class="mono muted">${esc((a.lastKeepAlive||'-').slice(0,19))}</td>
+    <td class="mono">${esc(a.binary)}</td><td class="mono">${esc(a.ram)}</td></tr>`).join('')
+  :'<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">tidak ada agent cocok</td></tr>';
+}
+
+function renderEvents(){
+  const f=document.getElementById('sevf').value;
+  const ev=DATA.events.filter(e=>!f||(e.severity||'INFO')===f);
+  document.getElementById('evcount').textContent=`${ev.length} event terfilter dari ${DATA.events.length}`;
+  document.getElementById('evbody').innerHTML=ev.length?ev.map(e=>{
+    const sm=SEV_META[e.severity||'INFO']||SEV_META.INFO;
+    return `<tr><td class="mono muted">${new Date(e.ts).toLocaleString('id-ID')}</td>
+      <td>${esc(e.agent)}</td><td class="mono" title="${esc(e.path)}">${esc((e.path||'-').split('/').pop())}</td>
+      <td class="mono muted" title="${esc(e.hash)}">${esc((e.hash||'-').slice(0,16))}...</td>
+      <td><span class="chip ${sm[1]}">${esc(e.severity||'INFO')}</span></td>
+      <td class="mono">${esc(e.status)}</td></tr>`}).join('')
+  :'<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">belum ada event — drop EICAR di ~/Downloads</td></tr>';
+}
+
+function renderHealth(){
+  const h=DATA.health;
+  document.getElementById('hkpis').innerHTML=`
+    <div class="kpi"><div class="t">n8n (otak)</div><div class="v ${h.n8n?'ok':'bad'}">${h.n8n?'UP':'DOWN'}</div><div class="h">webhook wazuh-alert</div></div>
+    <div class="kpi"><div class="t">Gemini 2.5</div><div class="v ${h.gemini?'ok':'warn'}">${h.gemini?'KEY OK':'NO KEY'}</div><div class="h">API analisis AI</div></div>
+    <div class="kpi"><div class="t">Wazuh API</div><div class="v ${h.wazuh_api?'ok':'bad'}">${h.wazuh_api?'UP':'DOWN'}</div><div class="h">baseline agent 001/002</div></div>`;
+  document.getElementById('hlist').innerHTML=`
+    <span><span class="chip ${h.n8n?'c-ok':'c-no'}">n8n ${h.n8n?'OK':'DOWN'}</span></span>
+    <span><span class="chip ${h.gemini?'c-ok':'c-no'}">Gemini ${h.gemini?'OK':'no key'}</span></span>
+    <span><span class="chip ${h.wazuh_api?'c-ok':'c-no'}">Wazuh API ${h.wazuh_api?'OK':'DOWN'}</span></span>
+    <span class="muted">Fleet bind 0.0.0.0:8080 · Tailscale 100.95.198.108:8080 untuk 100 PC · desain plek Wazuh Dashboard</span>`;
+}
+
 async function simulate(){
-  // kirim 97 heartbeat dummy (003 sudah ada, jadi total 100: 2 Wazuh + 98 Rust dummy)
-  for(let i=4;i<=100;i++){
-    const id=String(i).padStart(3,'0');
-    await fetch('/api/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id, name:`rust-agent-lab-${id}`, ip:`192.168.18.${100+i}`, version:"0.1.0", last_hash:"simulated"})});
-  }
+  for(let i=4;i<=100;i++){const id=String(i).padStart(3,'0');
+    await fetch('/api/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name:`rust-agent-lab-${id}`,ip:`192.168.18.${100+i}`,version:'0.1.0'})});}
   load();
 }
-setInterval(()=>{ document.getElementById('countdown').textContent=--timer; if(timer<=0) load(); },1000);
+
+// Sidebar nav multi-view
+document.querySelectorAll('.side .item').forEach(a=>a.addEventListener('click',ev=>{
+  ev.preventDefault();
+  document.querySelectorAll('.side .item').forEach(x=>x.classList.remove('active'));
+  a.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.getElementById('v-'+a.dataset.view).classList.add('on');
+  document.getElementById('crumb').textContent=a.querySelector('.lbl').textContent;
+  location.hash=a.dataset.view;
+}));
+const hash=location.hash.slice(1);
+if(['overview','agents','threat','health'].includes(hash)){document.querySelector(`.side .item[data-view="${hash}"]`).click();}
+
+setInterval(()=>{document.getElementById('countdown').textContent=--timer;if(timer<=0)load()},1000);
 load();
 </script>
 </body>
@@ -368,6 +579,13 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/fleet":
             data = build_fleet(cfg)
             body = json.dumps(data).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/api/events":
+            body = json.dumps({"events": list(reversed(EVENTS))}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -402,6 +620,19 @@ class Handler(BaseHTTPRequestHandler):
                     "last_hash": j.get("last_hash", ""),
                     "last_seen": time.time(),
                 }
+                # Event file dari agent (kalau dikirim bersama heartbeat)
+                if j.get("last_hash") and j.get("last_path"):
+                    EVENTS.append(
+                        {
+                            "ts": datetime.now(WITA).isoformat(),
+                            "agent": j.get("name", hid),
+                            "agent_id": hid,
+                            "path": j.get("last_path", ""),
+                            "hash": j.get("last_hash", ""),
+                            "status": j.get("last_status", "sent"),
+                        }
+                    )
+                    del EVENTS[:-EVENTS_MAX]
                 resp = {"status": "ok", "id": hid}
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -410,6 +641,33 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_response(400)
                 self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+        elif parsed.path == "/webhook-log":
+            # n8n / agent lain bisa POST alert log ke sini -> tampil di dashboard News feed
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                j = json.loads(body)
+                ev = {
+                    "ts": j.get("ts") or datetime.now(WITA).isoformat(),
+                    "agent": j.get("agent", "-"),
+                    "agent_id": j.get("agent_id", "-"),
+                    "path": j.get("path", "-"),
+                    "hash": j.get("hash", ""),
+                    "severity": j.get("severity", "INFO"),
+                    "status": j.get("status", "alerted"),
+                    "ai": j.get("ai", ""),
+                }
+                EVENTS.append(ev)
+                del EVENTS[:-EVENTS_MAX]
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+            except Exception as e:
+                self.send_response(400)
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
         else:
