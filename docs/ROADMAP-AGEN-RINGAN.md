@@ -123,6 +123,7 @@ Jangan kejar Fase Future sebelum Fase 1-3 hijau. Effort fork 2 minggu, risiko re
 - [x] 04 Sep: diagram baru di `docs/ARCHITECTURE.md:6` + `docs/FLOW.md:6` — n8n sebagai otak, jalur hash-only, USB `/run/media/*` (commit 2026-09-03 malam)
 - [x] 06 Sep: Rust agent POST 200 ke n8n — `soar-agent` 5.3 MB (stripped), RSS 5.2 MB vs Wazuh 50 MB, POST 40-43 ms (log `/tmp/soar-agent.log`, bench `docs/bench-rust-*.json`)
 - [x] 08 Sep: EICAR 275a021... via Rust -> n8n 200 OK + quarantine `~/.soar-quarantine` via `127.0.0.1:8787` — Telegram tombol Isolasi/Abaikan tetap via workflow sama (verified quarantine `1788443309.quarantined`)
+- [x] 09 Sep: **USB dynamic scanner** (saran dospem deteksi file dari flashdisk) — scan `/run/media/<user>` tiap 2s, mount baru auto-watch RECURSIVE (subfolder ikut), unwatch saat dicabut. Test fake mount: EICAR root + subfolder `docs/` -> POST 200 OK. Limitasi: file yang dibuat pada detik yang sama dengan mount mungkin terlewat (race polling 2s), dicatat di commit USB.
 - [ ] 11 Sep: bench JSON + update laporan (sisa: update `docs/PERBANDINGAN-PENELITIAN.md` tambah kolom Agen Ringan + screenshot Telegram + bab arsitektur)
 
 ## Referensi
