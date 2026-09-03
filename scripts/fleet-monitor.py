@@ -291,7 +291,7 @@ function ic(name,w){w=w||16;return `<svg viewBox="0 0 24 24" width="${w}" height
   .kpi .t{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#69707d;font-weight:700}
   .kpi .v{font-size:26px;font-weight:700;color:#011a2f;margin-top:4px}
   .kpi .v.ok{color:#0b8a4b}.kpi .v.warn{color:#b26b00}.kpi .v.bad{color:#bd2719}
-  .kpi .h{font-size:11px;color:#8b8f99;margin-top:3px}
+  .kpi .h{font-size:11px;color:#6b7078;margin-top:3px}
 
   .row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:18px}
   @media(max-width:1100px){.row{grid-template-columns:1fr}}
@@ -356,14 +356,14 @@ function ic(name,w){w=w||16;return `<svg viewBox="0 0 24 24" width="${w}" height
   .view{display:none}
   .view.on{display:block}
 
-  .legend-foot{font-size:11px;color:#8b8f99;margin-top:10px;border-top:1px solid #edf0f4;padding-top:8px}
+  .legend-foot{font-size:11px;color:#6b7078;margin-top:10px;border-top:1px solid #edf0f4;padding-top:8px}
 </style>
 </head>
 <body>
 
 <div class="topbar">
   <div class="logo"><span>wazuh<b>.</b></span><span class="app">Fleet Monitor</span></div>
-  <span class="badge100">100 WORKSTATION</span>
+  <span class="badge100" id="badge100">100 WORKSTATION</span>
   <div class="right">
     <span class="live"><span class="pulse"></span> live</span>
     <span><i data-lucide="clock" style="width:12px;height:12px;vertical-align:-2px"></i> <span id="generated">-</span></span>
@@ -376,7 +376,7 @@ function ic(name,w){w=w||16;return `<svg viewBox="0 0 24 24" width="${w}" height
   <a class="item" data-view="agents" href="#agents"><i data-lucide="monitor-smartphone"></i><span class="lbl">Agents</span></a>
   <a class="item" data-view="threat" href="#threat"><i data-lucide="shield-alert"></i><span class="lbl">Threat Events</span></a>
   <a class="item" data-view="health" href="#health"><i data-lucide="activity"></i><span class="lbl">Health</span></a>
-  <button class="tog" onclick="document.body.classList.toggle('x')" title="Buka/tutup menu"><i data-lucide="chevrons-right" id="togi"></i><span class="lbl">Buka menu</span></button>
+  <button class="tog" id="togbtn" onclick="tog()" aria-expanded="false" title="Buka/tutup menu"><i data-lucide="chevrons-left" style="transform:rotate(180deg)"></i><span class="lbl">Buka menu</span></button>
 </nav>
 
 <div class="main">
@@ -476,6 +476,7 @@ async function load(){
     const [f,e]=await Promise.all([fetch('/api/fleet').then(r=>r.json()),fetch('/api/events').then(r=>r.json())]);
     DATA={...f,events:(e.events||[])};
     document.getElementById('generated').textContent=new Date(f.generated_at).toLocaleTimeString('id-ID');
+    document.getElementById('badge100').textContent=f.stats.total+' AGENTS';
     renderOverview();renderAgents();renderEvents();renderHealth();
     renderIcons();
   }catch(err){console.error(err)}
@@ -489,7 +490,9 @@ function renderIcons(){
     const name=el.getAttribute('data-lucide');
     const w=parseInt(el.style.width)||16;
     const span=document.createElement('span');
-    span.style.display='inline-flex';span.style.verticalAlign=el.style.verticalAlign||'middle';
+    span.style.display='inline-flex';
+    span.style.verticalAlign=el.style.verticalAlign||'middle';
+    if(el.style.color)span.style.color=el.style.color; // pertahankan warna ikon (aksen #00a9e0)
     span.innerHTML=ic(name,w);
     el.replaceWith(span);
   });
@@ -573,6 +576,15 @@ async function simulate(){
   for(let i=4;i<=100;i++){const id=String(i).padStart(3,'0');
     await fetch('/api/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name:`rust-agent-lab-${id}`,ip:`192.168.18.${100+i}`,version:'0.1.0'})});}
   load();
+}
+
+// Toggle sidebar: chevron flip + label dinamis
+function tog(){
+  const open=document.body.classList.toggle('x');
+  const b=document.getElementById('togbtn');
+  b.setAttribute('aria-expanded',open);
+  b.querySelector('.lbl').textContent=open?'Tutup menu':'Buka menu';
+  b.querySelector('svg').style.transform=open?'rotate(0deg)':'rotate(180deg)';
 }
 
 // Sidebar nav multi-view
