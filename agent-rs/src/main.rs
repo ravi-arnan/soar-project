@@ -8,6 +8,7 @@ use std::io::{BufReader, Read};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{error, info, warn};
 
@@ -159,26 +160,63 @@ async fn main() -> Result<()> {
     let mut last_sent: HashMap<PathBuf, std::time::Instant> = HashMap::new();
 
     let (tx, rx) = channel();
-    let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+    let watcher = Arc::new(Mutex::new(notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
         if let Ok(event) = res {
             let _ = tx.send(event);
         }
-    })?;
+    })?));
 
     for p in &watch_paths {
-        match watcher.watch(p, RecursiveMode::Recursive) {
+        match watcher.lock().unwrap().watch(p, RecursiveMode::Recursive) {
             Ok(_) => info!(path = %p.display(), "watching"),
             Err(e) => warn!(path = %p.display(), error = %e, "gagal watch, skip"),
         }
     }
-    // USB: watch /run/media/<user> non-recursive (autofs, jangan recursive biar tidak hang)
+
+    // USB dynamic scanner (saran dospem: deteksi file malware dipindah dari flashdisk)
+    // ponytail: scan /run/media/<user> tiap 2s; mount baru otomatis di-watch RECURSIVE.
+    // Ini nutup dua kelemahan lama: (1) flashdisk colok belakangan tidak ke-detect,
+    // (2) file di subfolder mount tidak ke-detect (non-recursive lama).
+    // Upgrade path: udev/kernel inotify pada mount event kalau polling 2s dirasa lambat.
     let user = std::env::var("USER").unwrap_or_else(|_| "ravi".to_string());
-    let usb_path = PathBuf::from(format!("/run/media/{}", user));
-    if usb_path.exists() {
-        match watcher.watch(&usb_path, RecursiveMode::NonRecursive) {
-            Ok(_) => info!(path = %usb_path.display(), "watching USB (non-recursive)"),
-            Err(e) => warn!(path = %usb_path.display(), error = %e, "gagal watch USB"),
-        }
+    let usb_root = PathBuf::from(format!("/run/media/{}", user));
+    let watched_mounts: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let watcher = watcher.clone();
+        let watched_mounts = watched_mounts.clone();
+        let usb_root = usb_root.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Ok(entries) = std::fs::read_dir(&usb_root) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if p.is_dir() && !watched_mounts.lock().unwrap().contains(&p) {
+                            match watcher.lock().unwrap().watch(&p, RecursiveMode::Recursive) {
+                                Ok(_) => {
+                                    watched_mounts.lock().unwrap().push(p.clone());
+                                    info!(path = %p.display(), "USB mounted, watching (recursive)");
+                                }
+                                Err(e) => warn!(path = %p.display(), error = %e, "gagal watch USB mount"),
+                            }
+                        }
+                    }
+                    // Bersihkan mount yang sudah dicabut (unwatch supaya tidak leak)
+                    let mounted: Vec<PathBuf> = std::fs::read_dir(&usb_root)
+                        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
+                        .unwrap_or_default();
+                    let mut wm = watched_mounts.lock().unwrap();
+                    wm.retain(|p| {
+                        if mounted.contains(p) {
+                            true
+                        } else {
+                            info!(path = %p.display(), "USB dicabut, unwatch");
+                            false
+                        }
+                    });
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        });
     }
 
     // Quarantine HTTP endpoint (alternatif Wazuh Active Response)
