@@ -20,6 +20,7 @@ services:
       - GENERIC_TIMEZONE=Asia/Makassar
       - NODE_TLS_REJECT_UNAUTHORIZED=0
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Cegah Code node (Gemini/VT) mati di tengah lonjakan alert serentak
       - N8N_RUNNERS_TASK_TIMEOUT=300
       - N8N_RUNNERS_MAX_CONCURRENCY=10
