@@ -10,13 +10,19 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 ## Status ringkas (per 2026-09-02)
 
 ### ✅ SUDAH dikerjakan
+- **Gemini full (2026-09-04)** Migrasi Ollama llama3.2:3b (4 GB) -> **Gemini 2.5 Flash API** di `deteksi-malware.json` + `deteksi-phishing.json` (node `Gemini Generate`, `maxOutputTokens 800` + `thinkingBudget 0`, `GEMINI_API_KEY` env, `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`). Server ~11 GB -> ~5-6 GB light. Hemat 5 GB.
+- **RAG anti-halusinasi (F, 2026-09-04)** `docs/playbooks/` (critical/high/unverified) + node `RAG Retrieve` inject konteks playbook lokal ke prompt Gemini (keyword severity, tanpa vector DB).
+- **Trusted autonomy SLA (F, 2026-09-04)** `Wait SLA 15m -> SLA Auto Escalate (CRITICAL/HIGH) -> Send Telegram Auto SLA` setelah Telegram alert; analis tidak klik 15 menit -> auto-eskalasi.
+- **VT rate limit (B, 2026-09-04)** `VT Rate Limiter 15s` (4 req/menit free) + `VT 429? -> Wait 60s -> MalwareBazaar` + TTL diferensial aktif (7d/24h/6h) — aman untuk burst 100 workstation, hash sama cache-hit.
+- **Fleet Monitor 100 PC (I, 2026-09-04)** `scripts/fleet-monitor.py` — custom monitoring arahan dospem, UI plek Wazuh Dashboard multi-view (Overview donut severity, Agents, Threat Events, Health), poll Wazuh API 30s + heartbeat Rust 60s, `POST /webhook-log` feed events, simulasi 101 agents, container `fleet-monitor` port 8080 (Tailscale `100.95.198.108:8080`).
+- **USB dynamic scanner (I, 2026-09-04)** saran dospem deteksi malware dari flashdisk: agent scan `/run/media/<user>` tiap 2s, mount baru auto-watch RECURSIVE (subfolder ikut), unwatch saat cabut. Verified EICAR root + subfolder -> POST 200. Limitasi race mount-detik-pertama (upgrade: udev).
 - **A#1** `block-domain` persist (permanen di template + config ter-version-control).
 - **A#3** notifikasi ganda diperbaiki (abaikan event FIM `deleted` akibat karantina).
 - **Reproducibility** config Wazuh manager ter-track (`config/` + `scripts/sync-wazuh-config.sh`).
 - **C** metrik kuantitatif terukur (MTTR malware 1,68 dtk · phishing 2,13 dtk · FP suppression 100%).
 - **B#1** hybrid: file eksekutabel tak-dikenal VT → tombol review (tutup celah zero-day utama).
 - **F (explainable)** notifikasi malware **&** phishing memuat `🧠 Alasan keputusan`; **F (self-aware inline)** tandai `⚠️ Deteksi TERDEGRADASI` saat sumber rate-limit/error; **F (audit-trail)** keputusan analis dicatat `oleh <analis> pada <waktu WITA>` + riwayat eksekusi n8n.
-- **F (self-aware health monitor, 2026-07-06)** `scripts/health-monitor.py` — poll komponen inti (agent putus via Wazuh API, n8n, Ollama), alert Telegram HANYA saat status berubah (anti-spam), state persist. Service `health-monitor` di compose.
+- **F (self-aware health monitor, 2026-07-06, update Gemini 2026-09-04)** `scripts/health-monitor.py` — poll komponen inti (agent putus via Wazuh API, n8n, Gemini key), alert Telegram HANYA saat status berubah (anti-spam), state persist. Service `health-monitor` di compose.
 - **D (hardening + IaC, 2026-07-06)** `deploy/hardened/` (Caddy reverse-proxy + TLS + basic-auth + segmentasi edge/backend, n8n tak publish port, `N8N_ENCRYPTION_KEY`) · **secret mgmt** `.env.example` · **IaC** `deploy/ansible/deploy-integration.yml` (idempoten).
 - **H (pemeliharaan stack, 2026-09-02)** n8n di-update `2.35.7 → 2.36.9` — berada di atas semua versi patch CVE 2026 (Ni8mare/CVE-2026-21858 fixed di 1.121.0, CVE-2026-21877 di 1.121.3, CVE-2026-27495 di 1.123.22/2.x). Image python:3.12-alpine, caddy:2-alpine, Wazuh 4.9.2 di-pull ulang; seluruh container di-recreate & sehat (indexer cluster GREEN, 3 workflow n8n aktif).
 - **C (bukti ilmiah, 2026-09-02)** Script benchmark (`scripts/benchmark-soar.py`) dibuat — 5 mode pengukuran (mttr-malware, mttr-phishing, load, vt-cold, fn-rate). Pemetaan MITRE ATT&CK (`docs/MITRE-ATTACK-MAPPING.md`: 10 teknik). Justifikasi n8n vs Shuffle (`docs/N8N-VS-SHUFFLE.md`: n8n 3.8/5 vs Shuffle 2.5/5). Evaluasi-metrik diperbarui.
@@ -137,9 +143,9 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 6. ✅ **Perluasan cakupan (G1 + G2)** — selesai (2026-09-02).
 7. ✅ **Hardening keamanan + IaC (D)** — sebagian selesai (2026-07-06).
 8. ✅ **Jalankan benchmark** — selesai (2026-09-02): MTTR, load test, FN rate. Throughput 34 alert/detik, FN 0%.
-9. **I — Agen Ringan (minggu ini, 03-11 Sep)** — revisi diagram + POC Go + demo EICAR/USB (rincian `docs/ROADMAP-AGEN-RINGAN.md:15`) — prioritas dospem.
-10. **RAG anti-halusinasi + Trusted autonomy (F)** — jangka menengah.
-11. **Arsitektur queue-mode + HA (E)** — jangka menengah.
+9. 🟢 **I — Agen Ringan** — diagram + Rust 5.3 MB + EICAR E2E + USB recursive scanner + fleet monitor DONE (2026-09-04). Sisa Fase 3: benchmark final + laporan (`docs/ROADMAP-AGEN-RINGAN.md:126`).
+10. ✅ **RAG anti-halusinasi + Trusted autonomy (F)** — selesai (2026-09-04): playbook lokal inject + SLA 15m auto-eskalasi.
+11. **Arsitektur queue-mode + HA (E)** — SKIP untuk TA (berisiko ke live); VT limiter + cache staticData cukup untuk demo 100 PC. Future work pasca-sidang.
 12. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
 13. **I-future — Fork Wazuh diet** — pasca sidang, hanya jika perlu klaim optimasi.
 
