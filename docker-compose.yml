@@ -66,6 +66,31 @@ services:
     depends_on:
       - n8n
 
+  # Fleet Monitor 100 PC — custom monitoring arahan dospem, desain Wazuh (light theme, header #011a2f, aksen #00a9e0)
+  # Poll Wazuh API (30s) + terima heartbeat Rust agent (60s) -> single-pane 100 workstation.
+  # Ringan: stdlib http.server, tanpa DB, bind 0.0.0.0:8080 (host run: python3 scripts/fleet-monitor.py, Tailscale 100.95.198.108:8080 untuk 100 PC).
+  # Docker: butuh host network agar bisa reach Wazuh 127.0.0.1:55000 (manager bind 127.0.0.1). Alternatif: jalankan di host (lebih ringan, tanpa docker).
+  fleet-monitor:
+    image: python:3.12-alpine
+    container_name: fleet-monitor
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - FLEET_PORT=8080
+      - WAZUH_API_URL=https://127.0.0.1:55000
+      - N8N_HEALTH_URL=http://127.0.0.1:5678/healthz
+      - OLLAMA_URL=http://127.0.0.1:11434/api/version
+    volumes:
+      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
+    command: ["python3", "/scripts/fleet-monitor.py"]
+    depends_on:
+      - n8n
+
 volumes:
   n8n_data:
   health_state:

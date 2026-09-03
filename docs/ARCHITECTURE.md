@@ -4,51 +4,59 @@ Dokumentasi arsitektur teknis dari sistem SOAR open-source untuk deteksi malware
 
 ## 1. High-Level Architecture
 
+> Revisi 2026-09-04 (tindak lanjut bimbingan 2026-09-03): n8n digambar sebagai **otak orkestrasi pusat**. Dua jalur agen menuju n8n yang sama (Wazuh baseline + agen ringan hash-only). Semua keputusan (VT, AI, Telegram HITL) tetap di n8n.
+
 ```mermaid
 graph TB
-    subgraph "ENDPOINTS (Distributed)"
-        EP1[Laptop Utama<br/>ravi-zorin<br/>Ubuntu Linux]
-        EP2[ThinkPad X260<br/>rocky-server<br/>Rocky Linux 9]
-        EP3[... endpoint N]
+    subgraph "ENDPOINTS (Distributed) — 2 jenis agen, 1 otak"
+        EP1[Laptop Utama<br/>ravi-zorin<br/>Wazuh Agent ~50MB]
+        EP2[ThinkPad X260<br/>rocky-server<br/>Wazuh Agent ~50MB]
+        EP3[Workstation N<br/>soar-agent Rust 1-3MB<br/>no Docker, hash-only]
+        EP1_FILES["~/Downloads<br/>~/Desktop<br/>/media/* USB"]
+        EP2_FILES["~/Downloads<br/>/media/* USB"]
+        EP3_FILES["~/Downloads<br/>~/Desktop<br/>/run/media/* USB<br/>inotify + sha256"]
+        EP1 --- EP1_FILES
+        EP2 --- EP2_FILES
+        EP3 --- EP3_FILES
     end
 
-    subgraph "SOAR SERVER (Centralized)"
-        subgraph "Detection & Aggregation"
+    subgraph "SOAR SERVER (Centralized) — OTAK"
+        subgraph "Detection & Aggregation (baseline)"
             WM[Wazuh Manager<br/>+ integratord]
             WI[Wazuh Indexer<br/>OpenSearch]
             WD[Wazuh Dashboard<br/>optional UI]
         end
 
-        subgraph "Orchestration & AI"
-            N8N[n8n Workflow Engine]
+        subgraph "Orchestration & AI — PUSAT KEPUTUSAN"
+            N8N["n8n Workflow Engine<br/>OTAK: VT + AI + HITL<br/>semua logika di sini"]
             OLLAMA[Ollama llama3.2:3b<br/>Local AI]
         end
 
-        SCRIPT[custom-n8n.py<br/>Integration Bridge]
+        SCRIPT[custom-n8n.py<br/>Bridge Wazuh -> n8n]
     end
 
     subgraph "EXTERNAL SERVICES"
-        VT[VirusTotal API<br/>Threat Intel]
+        VT[VirusTotal API<br/>+ MalwareBazaar]
         TG[Telegram Bot<br/>Notification + Buttons]
     end
 
     subgraph "HUMAN-IN-THE-LOOP"
         POLLER[tg-callback-poller<br/>long-poll getUpdates]
-        ANALYST[SOC Analyst<br/>klik tombol]
+        ANALYST[SOC Analyst<br/>klik Isolasi/Abaikan]
     end
 
-    EP1 -->|TCP 1514<br/>encrypted| WM
-    EP2 -->|TCP 1514<br/>encrypted| WM
-    EP3 -.->|TCP 1514| WM
+    EP1 -->|TCP 1514 encrypted<br/>syscheck event| WM
+    EP2 -->|TCP 1514 encrypted<br/>syscheck event| WM
+    EP3 -->|HTTP POST JSON<br/>hash-only 1-2KB<br/>POST /webhook/wazuh-alert| N8N
 
     WM -->|alerts.json| SCRIPT
-    SCRIPT -->|HTTP POST<br/>JSON| N8N
+    SCRIPT -->|HTTP POST JSON<br/>rule + agent + syscheck<br/>kompatibel FLOW.md:198| N8N
     WM <-->|index/search| WI
     WD --> WI
 
     N8N -->|hash/url query| VT
     N8N -->|inference| OLLAMA
-    N8N -->|sendMessage<br/>+ inline keyboard| TG
+    N8N -->|sendMessage<br/>+ inline keyboard iso/ign| TG
     TG -->|notif + tombol| ANALYST
     ANALYST -->|Isolasi / Abaikan| TG
     TG -.->|callback_query| POLLER
@@ -56,6 +64,7 @@ graph TB
     N8N -->|PUT /active-response<br/>!quarantine-file| WM
     WM -->|quarantine cmd| EP1
     WM -->|quarantine cmd| EP2
+    N8N -.->|POST 127.0.0.1:8787/quarantine<br/>alternatif untuk agen ringan| EP3
 ```
 
 > **Catatan model AR:** Active Response **tidak otomatis**. Untuk alert
@@ -429,9 +438,12 @@ Content-Type: application/json
 
 ### Endpoint Side (agent only)
 
-| Component | RAM | CPU |
-|-----------|-----|-----|
-| Wazuh Agent (`wazuh-syscheckd` + daemons) | ~50 MB | <1% |
+| Component | RAM | CPU | Binary | Deploy 100 WS |
+|-----------|-----|-----|--------|---------------|
+| Wazuh Agent (`wazuh-syscheckd` + daemons) | ~50 MB | <1% | 50 MB + enroll + key | apt/dnf + enroll 1515 |
+| soar-agent Rust (`agent-rs/`, hash-only) | 2-5 MB | <1% | 1-3 MB musl static | scp + systemd, no deps |
+
+> Agen ringan kirim **hash-only JSON 1-2 KB**, bukan file utuh (1 GB tetap 1 KB). Cocok untuk 100 workstation. Lihat `docs/AGENT-RINGAN.md:42` dan `agent-rs/README.md`.
 
 ## 9. Multi-Agent Scenario (Implemented)
 

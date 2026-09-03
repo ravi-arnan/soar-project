@@ -2,38 +2,47 @@
 
 Dokumentasi alur data step-by-step dari file event sampai response delivery.
 
-## Diagram Alur Lengkap
+## Diagram Alur Lengkap — 2 Jalur, 1 Otak (n8n)
+
+> Revisi 2026-09-04: Wazuh tetap baseline, **agen ringan Rust** adalah jalur alternatif hash-only langsung ke n8n (tanpa manager). Dospem 2026-09-03 minta analogi 100 workstation: agen hitung hash, kirim JSON 1-2 KB, server yang mikir.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Attacker
-    participant Endpoint as Endpoint<br/>(Rocky Linux 9)
-    participant Agent as Wazuh Agent<br/>(syscheckd)
+    participant Endpoint as Endpoint<br/>(~/Downloads, /media/USB)
+    participant WAgent as Wazuh Agent<br/>(syscheckd) — baseline
+    participant RAgent as soar-agent Rust<br/>(notify + sha256) — ringan
     participant Manager as Wazuh Manager<br/>(integratord)
     participant Script as custom-n8n.py<br/>(integration)
-    participant N8N as n8n Workflow<br/>(Deteksi Malware)
+    participant N8N as n8n Workflow<br/>OTAK (Deteksi Malware)
     participant VT as VirusTotal API
     participant WAPI as Wazuh API<br/>(/active-response)
     participant Ollama as Ollama AI<br/>(llama3.2:3b)
     participant TG as Telegram Bot
     actor SOC as SOC Analyst
 
-    Attacker->>Endpoint: 1. Drop file<br/>~/Downloads/malware.exe
-    Endpoint->>Agent: 2. inotify event (FILE_ADDED)
-    Agent->>Agent: 3. Compute hash<br/>(sha256, md5, sha1)
-    Agent->>Manager: 4. Send event<br/>TCP 1514 (encrypted)
+    Attacker->>Endpoint: 1. Drop file<br/>~/Downloads/malware.exe<br/>atau /run/media/USB/eicar.com
+    Endpoint->>WAgent: 2a. inotify FILE_ADDED<br/>(baseline)
+    Endpoint->>RAgent: 2b. inotify FILE_ADDED<br/>(agen ringan, watch Downloads+USB)
 
-    Manager->>Manager: 5. Decode + match rule 554<br/>("File added to system")
-    Manager->>Manager: 6. Generate alert JSON<br/>(alerts.json + alerts.log)
-    Manager->>Script: 7. Invoke (alert_file, hook_url)<br/>via integratord
+    par Jalur A — Wazuh baseline
+        WAgent->>WAgent: 3a. Compute hash<br/>(sha256, md5, sha1)
+        WAgent->>Manager: 4a. Send event<br/>TCP 1514 encrypted
+        Manager->>Manager: 5. Decode + match rule 554<br/>("File added to system")
+        Manager->>Manager: 6. Generate alert JSON<br/>(alerts.json)
+        Manager->>Script: 7. Invoke (alert_file, hook_url)
+        Script->>Script: 8. Filter noise<br/>(skip /tmp/runc-*, /var/cache)
+        Script->>Script: 9. Build nested JSON<br/>(rule, agent, data, syscheck)
+        Script->>N8N: 10a. POST /webhook/wazuh-alert<br/>JSON kompatibel
+    and Jalur B — Agen ringan (hash-only)
+        RAgent->>RAgent: 3b. Compute sha256 streaming<br/>+ stat perm_after/size
+        RAgent->>RAgent: 4b. should_ignore? (/tmp, /var/cache)
+        RAgent->>N8N: 10b. POST /webhook/wazuh-alert<br/>JSON identik, hash-only 1-2KB<br/>tanpa kirim file utuh
+    end
 
-    Script->>Script: 8. Filter noise paths<br/>(skip /tmp/runc-* dll)
-    Script->>Script: 9. Build nested JSON payload
-    Script->>N8N: 10. POST /webhook/wazuh-alert<br/>(rule, agent, data, syscheck)
-
-    N8N->>N8N: 11. Filter Alert Malware<br/>(hash exists?)
-    N8N->>N8N: 12. Ekstrak Alert<br/>(normalize fields)
+    N8N->>N8N: 11. Filter Alert Malware<br/>(hash exists? FLOW.md:198)
+    N8N->>N8N: 12. Ekstrak Alert<br/>(normalize fields, perm_after untuk exec-bit G2)
     N8N->>VT: 13. GET /files/{sha256}
     VT-->>N8N: 14. Detection stats<br/>(malicious/total)
 
@@ -460,29 +469,38 @@ Workflow: error di Send Telegram node
 Mitigation: implement backoff retry (currently not implemented)
 ```
 
-## Multi-Agent Flow (Implemented)
+## Multi-Agent Flow (Implemented + Agen Ringan)
 
 ```mermaid
 graph LR
-    subgraph "Endpoints"
-        A1[ravi-zorin<br/>Ubuntu Linux<br/>192.168.18.45]
-        A2[rocky-server<br/>Rocky Linux 9<br/>192.168.18.13]
+    subgraph "Endpoints — baseline"
+        A1[ravi-zorin<br/>Wazuh 001]
+        A2[rocky-server<br/>Wazuh 002]
+    end
+    subgraph "Endpoint — ringan"
+        A3[rust-agent-ravi<br/>Rust 003<br/>1-3MB, hash-only]
     end
 
     A1 -->|1514/tcp| MGR
     A2 -->|1514/tcp| MGR
+    A3 -->|HTTP POST JSON<br/>/webhook/wazuh-alert| WF
 
-    subgraph "SOAR Server"
+    subgraph "SOAR Server — OTAK"
         MGR[Wazuh Manager]
         MGR -->|integration| INTG[integratord<br/>+ custom-n8n.py]
-        INTG -->|HTTP POST| WF[n8n Workflow]
+        INTG -->|HTTP POST| WF[n8n Workflow<br/>OTAK]
     end
 
-    WF -->|sendMessage| TG[Telegram Bot]
-    TG -->|notification| HP[SOC Analyst HP]
+    WF -->|sendMessage + tombol| TG[Telegram Bot]
+    TG -->|notification iso/ign| HP[SOC Analyst HP]
+    HP -.->|Isolasi| MGR
+    HP -.->|Isolasi| A3
+
+    style WF fill:#ff6b35,color:#fff
+    style A3 fill:#4caf50,color:#fff
 ```
 
-Setiap alert include `agent.name` di Telegram message, sehingga SOC analyst tahu mana endpoint yang affected.
+Baseline Wazuh (001,002) + agen ringan Rust (003) mengirim ke **workflow n8n yang sama** (payload kompatibel `scripts/custom-n8n.py:170`, filter `FLOW.md:198`). Telegram bedakan via `agent.name`. Untuk 100 workstation, jalur ringan tanpa enroll/key/manager (scp + systemd).
 
 ## Audit Trail
 

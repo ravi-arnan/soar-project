@@ -3,7 +3,7 @@
 Konsolidasi **gap (kesenjangan/masalah)** dan **solusi** untuk proyek:
 *Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop* — Ravi Arnan Irianto (2305551076).
 
-Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) Keamanan platform, (E) Arsitektur, (F) Kontribusi terhadap masalah industri, (G) Perluasan cakupan deteksi (penguatan TA), (H) Pemeliharaan & modernisasi stack.
+Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) Keamanan platform, (E) Arsitektur, (F) Kontribusi terhadap masalah industri, (G) Perluasan cakupan deteksi (penguatan TA), (H) Pemeliharaan & modernisasi stack, (I) Agen Ringan.
 
 ---
 
@@ -30,8 +30,10 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | Menengah | **Jalankan** benchmark N≥30 + load test + VT cold-vs-cache (script: `scripts/benchmark-soar.py`) | C | sedang |
 | Menengah | **Jalankan** apply-b-malwarebazaar + apply-b-ttl-rescan + buat credential MB di n8n | B | sedang |
 | ✅ Sebagian (2026-09-02) | **LLM-fallback** advisory (sudah selesai); **RAG** anti-halusinasi + **trusted autonomy** (timeout/SLA) | F | berat |
+| **Tinggi (2026-09-03)** | **I — Agen Ringan** (jawab kritik 100 workstation): revisi diagram + POC Go <5MB (watch Downloads+USB, hash JSON ke n8n, quarantine lokal) | I | sedang |
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
 | Ditunda pasca-TA | **Upgrade Wazuh 4.9.2 → 4.14.7** terjadwal (agent ikut) | H3 | berat |
+| Ditunda pasca-TA | **I-future — Fork Wazuh diet** (branch diet-syscheck-only, build .deb minimal) | I | berat |
 
 **Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
 
@@ -135,9 +137,11 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 6. ✅ **Perluasan cakupan (G1 + G2)** — selesai (2026-09-02).
 7. ✅ **Hardening keamanan + IaC (D)** — sebagian selesai (2026-07-06).
 8. ✅ **Jalankan benchmark** — selesai (2026-09-02): MTTR, load test, FN rate. Throughput 34 alert/detik, FN 0%.
-9. **RAG anti-halusinasi + Trusted autonomy (F)** — jangka menengah.
-10. **Arsitektur queue-mode + HA (E)** — jangka menengah.
-11. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
+9. **I — Agen Ringan (minggu ini, 03-11 Sep)** — revisi diagram + POC Go + demo EICAR/USB (rincian `docs/ROADMAP-AGEN-RINGAN.md:15`) — prioritas dospem.
+10. **RAG anti-halusinasi + Trusted autonomy (F)** — jangka menengah.
+11. **Arsitektur queue-mode + HA (E)** — jangka menengah.
+12. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
+13. **I-future — Fork Wazuh diet** — pasca sidang, hanya jika perlu klaim optimasi.
 
 ## Prinsip arah tesis
 > SOAR open-source yang **confidence-based, transparan, dan sadar-degradasi** untuk menekan alert fatigue tanpa silent-failure — dengan human-in-the-loop yang dapat dipertanggungjawabkan.
