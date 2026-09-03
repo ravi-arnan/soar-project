@@ -77,9 +77,7 @@ def _cfg():
         "wazuh_user": os.environ.get("WAZUH_API_USER", "wazuh-wui"),
         "wazuh_pass": os.environ.get("WAZUH_API_PASS", ""),
         "n8n_url": os.environ.get("N8N_HEALTH_URL", "http://127.0.0.1:5678/healthz"),
-        "ollama_url": os.environ.get(
-            "OLLAMA_URL", "http://127.0.0.1:11434/api/version"
-        ),
+        "gemini_key": os.environ.get("GEMINI_API_KEY", ""),
         "port": int(os.environ.get("FLEET_PORT", "8080")),
     }
 
@@ -98,11 +96,20 @@ def check_http(url):
 
 
 def _fetch_wazuh_once(base_url, cfg):
-    auth = base64.b64encode(f"{cfg['wazuh_user']}:{cfg['wazuh_pass']}".encode()).decode()
-    with _get(f"{base_url}/security/user/authenticate", headers={"Authorization": f"Basic {auth}"}) as r:
+    auth = base64.b64encode(
+        f"{cfg['wazuh_user']}:{cfg['wazuh_pass']}".encode()
+    ).decode()
+    with _get(
+        f"{base_url}/security/user/authenticate",
+        headers={"Authorization": f"Basic {auth}"},
+    ) as r:
         token = json.load(r)["data"]["token"]
-    with _get(f"{base_url}/agents?select=id,name,status,ip,version,dateAdd,lastKeepAlive&limit=500", headers={"Authorization": f"Bearer {token}"}) as r:
+    with _get(
+        f"{base_url}/agents?select=id,name,status,ip,version,dateAdd,lastKeepAlive&limit=500",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as r:
         return json.load(r)["data"]["affected_items"]
+
 
 def fetch_wazuh_agents(cfg):
     now = time.time()
@@ -178,9 +185,11 @@ def build_fleet(cfg):
     # Sort by id
     fleet.sort(key=lambda x: x["id"])
 
+    # Gemini API full — tidak cek Ollama lagi (hemat 4GB, 10-60s). Cek GEMINI_API_KEY ada atau coba endpoint Gemini (tanpa quota hit)
+    has_gemini = bool(cfg.get("gemini_key"))
     health = {
         "n8n": check_http(cfg["n8n_url"]),
-        "ollama": check_http(cfg["ollama_url"]),
+        "gemini": has_gemini,
         "wazuh_api": len(wazuh_agents) > 0,
     }
 
@@ -302,11 +311,11 @@ async function load(){
       <div class="card"><div class="label">Coverage</div><div class="value" style="font-size:12px;line-height:1.3">${s.capacity_demo}</div><div class="hint">scalable tanpa Docker per klien</div></div>
       <div class="card"><div class="label">Efisiensi</div><div class="value" style="font-size:16px">90% lebih ringan</div><div class="hint">5.3 MB vs 50 MB • 5.2 MB RAM</div></div>
     `;
-    document.getElementById('health').innerHTML=`
+     document.getElementById('health').innerHTML=`
       <span><span class="dot" style="background:${h.n8n?'#00a86b':'#db2828'}"></span> n8n ${h.n8n?'OK':'DOWN'}</span>
-      <span><span class="dot" style="background:${h.ollama?'#00a86b':'#db2828'}"></span> Ollama ${h.ollama?'OK':'DOWN'}</span>
+      <span><span class="dot" style="background:${h.gemini?'#00a86b':'#db2828'}"></span> Gemini ${h.gemini?'API OK':'no key'}</span>
       <span><span class="dot" style="background:${h.wazuh_api?'#00a86b':'#db2828'}"></span> Wazuh API ${h.wazuh_api?'OK':'DOWN'}</span>
-      <span class="muted mono" style="margin-left:auto">fleet: ${j.agents.length} agents • header #011a2f, aksen #00a9e0 plek Wazuh</span>
+      <span class="muted mono" style="margin-left:auto">fleet: ${j.agents.length} agents • LLM Gemini 2.0 Flash (hemat 4GB) • header #011a2f</span>
     `;
     const tb=document.getElementById('tbody'); tb.innerHTML='';
     if(j.agents.length===0) tb.innerHTML='<tr><td colspan=9 class="muted">belum ada agent (nyalakan Wazuh agent / soar-agent)</td></tr>';

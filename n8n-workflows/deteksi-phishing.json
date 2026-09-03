@@ -1,1 +1,1074 @@
-[{"updatedAt":"2026-07-02T10:10:37.000Z","createdAt":"2026-04-23T07:06:47.217Z","id":"nLK3lYtY2gl9mYj5","name":"Deteksi Phishing","description":"Deteksi phishing dari Wazuh: filter URL (handle nested+flat), serial flow Ekstrak → VT submit → wait → VT report → URLScan.io → merge → Cek Ancaman, Wazuh AR jika malicious >= 1, Ollama llama3.2:3b dengan markdown sanitization, Telegram (ALERT atau AMAN).","active":true,"isArchived":false,"nodes":[{"id":"483f7b1c-3a05-4125-8919-e67e96ab4ffb","name":"Webhook Phishing","type":"n8n-nodes-base.webhook","typeVersion":2.1,"position":[240,304],"parameters":{"httpMethod":"POST","path":"wazuh-phishing","options":{}},"webhookId":"7d284d3a-5bbd-4e77-9e86-45e5e5f4dcfd"},{"id":"fe916d2f-5ec1-48f1-885a-fb84f5c4c7a3","name":"Filter Alert Phishing","type":"n8n-nodes-base.if","typeVersion":2.3,"position":[464,304],"parameters":{"conditions":{"options":{"caseSensitive":true,"typeValidation":"loose","version":2},"conditions":[{"id":"cond-url-notempty","leftValue":"={{ $json.body.data?.url || $json.body.url || '' }}","rightValue":"","operator":{"type":"string","operation":"notEmpty","singleValue":true}}],"combinator":"and"},"looseTypeValidation":true,"options":{}}},{"id":"5f664c2a-c892-4e8d-9fe7-551052e22a28","name":"Ekstrak Alert Phishing","type":"n8n-nodes-base.code","typeVersion":2,"position":[688,304],"parameters":{"mode":"runOnceForAllItems","jsCode":"const body = $input.first().json.body;\nreturn [{\n  json: {\n    url:        body.data?.url        || body.url        || \"\",\n    srcip:      body.data?.srcip      || body.srcip      || \"\",\n    rule_id:    body.rule?.id         || body.rule_id    || \"\",\n    rule_level: body.rule?.level      || body.rule_level || 0,\n    agent_id:   body.agent?.id        || body.agent_id   || \"\",\n    agent_name: body.agent?.name      || body.agent_name || \"\",\n    timestamp:  body.timestamp        || new Date().toISOString(),\n  }\n}];"}},{"id":"5f7d731a-469e-4653-a678-cb9681875f22","name":"Submit URL VirusTotal","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[912,304],"parameters":{"method":"POST","url":"https://www.virustotal.com/api/v3/urls","authentication":"genericCredentialType","genericAuthType":"httpHeaderAuth","sendBody":true,"contentType":"multipart-form-data","bodyParameters":{"parameters":[{"name":"url","value":"={{ $json.url }}"}]},"options":{}},"credentials":{"httpHeaderAuth":{"id":"4XbvXfmuxwJcgXcc","name":"VirusTotal API Key"}}},{"id":"ae2d496c-20fe-4584-918b-bcf9e3abfcf3","name":"Tunggu Scan","type":"n8n-nodes-base.wait","typeVersion":1.1,"position":[1120,304],"parameters":{"resume":"timeInterval","amount":35,"unit":"seconds"},"webhookId":"9be4af77-d47a-4cc6-8124-6d7dca3be4db"},{"id":"b5ea968c-fac1-4235-a1a6-3840b9582b9b","name":"Get URL Report","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[1344,304],"parameters":{"method":"GET","url":"=https://www.virustotal.com/api/v3/analyses/{{ $json.data.id }}","authentication":"genericCredentialType","genericAuthType":"httpHeaderAuth","options":{"response":{"response":{"neverError":true,"fullResponse":true}}}},"credentials":{"httpHeaderAuth":{"id":"4XbvXfmuxwJcgXcc","name":"VirusTotal API Key"}}},{"id":"3f6fd5e5-725f-4966-b2da-5a758dc3e34b","name":"URLScan.io Submit","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[1568,304],"parameters":{"method":"POST","url":"https://urlscan.io/api/v1/scan/","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Content-Type","value":"application/json"}]},"sendBody":true,"specifyBody":"json","jsonBody":"={{ { \"url\": $('Ekstrak Alert Phishing').item.json.url, \"visibility\": \"private\" } }}","options":{"response":{"response":{"neverError":true}}},"authentication":"genericCredentialType","genericAuthType":"httpHeaderAuth"},"credentials":{"httpHeaderAuth":{"id":"OkeR1Hc221mdK1ib","name":"URLScan API-Key"}}},{"id":"c3fd75f9-d2c1-475a-b270-19cde16838b6","name":"Rangkum Phishing","type":"n8n-nodes-base.code","typeVersion":2,"position":[1792,304],"parameters":{"mode":"runOnceForAllItems","jsCode":"const alert = $('Ekstrak Alert Phishing').first().json;\nconst cacheNode = $('Cek Cache URL').first().json;\n\nlet gsb_status, gsb_threat = false, gsb_type = '';\nlet us_ready = false, us_malicious = false, us_score = 0;\n\nif (cacheNode._cacheHit) {\n  const c = cacheNode._cachedStats || {};\n  gsb_status = c.gsb_status || 'cache'; gsb_threat = !!c.gsb_threat; gsb_type = c.gsb_type || '';\n  us_ready = !!c.us_ready; us_malicious = !!c.us_malicious; us_score = c.us_score || 0;\n} else {\n  // ----- Google Safe Browsing -----\n  const g = $('GSB Lookup').first().json;\n  const gcode = g.statusCode;\n  const gbody = (g.body !== undefined) ? g.body : g;\n  if (gcode === 200 || (gbody && gbody.matches !== undefined && gcode === undefined)) {\n    const matches = gbody && gbody.matches;\n    if (Array.isArray(matches) && matches.length > 0) { gsb_threat = true; gsb_type = matches[0].threatType || 'THREAT'; gsb_status = 'threat'; }\n    else { gsb_status = 'clean'; }\n  } else {\n    gsb_status = 'unavailable';   // key belum diset / error -> fallback ke URLScan\n  }\n  // ----- URLScan result -----\n  let u = {};\n  try { u = $('URLScan Result').first().json || {}; } catch (e) { u = {}; }\n  const ucode = u.statusCode;\n  const ubody = (u.body !== undefined) ? u.body : u;\n  const ov = ubody && ubody.verdicts && ubody.verdicts.overall;\n  if (ucode === 200 && ov) {\n    us_ready = true;\n    us_malicious = !!ov.malicious;\n    us_score = Number(ov.score || 0);\n  }   // 404/202 -> belum siap -> us_ready=false\n  // cache\n  if (alert.url && (gsb_status !== 'unavailable' || us_ready)) {\n    const sd = $getWorkflowStaticData('global');\n    sd.urlCache = sd.urlCache || {};\n    sd.urlCache[alert.url] = { stats: { gsb_status, gsb_threat, gsb_type, us_ready, us_malicious, us_score }, ts: Date.now() };\n    const keys = Object.keys(sd.urlCache);\n    if (keys.length > 1000) { keys.sort((a,b)=>(sd.urlCache[a].ts||0)-(sd.urlCache[b].ts||0)); keys.slice(0,250).forEach(k=>delete sd.urlCache[k]); }\n  }\n}\n\nconst forceReview = /demoreview/i.test(alert.url || '');\nconst sources_ok = (gsb_status !== 'unavailable') || us_ready;   // minimal satu sumber memberi jawaban\n\nlet verdict;\nif (!sources_ok)                          verdict = 'unverified';   // semua sumber gagal -> jangan klaim aman\nelse if (gsb_threat || us_malicious)      verdict = 'malicious';\nelse if (us_ready && us_score >= 40)      verdict = 'suspicious';\nelse if (gsb_status === 'clean' || (us_ready && !us_malicious)) verdict = 'aman';\nelse                                      verdict = 'unverified';\nif (forceReview && verdict !== 'malicious') verdict = 'suspicious';\n\nconst is_threat    = (verdict !== 'aman');\nconst auto_block   = (verdict === 'malicious');\nconst need_confirm = (verdict === 'suspicious' || verdict === 'unverified');\n\nlet severity, severityIcon, severityLabel;\nif (verdict === 'malicious')      { severity='HIGH';       severityIcon='🚨'; severityLabel='BERBAHAYA'; }\nelse if (verdict === 'suspicious'){ severity='MEDIUM';     severityIcon='⚠️'; severityLabel='MENCURIGAKAN'; }\nelse if (verdict === 'unverified'){ severity='UNVERIFIED'; severityIcon='🛑'; severityLabel='PERLU VERIFIKASI'; }\nelse                              { severity='SAFE';       severityIcon='✅'; severityLabel='AMAN'; }\n\n// teks ringkas sumber (dipakai pesan + prompt AI)\nconst GSB_LABEL = {SOCIAL_ENGINEERING:'Phishing', MALWARE:'Malware', UNWANTED_SOFTWARE:'Unwanted software', POTENTIALLY_HARMFUL_APPLICATION:'Aplikasi berbahaya'};\nconst gsb_text = gsb_status === 'threat' ? ('TERDAFTAR - ' + (GSB_LABEL[gsb_type] || gsb_type.replace(/_/g,' ')))\n               : gsb_status === 'clean' ? 'bersih'\n               : 'tidak tersedia';\nconst us_text = us_ready ? ('skor ' + us_score + (us_malicious ? ' (malicious)' : '')) : 'belum siap';\n\n// ===== F: explainability + self-aware (phishing) =====\nlet decision_reason;\nif (gsb_threat) decision_reason = 'Google Safe Browsing menandai URL sebagai ancaman -> auto-block (sinkhole domain)';\nelse if (us_malicious) decision_reason = 'URLScan.io verdict malicious -> auto-block (sinkhole domain)';\nelse if (verdict === 'unverified') decision_reason = 'Sumber reputasi gagal/unverified -> tidak dianggap aman, keputusan analis';\nelse if (need_confirm) decision_reason = 'URLScan skor ' + (us_score || 0) + ' (mencurigakan) -> keputusan analis (tombol)';\nelse if (auto_block) decision_reason = 'Terdeteksi berbahaya -> auto-block (sinkhole domain)';\nelse decision_reason = 'URL dinilai aman oleh GSB/URLScan';\nconst degraded = (verdict === 'unverified');\nconst degraded_reason = degraded ? 'Deteksi TERDEGRADASI: sumber reputasi (GSB/URLScan) tidak dapat memverifikasi - keyakinan berkurang' : '';\n\nreturn [{ json: {\n  url: alert.url, srcip: alert.srcip, agent_id: alert.agent_id, agent_name: alert.agent_name,\n  rule_level: alert.rule_level, timestamp: alert.timestamp,\n  gsb_status, gsb_threat, gsb_type, us_ready, us_malicious, us_score,\n  gsb_text, us_text,\n  verdict, is_threat, auto_block, need_confirm,\n  severity, severityIcon, severityLabel, decision_reason, degraded, degraded_reason\n} }];"}},{"id":"9e84f834-9061-428e-b3f5-1e6861dca773","name":"Cek Ancaman","type":"n8n-nodes-base.if","typeVersion":2.3,"position":[2000,304],"parameters":{"conditions":{"options":{"caseSensitive":true,"typeValidation":"loose","version":2},"conditions":[{"id":"cond-is-threat","leftValue":"={{ $json.is_threat }}","rightValue":true,"operator":{"type":"boolean","operation":"equals"}}],"combinator":"and"},"looseTypeValidation":true,"options":{}}},{"id":"2877aee4-70e1-4bae-88b3-ada4707272e0","name":"Get Wazuh Token","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[2224,128],"parameters":{"method":"POST","url":"https://172.17.0.1:55000/security/user/authenticate","authentication":"genericCredentialType","genericAuthType":"httpBasicAuth","options":{"allowUnauthorizedCerts":true}},"credentials":{"httpBasicAuth":{"id":"z3vHEZdm4EpUDzRE","name":"Wazuh Creds"}}},{"id":"c46d0a22-a946-48fe-9a9e-f06df3f02369","name":"Trigger Active Response","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[2448,128],"parameters":{"method":"PUT","url":"=https://172.17.0.1:55000/active-response?agents_list={{ $('Ekstrak Alert Phishing').item.json.agent_id }}&wait_for_complete=true","sendHeaders":true,"headerParameters":{"parameters":[{"name":"Authorization","value":"=Bearer {{ $json.data.token }}"},{"name":"Content-Type","value":"application/json"}]},"sendBody":true,"specifyBody":"json","jsonBody":"={{ JSON.stringify({ command: '!block-domain', arguments: [ $('Rangkum Phishing').item.json.url ] }) }}","options":{"allowUnauthorizedCerts":true,"response":{"response":{"neverError":true}}}},"onError":"continueRegularOutput"},{"id":"5388d3c2-5e81-4898-964c-e08f7aa00cf5","name":"Build Payload","type":"n8n-nodes-base.code","typeVersion":2,"position":[2672,304],"parameters":{"mode":"runOnceForAllItems","jsCode":"const r = $('Rangkum Phishing').first().json;\nconst prompt =\n  'Anda adalah analis keamanan siber. Respon HANYA dalam Bahasa Indonesia formal, 2-3 kalimat, tanpa karakter markdown (asterisk underscore backtick bracket).\\n\\n' +\n  'URL dicurigai: ' + r.url + '\\n' +\n  'IP sumber: ' + r.srcip + '\\n' +\n  'Status: ' + r.severityLabel + '\\n' +\n  'Google Safe Browsing: ' + r.gsb_text + '\\n' +\n  'URLScan.io: ' + r.us_text + '\\n\\n' +\n  'Jelaskan tingkat bahaya URL ini dan rekomendasi tindakan yang harus diambil.';\nreturn [{ json: { prompt } }];"}},{"id":"55d0ccca-c555-41cd-b360-5559828ba279","name":"Ollama Generate","type":"n8n-nodes-base.code","typeVersion":2,"position":[2880,304],"parameters":{"mode":"runOnceForAllItems","jsCode":"const response = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'http://172.17.0.1:11434/api/generate',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({\n    model: 'llama3.2:3b',\n    prompt: $json.prompt,\n    stream: false\n  }),\n  timeout: 300000,\n});\n\nlet cleanResponse = (response.response ?? JSON.stringify(response))\n  .replace(/<think>[\\s\\S]*?<\\/think>/g, '')\n  .replace(/[*_`\\[\\]()]/g, '')\n  .replace(/\\n\\n+/g, '\\n')\n  .trim();\n\nreturn [{ json: { response: cleanResponse } }];"}},{"id":"5e265adc-dec0-44e9-a981-b9a36a59067a","name":"Send Telegram Info","type":"n8n-nodes-base.telegram","typeVersion":1.2,"position":[3104,304],"parameters":{"resource":"message","operation":"sendMessage","chatId":"1295213498","text":"={{ $json.message ? $json.message : (\"🆘 *PHISHING DIBLOKIR OTOMATIS*\\n\\n\" +\"🔗 *URL:* `\" + $('Rangkum Phishing').item.json.url + \"`\\n\" +\"🌐 Domain disinkhole ke 0.0.0.0 di \" + $('Rangkum Phishing').item.json.agent_name + \"\\n\\n\" +\"🔎 *Google Safe Browsing:* \" + $('Rangkum Phishing').item.json.gsb_text + \"\\n\" +\"🔎 *URLScan:* \" + $('Rangkum Phishing').item.json.us_text + \"\\n\\n\" + \"🧠 *Alasan:* \" + $('Rangkum Phishing').item.json.decision_reason + ($('Rangkum Phishing').item.json.degraded ? (\"\\n⚠️ \" + $('Rangkum Phishing').item.json.degraded_reason) : \"\") + \"\\n\\n\" +\"🤖 *Analisis AI:*\\n\" + $json.response) }}","additionalFields":{"appendAttribution":false,"disable_web_page_preview":true,"parse_mode":"Markdown"}},"webhookId":"aea3790e-39d9-4476-a6ba-363fec19220b","credentials":{"telegramApi":{"id":"DCCZSQ4bTDcFjrWs","name":"Telegram account"}}},{"id":"73a90e90-a7b0-47b6-b6b9-3ab507626baf","name":"Build Payload Aman","type":"n8n-nodes-base.set","typeVersion":3.4,"position":[2224,512],"parameters":{"mode":"manual","assignments":{"assignments":[{"id":"1","name":"message","value":"=✅ *URL AMAN*\n\n🔗 URL: `{{ $('Rangkum Phishing').item.json.url }}`\n🖥️ Agent: {{ $('Rangkum Phishing').item.json.agent_name }}\n🕐 Waktu: {{ $('Rangkum Phishing').item.json.timestamp }}\n\n🔎 Google Safe Browsing: {{ $('Rangkum Phishing').item.json.gsb_text }}\n🔎 URLScan: {{ $('Rangkum Phishing').item.json.us_text }}\nℹ️ URL tidak terdeteksi berbahaya.","type":"string"}]},"options":{}}},{"parameters":{"mode":"runOnceForAllItems","jsCode":"const alert = $input.first().json;\nconst url = alert.url;\n\n// Cache verdict VirusTotal per-URL (persist staticData). Hit & segar -> lewati\n// submit+wait+report+urlscan (hemat 2+ panggilan VT per event).\nconst sd = $getWorkflowStaticData('global');\nsd.urlCache = sd.urlCache || {};\nconst TTL = 6 * 60 * 60 * 1000;   // 6 jam\n\nlet _cacheHit = false, _cachedStats = null;\nif (url && sd.urlCache[url] && (Date.now() - (sd.urlCache[url].ts || 0)) < TTL) {\n  _cacheHit = true;\n  _cachedStats = sd.urlCache[url].stats || {};\n}\nreturn [{ json: { ...alert, _cacheHit, _cachedStats } }];"},"id":"5895b7be-09ed-4359-be18-b811e0424ded","name":"Cek Cache URL","type":"n8n-nodes-base.code","typeVersion":2,"position":[-140,380]},{"parameters":{"conditions":{"options":{"caseSensitive":true,"typeValidation":"loose","version":2},"conditions":[{"id":"cond-url-cache-hit","leftValue":"={{ $json._cacheHit }}","rightValue":true,"operator":{"type":"boolean","operation":"equals"}}],"combinator":"and"},"looseTypeValidation":true,"options":{}},"id":"0dfb88e9-4d40-4058-bbc8-e7104e562a0d","name":"Cache Hit URL?","type":"n8n-nodes-base.if","typeVersion":2.3,"position":[40,380]},{"parameters":{"resource":"message","operation":"sendMessage","chatId":"1295213498","text":"={{ $('Rangkum Phishing').item.json.severityIcon + \" *ALERT PHISHING - \" + $('Rangkum Phishing').item.json.severityLabel + \"*\\n\\n\" +\"🔗 *URL:* `\" + $('Rangkum Phishing').item.json.url + \"`\\n\" +\"🌐 *IP Sumber:* \" + $('Rangkum Phishing').item.json.srcip + \"\\n\" +\"🤖 *Agent:* \" + $('Rangkum Phishing').item.json.agent_name + \"\\n\\n\" +\"🔎 *Google Safe Browsing:* \" + $('Rangkum Phishing').item.json.gsb_text + \"\\n\" +\"🔎 *URLScan:* \" + $('Rangkum Phishing').item.json.us_text + \"\\n\\n\" + \"🧠 *Alasan:* \" + $('Rangkum Phishing').item.json.decision_reason + ($('Rangkum Phishing').item.json.degraded ? (\"\\n⚠️ \" + $('Rangkum Phishing').item.json.degraded_reason) : \"\") + \"\\n\\n\" +\"🤖 *Analisis AI:*\\n\" + $json.response }}","additionalFields":{"appendAttribution":false,"disable_web_page_preview":true,"parse_mode":"Markdown"},"replyMarkup":"inlineKeyboard","inlineKeyboard":{"rows":[{"row":{"buttons":[{"text":"Blokir Domain","additionalFields":{"callback_data":"={{ \"pblk:\" + $('Ekstrak Alert Phishing').first().json.agent_id }}"}},{"text":"Abaikan","additionalFields":{"callback_data":"={{ \"pign:\" + $('Ekstrak Alert Phishing').first().json.agent_id }}"}}]}}]}},"id":"b8710b65-be59-4335-856a-cdb876af2546","name":"Send Telegram Alert","type":"n8n-nodes-base.telegram","typeVersion":1.2,"position":[1700,200],"webhookId":"dcc19087-2a58-4516-9b3f-ef4fad5b950e","credentials":{"telegramApi":{"id":"DCCZSQ4bTDcFjrWs","name":"Telegram account"}}},{"parameters":{"conditions":{"options":{"caseSensitive":true,"typeValidation":"loose","version":2},"conditions":[{"id":"cond-auto","leftValue":"={{ $('Rangkum Phishing').item.json.auto_block }}","rightValue":true,"operator":{"type":"boolean","operation":"equals"}}],"combinator":"and"},"looseTypeValidation":true,"options":{}},"id":"c6a3f540-ec6a-4e9a-b751-62ce338af944","name":"Auto Block?","type":"n8n-nodes-base.if","typeVersion":2.3,"position":[900,300]},{"parameters":{"conditions":{"options":{"caseSensitive":true,"typeValidation":"loose","version":2},"conditions":[{"id":"cond-auto","leftValue":"={{ $('Rangkum Phishing').item.json.auto_block }}","rightValue":true,"operator":{"type":"boolean","operation":"equals"}}],"combinator":"and"},"looseTypeValidation":true,"options":{}},"id":"e1160ee2-7089-4426-a572-d25325fa9f0b","name":"Tipe Notif?","type":"n8n-nodes-base.if","typeVersion":2.3,"position":[1500,240]},{"parameters":{"method":"POST","url":"https://safebrowsing.googleapis.com/v4/threatMatches:find","authentication":"genericCredentialType","genericAuthType":"httpQueryAuth","sendBody":true,"specifyBody":"json","jsonBody":"={{ JSON.stringify({ client: { clientId: 'soar-ravi', clientVersion: '1.0' }, threatInfo: { threatTypes: ['MALWARE','SOCIAL_ENGINEERING','UNWANTED_SOFTWARE','POTENTIALLY_HARMFUL_APPLICATION'], platformTypes: ['ANY_PLATFORM'], threatEntryTypes: ['URL'], threatEntries: [{ url: $('Ekstrak Alert Phishing').item.json.url }] } }) }}","options":{"response":{"response":{"neverError":true,"fullResponse":true}}}},"id":"16e37d06-5026-4963-8597-ad078ad10216","name":"GSB Lookup","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[240,540],"onError":"continueRegularOutput","credentials":{"httpQueryAuth":{"id":"QpyKvPyVrLRKQomQ","name":"GSB Query Auth"}}},{"parameters":{"method":"GET","url":"=https://urlscan.io/api/v1/result/{{ $('URLScan.io Submit').item.json.uuid }}/","sendHeaders":false,"options":{"response":{"response":{"neverError":true,"fullResponse":true}}},"authentication":"genericCredentialType","genericAuthType":"httpHeaderAuth"},"id":"f98efd69-9e9d-4e86-aec7-1bc08d0574f4","name":"URLScan Result","type":"n8n-nodes-base.httpRequest","typeVersion":4.4,"position":[820,540],"onError":"continueRegularOutput","credentials":{"httpHeaderAuth":{"id":"OkeR1Hc221mdK1ib","name":"URLScan API-Key"}}},{"parameters":{"conditions":{"options":{"caseSensitive":true,"typeValidation":"loose","version":2},"conditions":[{"id":"cond-gsb-threat","leftValue":"={{ $json.body && $json.body.matches && $json.body.matches.length > 0 }}","rightValue":true,"operator":{"type":"boolean","operation":"equals"}}],"combinator":"and"},"looseTypeValidation":true,"options":{}},"id":"1fbaa084-85b8-4c06-8ba4-a4ddfcd0c7ff","name":"GSB Threat?","type":"n8n-nodes-base.if","typeVersion":2.3,"position":[460,540]}],"connections":{"Webhook Phishing":{"main":[[{"node":"Filter Alert Phishing","type":"main","index":0}]]},"Filter Alert Phishing":{"main":[[{"node":"Ekstrak Alert Phishing","type":"main","index":0}]]},"Ekstrak Alert Phishing":{"main":[[{"node":"Cek Cache URL","type":"main","index":0}]]},"URLScan.io Submit":{"main":[[{"node":"Tunggu Scan","type":"main","index":0}]]},"Cek Ancaman":{"main":[[{"node":"Auto Block?","type":"main","index":0}],[{"node":"Build Payload Aman","type":"main","index":0}]]},"Get Wazuh Token":{"main":[[{"node":"Trigger Active Response","type":"main","index":0}]]},"Trigger Active Response":{"main":[[{"node":"Build Payload","type":"main","index":0}]]},"Build Payload":{"main":[[{"node":"Ollama Generate","type":"main","index":0}]]},"Ollama Generate":{"main":[[{"node":"Tipe Notif?","type":"main","index":0}]]},"Build Payload Aman":{"main":[[{"node":"Send Telegram Info","type":"main","index":0}]]},"Rangkum Phishing":{"main":[[{"node":"Cek Ancaman","type":"main","index":0}]]},"Cek Cache URL":{"main":[[{"node":"Cache Hit URL?","type":"main","index":0}]]},"Cache Hit URL?":{"main":[[{"node":"Rangkum Phishing","type":"main","index":0}],[{"node":"GSB Lookup","type":"main","index":0}]]},"Auto Block?":{"main":[[{"node":"Get Wazuh Token","type":"main","index":0}],[{"node":"Build Payload","type":"main","index":0}]]},"Tipe Notif?":{"main":[[{"node":"Send Telegram Info","type":"main","index":0}],[{"node":"Send Telegram Alert","type":"main","index":0}]]},"Tunggu Scan":{"main":[[{"node":"URLScan Result","type":"main","index":0}]]},"GSB Lookup":{"main":[[{"node":"GSB Threat?","type":"main","index":0}]]},"URLScan Result":{"main":[[{"node":"Rangkum Phishing","type":"main","index":0}]]},"GSB Threat?":{"main":[[{"node":"Rangkum Phishing","type":"main","index":0}],[{"node":"URLScan.io Submit","type":"main","index":0}]]}},"settings":{"executionOrder":"v1","availableInMCP":true,"binaryMode":"separate","timeSavedMode":"fixed","callerPolicy":"workflowsFromSameOwner"},"staticData":{"global":{"urlCache":{"https://www.bing.com/":{"stats":{"gsb_status":"clean","gsb_threat":false,"gsb_type":"","us_ready":true,"us_malicious":false,"us_score":0},"ts":1781214072030},"http://testsafebrowsing.appspot.com/s/phishing.html":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1781214847424},"http://testsafebrowsing.appspot.com/s/phishing.html?e2e=1782358328":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782358331247},"http://demoreview-phish-test.example.org/login?e2e=1782358394":{"stats":{"gsb_status":"clean","gsb_threat":false,"gsb_type":"","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782358433345},"https://www.amtso.org/check-desktop-phishing-page/":{"stats":{"gsb_status":"clean","gsb_threat":false,"gsb_type":"","us_ready":true,"us_malicious":false,"us_score":0},"ts":1782981731532},"http://testsafebrowsing.appspot.com/s/phishing.html?demo=1782971039":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782971042266},"http://testsafebrowsing.appspot.com/s/phishing.html?w=warm":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782981357975},"http://testsafebrowsing.appspot.com/s/phishing.html?m=1-1782981380":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782981382346},"http://testsafebrowsing.appspot.com/s/phishing.html?m=2-1782981392":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782981394686},"http://testsafebrowsing.appspot.com/s/phishing.html?m=4-1782981417":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782981418808},"http://testsafebrowsing.appspot.com/s/phishing.html?m=5-1782981429":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782981431144},"http://testsafebrowsing.appspot.com/s/phishing.html?f=1782987064":{"stats":{"gsb_status":"threat","gsb_threat":true,"gsb_type":"SOCIAL_ENGINEERING","us_ready":false,"us_malicious":false,"us_score":0},"ts":1782987066407}}}},"meta":{"aiBuilderAssisted":true},"pinData":{},"versionId":"7bf982d1-fdad-4de2-a6c0-70f92e26418a","activeVersionId":"7bf982d1-fdad-4de2-a6c0-70f92e26418a","versionCounter":195,"triggerCount":1,"tags":[],"shared":[{"updatedAt":"2026-04-23T07:06:47.221Z","createdAt":"2026-04-23T07:06:47.221Z","role":"workflow:owner","workflowId":"nLK3lYtY2gl9mYj5","projectId":"nvpwMZoZStjEx64h","project":{"updatedAt":"2026-04-09T04:56:53.740Z","createdAt":"2026-04-09T04:55:58.106Z","id":"nvpwMZoZStjEx64h","name":"Ravi Arnan Irianto <raviarnankeren@gmail.com>","type":"personal","icon":null,"description":null,"creatorId":"23d22c3c-d51e-476b-98b2-9e2df64b7225"}}],"versionMetadata":{"name":null,"description":null}}]
+[
+  {
+    "updatedAt": "2026-07-02T10:10:37.000Z",
+    "createdAt": "2026-04-23T07:06:47.217Z",
+    "id": "nLK3lYtY2gl9mYj5",
+    "name": "Deteksi Phishing",
+    "description": "Deteksi phishing dari Wazuh: filter URL (handle nested+flat), serial flow Ekstrak → VT submit → wait → VT report → URLScan.io → merge → Cek Ancaman, Wazuh AR jika malicious >= 1, Gemini 2.0 Flash API dengan markdown sanitization, Telegram (ALERT atau AMAN).",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "483f7b1c-3a05-4125-8919-e67e96ab4ffb",
+        "name": "Webhook Phishing",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          240,
+          304
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "wazuh-phishing",
+          "options": {}
+        },
+        "webhookId": "7d284d3a-5bbd-4e77-9e86-45e5e5f4dcfd"
+      },
+      {
+        "id": "fe916d2f-5ec1-48f1-885a-fb84f5c4c7a3",
+        "name": "Filter Alert Phishing",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          464,
+          304
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "cond-url-notempty",
+                "leftValue": "={{ $json.body.data?.url || $json.body.url || '' }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        }
+      },
+      {
+        "id": "5f664c2a-c892-4e8d-9fe7-551052e22a28",
+        "name": "Ekstrak Alert Phishing",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          688,
+          304
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const body = $input.first().json.body;\nreturn [{\n  json: {\n    url:        body.data?.url        || body.url        || \"\",\n    srcip:      body.data?.srcip      || body.srcip      || \"\",\n    rule_id:    body.rule?.id         || body.rule_id    || \"\",\n    rule_level: body.rule?.level      || body.rule_level || 0,\n    agent_id:   body.agent?.id        || body.agent_id   || \"\",\n    agent_name: body.agent?.name      || body.agent_name || \"\",\n    timestamp:  body.timestamp        || new Date().toISOString(),\n  }\n}];"
+        }
+      },
+      {
+        "id": "5f7d731a-469e-4653-a678-cb9681875f22",
+        "name": "Submit URL VirusTotal",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          912,
+          304
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://www.virustotal.com/api/v3/urls",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "url",
+                "value": "={{ $json.url }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "4XbvXfmuxwJcgXcc",
+            "name": "VirusTotal API Key"
+          }
+        }
+      },
+      {
+        "id": "ae2d496c-20fe-4584-918b-bcf9e3abfcf3",
+        "name": "Tunggu Scan",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          1120,
+          304
+        ],
+        "parameters": {
+          "resume": "timeInterval",
+          "amount": 35,
+          "unit": "seconds"
+        },
+        "webhookId": "9be4af77-d47a-4cc6-8124-6d7dca3be4db"
+      },
+      {
+        "id": "b5ea968c-fac1-4235-a1a6-3840b9582b9b",
+        "name": "Get URL Report",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1344,
+          304
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "=https://www.virustotal.com/api/v3/analyses/{{ $json.data.id }}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "fullResponse": true
+              }
+            }
+          }
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "4XbvXfmuxwJcgXcc",
+            "name": "VirusTotal API Key"
+          }
+        }
+      },
+      {
+        "id": "3f6fd5e5-725f-4966-b2da-5a758dc3e34b",
+        "name": "URLScan.io Submit",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          1568,
+          304
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://urlscan.io/api/v1/scan/",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ { \"url\": $('Ekstrak Alert Phishing').item.json.url, \"visibility\": \"private\" } }}",
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true
+              }
+            }
+          },
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth"
+        },
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "OkeR1Hc221mdK1ib",
+            "name": "URLScan API-Key"
+          }
+        }
+      },
+      {
+        "id": "c3fd75f9-d2c1-475a-b270-19cde16838b6",
+        "name": "Rangkum Phishing",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1792,
+          304
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const alert = $('Ekstrak Alert Phishing').first().json;\nconst cacheNode = $('Cek Cache URL').first().json;\n\nlet gsb_status, gsb_threat = false, gsb_type = '';\nlet us_ready = false, us_malicious = false, us_score = 0;\n\nif (cacheNode._cacheHit) {\n  const c = cacheNode._cachedStats || {};\n  gsb_status = c.gsb_status || 'cache'; gsb_threat = !!c.gsb_threat; gsb_type = c.gsb_type || '';\n  us_ready = !!c.us_ready; us_malicious = !!c.us_malicious; us_score = c.us_score || 0;\n} else {\n  // ----- Google Safe Browsing -----\n  const g = $('GSB Lookup').first().json;\n  const gcode = g.statusCode;\n  const gbody = (g.body !== undefined) ? g.body : g;\n  if (gcode === 200 || (gbody && gbody.matches !== undefined && gcode === undefined)) {\n    const matches = gbody && gbody.matches;\n    if (Array.isArray(matches) && matches.length > 0) { gsb_threat = true; gsb_type = matches[0].threatType || 'THREAT'; gsb_status = 'threat'; }\n    else { gsb_status = 'clean'; }\n  } else {\n    gsb_status = 'unavailable';   // key belum diset / error -> fallback ke URLScan\n  }\n  // ----- URLScan result -----\n  let u = {};\n  try { u = $('URLScan Result').first().json || {}; } catch (e) { u = {}; }\n  const ucode = u.statusCode;\n  const ubody = (u.body !== undefined) ? u.body : u;\n  const ov = ubody && ubody.verdicts && ubody.verdicts.overall;\n  if (ucode === 200 && ov) {\n    us_ready = true;\n    us_malicious = !!ov.malicious;\n    us_score = Number(ov.score || 0);\n  }   // 404/202 -> belum siap -> us_ready=false\n  // cache\n  if (alert.url && (gsb_status !== 'unavailable' || us_ready)) {\n    const sd = $getWorkflowStaticData('global');\n    sd.urlCache = sd.urlCache || {};\n    sd.urlCache[alert.url] = { stats: { gsb_status, gsb_threat, gsb_type, us_ready, us_malicious, us_score }, ts: Date.now() };\n    const keys = Object.keys(sd.urlCache);\n    if (keys.length > 1000) { keys.sort((a,b)=>(sd.urlCache[a].ts||0)-(sd.urlCache[b].ts||0)); keys.slice(0,250).forEach(k=>delete sd.urlCache[k]); }\n  }\n}\n\nconst forceReview = /demoreview/i.test(alert.url || '');\nconst sources_ok = (gsb_status !== 'unavailable') || us_ready;   // minimal satu sumber memberi jawaban\n\nlet verdict;\nif (!sources_ok)                          verdict = 'unverified';   // semua sumber gagal -> jangan klaim aman\nelse if (gsb_threat || us_malicious)      verdict = 'malicious';\nelse if (us_ready && us_score >= 40)      verdict = 'suspicious';\nelse if (gsb_status === 'clean' || (us_ready && !us_malicious)) verdict = 'aman';\nelse                                      verdict = 'unverified';\nif (forceReview && verdict !== 'malicious') verdict = 'suspicious';\n\nconst is_threat    = (verdict !== 'aman');\nconst auto_block   = (verdict === 'malicious');\nconst need_confirm = (verdict === 'suspicious' || verdict === 'unverified');\n\nlet severity, severityIcon, severityLabel;\nif (verdict === 'malicious')      { severity='HIGH';       severityIcon='🚨'; severityLabel='BERBAHAYA'; }\nelse if (verdict === 'suspicious'){ severity='MEDIUM';     severityIcon='⚠️'; severityLabel='MENCURIGAKAN'; }\nelse if (verdict === 'unverified'){ severity='UNVERIFIED'; severityIcon='🛑'; severityLabel='PERLU VERIFIKASI'; }\nelse                              { severity='SAFE';       severityIcon='✅'; severityLabel='AMAN'; }\n\n// teks ringkas sumber (dipakai pesan + prompt AI)\nconst GSB_LABEL = {SOCIAL_ENGINEERING:'Phishing', MALWARE:'Malware', UNWANTED_SOFTWARE:'Unwanted software', POTENTIALLY_HARMFUL_APPLICATION:'Aplikasi berbahaya'};\nconst gsb_text = gsb_status === 'threat' ? ('TERDAFTAR - ' + (GSB_LABEL[gsb_type] || gsb_type.replace(/_/g,' ')))\n               : gsb_status === 'clean' ? 'bersih'\n               : 'tidak tersedia';\nconst us_text = us_ready ? ('skor ' + us_score + (us_malicious ? ' (malicious)' : '')) : 'belum siap';\n\n// ===== F: explainability + self-aware (phishing) =====\nlet decision_reason;\nif (gsb_threat) decision_reason = 'Google Safe Browsing menandai URL sebagai ancaman -> auto-block (sinkhole domain)';\nelse if (us_malicious) decision_reason = 'URLScan.io verdict malicious -> auto-block (sinkhole domain)';\nelse if (verdict === 'unverified') decision_reason = 'Sumber reputasi gagal/unverified -> tidak dianggap aman, keputusan analis';\nelse if (need_confirm) decision_reason = 'URLScan skor ' + (us_score || 0) + ' (mencurigakan) -> keputusan analis (tombol)';\nelse if (auto_block) decision_reason = 'Terdeteksi berbahaya -> auto-block (sinkhole domain)';\nelse decision_reason = 'URL dinilai aman oleh GSB/URLScan';\nconst degraded = (verdict === 'unverified');\nconst degraded_reason = degraded ? 'Deteksi TERDEGRADASI: sumber reputasi (GSB/URLScan) tidak dapat memverifikasi - keyakinan berkurang' : '';\n\nreturn [{ json: {\n  url: alert.url, srcip: alert.srcip, agent_id: alert.agent_id, agent_name: alert.agent_name,\n  rule_level: alert.rule_level, timestamp: alert.timestamp,\n  gsb_status, gsb_threat, gsb_type, us_ready, us_malicious, us_score,\n  gsb_text, us_text,\n  verdict, is_threat, auto_block, need_confirm,\n  severity, severityIcon, severityLabel, decision_reason, degraded, degraded_reason\n} }];"
+        }
+      },
+      {
+        "id": "9e84f834-9061-428e-b3f5-1e6861dca773",
+        "name": "Cek Ancaman",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2000,
+          304
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "cond-is-threat",
+                "leftValue": "={{ $json.is_threat }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        }
+      },
+      {
+        "id": "2877aee4-70e1-4bae-88b3-ada4707272e0",
+        "name": "Get Wazuh Token",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2224,
+          128
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://172.17.0.1:55000/security/user/authenticate",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBasicAuth",
+          "options": {
+            "allowUnauthorizedCerts": true
+          }
+        },
+        "credentials": {
+          "httpBasicAuth": {
+            "id": "z3vHEZdm4EpUDzRE",
+            "name": "Wazuh Creds"
+          }
+        }
+      },
+      {
+        "id": "c46d0a22-a946-48fe-9a9e-f06df3f02369",
+        "name": "Trigger Active Response",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          2448,
+          128
+        ],
+        "parameters": {
+          "method": "PUT",
+          "url": "=https://172.17.0.1:55000/active-response?agents_list={{ $('Ekstrak Alert Phishing').item.json.agent_id }}&wait_for_complete=true",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $json.data.token }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ command: '!block-domain', arguments: [ $('Rangkum Phishing').item.json.url ] }) }}",
+          "options": {
+            "allowUnauthorizedCerts": true,
+            "response": {
+              "response": {
+                "neverError": true
+              }
+            }
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "5388d3c2-5e81-4898-964c-e08f7aa00cf5",
+        "name": "Build Payload",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2672,
+          304
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const r = $('Rangkum Phishing').first().json;\nconst prompt =\n  'Anda adalah analis keamanan siber. Respon HANYA dalam Bahasa Indonesia formal, 2-3 kalimat, tanpa karakter markdown (asterisk underscore backtick bracket).\\n\\n' +\n  'URL dicurigai: ' + r.url + '\\n' +\n  'IP sumber: ' + r.srcip + '\\n' +\n  'Status: ' + r.severityLabel + '\\n' +\n  'Google Safe Browsing: ' + r.gsb_text + '\\n' +\n  'URLScan.io: ' + r.us_text + '\\n\\n' +\n  'Jelaskan tingkat bahaya URL ini dan rekomendasi tindakan yang harus diambil.';\nreturn [{ json: { prompt } }];"
+        }
+      },
+      {
+        "id": "55d0ccca-c555-41cd-b360-5559828ba279",
+        "name": "Gemini Generate",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2880,
+          304
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const apiKey = $env.GEMINI_API_KEY;\nif (!apiKey) throw new Error('GEMINI_API_KEY belum di-set');\nconst prompt = $json.prompt;\nconst body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 200 } };\nconst resp = await this.helpers.httpRequest({ method: 'POST', url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), timeout: 30000 });\nlet text = resp?.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(resp);\nlet clean = text.replace(/<think>[\\s\\S]*?<\\/think>/g, '').replace(/[*_`\\[\\]()]/g, '').replace(/\\n\\n+/g, '\\n').trim();\nreturn [{ json: { ...$json, response: clean, gemini_response: clean } }];"
+        }
+      },
+      {
+        "id": "5e265adc-dec0-44e9-a981-b9a36a59067a",
+        "name": "Send Telegram Info",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          3104,
+          304
+        ],
+        "parameters": {
+          "resource": "message",
+          "operation": "sendMessage",
+          "chatId": "1295213498",
+          "text": "={{ $json.message ? $json.message : (\"🆘 *PHISHING DIBLOKIR OTOMATIS*\\n\\n\" +\"🔗 *URL:* `\" + $('Rangkum Phishing').item.json.url + \"`\\n\" +\"🌐 Domain disinkhole ke 0.0.0.0 di \" + $('Rangkum Phishing').item.json.agent_name + \"\\n\\n\" +\"🔎 *Google Safe Browsing:* \" + $('Rangkum Phishing').item.json.gsb_text + \"\\n\" +\"🔎 *URLScan:* \" + $('Rangkum Phishing').item.json.us_text + \"\\n\\n\" + \"🧠 *Alasan:* \" + $('Rangkum Phishing').item.json.decision_reason + ($('Rangkum Phishing').item.json.degraded ? (\"\\n⚠️ \" + $('Rangkum Phishing').item.json.degraded_reason) : \"\") + \"\\n\\n\" +\"🤖 *Analisis AI:*\\n\" + $json.response) }}",
+          "additionalFields": {
+            "appendAttribution": false,
+            "disable_web_page_preview": true,
+            "parse_mode": "Markdown"
+          }
+        },
+        "webhookId": "aea3790e-39d9-4476-a6ba-363fec19220b",
+        "credentials": {
+          "telegramApi": {
+            "id": "DCCZSQ4bTDcFjrWs",
+            "name": "Telegram account"
+          }
+        }
+      },
+      {
+        "id": "73a90e90-a7b0-47b6-b6b9-3ab507626baf",
+        "name": "Build Payload Aman",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          2224,
+          512
+        ],
+        "parameters": {
+          "mode": "manual",
+          "assignments": {
+            "assignments": [
+              {
+                "id": "1",
+                "name": "message",
+                "value": "=✅ *URL AMAN*\n\n🔗 URL: `{{ $('Rangkum Phishing').item.json.url }}`\n🖥️ Agent: {{ $('Rangkum Phishing').item.json.agent_name }}\n🕐 Waktu: {{ $('Rangkum Phishing').item.json.timestamp }}\n\n🔎 Google Safe Browsing: {{ $('Rangkum Phishing').item.json.gsb_text }}\n🔎 URLScan: {{ $('Rangkum Phishing').item.json.us_text }}\nℹ️ URL tidak terdeteksi berbahaya.",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const alert = $input.first().json;\nconst url = alert.url;\n\n// Cache verdict VirusTotal per-URL (persist staticData). Hit & segar -> lewati\n// submit+wait+report+urlscan (hemat 2+ panggilan VT per event).\nconst sd = $getWorkflowStaticData('global');\nsd.urlCache = sd.urlCache || {};\nconst TTL = 6 * 60 * 60 * 1000;   // 6 jam\n\nlet _cacheHit = false, _cachedStats = null;\nif (url && sd.urlCache[url] && (Date.now() - (sd.urlCache[url].ts || 0)) < TTL) {\n  _cacheHit = true;\n  _cachedStats = sd.urlCache[url].stats || {};\n}\nreturn [{ json: { ...alert, _cacheHit, _cachedStats } }];"
+        },
+        "id": "5895b7be-09ed-4359-be18-b811e0424ded",
+        "name": "Cek Cache URL",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -140,
+          380
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "cond-url-cache-hit",
+                "leftValue": "={{ $json._cacheHit }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "0dfb88e9-4d40-4058-bbc8-e7104e562a0d",
+        "name": "Cache Hit URL?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          40,
+          380
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "message",
+          "operation": "sendMessage",
+          "chatId": "1295213498",
+          "text": "={{ $('Rangkum Phishing').item.json.severityIcon + \" *ALERT PHISHING - \" + $('Rangkum Phishing').item.json.severityLabel + \"*\\n\\n\" +\"🔗 *URL:* `\" + $('Rangkum Phishing').item.json.url + \"`\\n\" +\"🌐 *IP Sumber:* \" + $('Rangkum Phishing').item.json.srcip + \"\\n\" +\"🤖 *Agent:* \" + $('Rangkum Phishing').item.json.agent_name + \"\\n\\n\" +\"🔎 *Google Safe Browsing:* \" + $('Rangkum Phishing').item.json.gsb_text + \"\\n\" +\"🔎 *URLScan:* \" + $('Rangkum Phishing').item.json.us_text + \"\\n\\n\" + \"🧠 *Alasan:* \" + $('Rangkum Phishing').item.json.decision_reason + ($('Rangkum Phishing').item.json.degraded ? (\"\\n⚠️ \" + $('Rangkum Phishing').item.json.degraded_reason) : \"\") + \"\\n\\n\" +\"🤖 *Analisis AI:*\\n\" + $json.response }}",
+          "additionalFields": {
+            "appendAttribution": false,
+            "disable_web_page_preview": true,
+            "parse_mode": "Markdown"
+          },
+          "replyMarkup": "inlineKeyboard",
+          "inlineKeyboard": {
+            "rows": [
+              {
+                "row": {
+                  "buttons": [
+                    {
+                      "text": "Blokir Domain",
+                      "additionalFields": {
+                        "callback_data": "={{ \"pblk:\" + $('Ekstrak Alert Phishing').first().json.agent_id }}"
+                      }
+                    },
+                    {
+                      "text": "Abaikan",
+                      "additionalFields": {
+                        "callback_data": "={{ \"pign:\" + $('Ekstrak Alert Phishing').first().json.agent_id }}"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "id": "b8710b65-be59-4335-856a-cdb876af2546",
+        "name": "Send Telegram Alert",
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          1700,
+          200
+        ],
+        "webhookId": "dcc19087-2a58-4516-9b3f-ef4fad5b950e",
+        "credentials": {
+          "telegramApi": {
+            "id": "DCCZSQ4bTDcFjrWs",
+            "name": "Telegram account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "cond-auto",
+                "leftValue": "={{ $('Rangkum Phishing').item.json.auto_block }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "c6a3f540-ec6a-4e9a-b751-62ce338af944",
+        "name": "Auto Block?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          900,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "cond-auto",
+                "leftValue": "={{ $('Rangkum Phishing').item.json.auto_block }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "e1160ee2-7089-4426-a572-d25325fa9f0b",
+        "name": "Tipe Notif?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1500,
+          240
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://safebrowsing.googleapis.com/v4/threatMatches:find",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpQueryAuth",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ client: { clientId: 'soar-ravi', clientVersion: '1.0' }, threatInfo: { threatTypes: ['MALWARE','SOCIAL_ENGINEERING','UNWANTED_SOFTWARE','POTENTIALLY_HARMFUL_APPLICATION'], platformTypes: ['ANY_PLATFORM'], threatEntryTypes: ['URL'], threatEntries: [{ url: $('Ekstrak Alert Phishing').item.json.url }] } }) }}",
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "fullResponse": true
+              }
+            }
+          }
+        },
+        "id": "16e37d06-5026-4963-8597-ad078ad10216",
+        "name": "GSB Lookup",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          240,
+          540
+        ],
+        "onError": "continueRegularOutput",
+        "credentials": {
+          "httpQueryAuth": {
+            "id": "QpyKvPyVrLRKQomQ",
+            "name": "GSB Query Auth"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "=https://urlscan.io/api/v1/result/{{ $('URLScan.io Submit').item.json.uuid }}/",
+          "sendHeaders": false,
+          "options": {
+            "response": {
+              "response": {
+                "neverError": true,
+                "fullResponse": true
+              }
+            }
+          },
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth"
+        },
+        "id": "f98efd69-9e9d-4e86-aec7-1bc08d0574f4",
+        "name": "URLScan Result",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [
+          820,
+          540
+        ],
+        "onError": "continueRegularOutput",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "OkeR1Hc221mdK1ib",
+            "name": "URLScan API-Key"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "cond-gsb-threat",
+                "leftValue": "={{ $json.body && $json.body.matches && $json.body.matches.length > 0 }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "1fbaa084-85b8-4c06-8ba4-a4ddfcd0c7ff",
+        "name": "GSB Threat?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          460,
+          540
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Phishing": {
+        "main": [
+          [
+            {
+              "node": "Filter Alert Phishing",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Filter Alert Phishing": {
+        "main": [
+          [
+            {
+              "node": "Ekstrak Alert Phishing",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ekstrak Alert Phishing": {
+        "main": [
+          [
+            {
+              "node": "Cek Cache URL",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "URLScan.io Submit": {
+        "main": [
+          [
+            {
+              "node": "Tunggu Scan",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Cek Ancaman": {
+        "main": [
+          [
+            {
+              "node": "Auto Block?",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Build Payload Aman",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Wazuh Token": {
+        "main": [
+          [
+            {
+              "node": "Trigger Active Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Trigger Active Response": {
+        "main": [
+          [
+            {
+              "node": "Build Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Payload": {
+        "main": [
+          [
+            {
+              "node": "Gemini Generate",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Payload Aman": {
+        "main": [
+          [
+            {
+              "node": "Send Telegram Info",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Rangkum Phishing": {
+        "main": [
+          [
+            {
+              "node": "Cek Ancaman",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Cek Cache URL": {
+        "main": [
+          [
+            {
+              "node": "Cache Hit URL?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Cache Hit URL?": {
+        "main": [
+          [
+            {
+              "node": "Rangkum Phishing",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "GSB Lookup",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Auto Block?": {
+        "main": [
+          [
+            {
+              "node": "Get Wazuh Token",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Build Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tipe Notif?": {
+        "main": [
+          [
+            {
+              "node": "Send Telegram Info",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Send Telegram Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tunggu Scan": {
+        "main": [
+          [
+            {
+              "node": "URLScan Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GSB Lookup": {
+        "main": [
+          [
+            {
+              "node": "GSB Threat?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "URLScan Result": {
+        "main": [
+          [
+            {
+              "node": "Rangkum Phishing",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "GSB Threat?": {
+        "main": [
+          [
+            {
+              "node": "Rangkum Phishing",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "URLScan.io Submit",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gemini Generate": {
+        "main": [
+          [
+            {
+              "node": "Tipe Notif?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "binaryMode": "separate",
+      "timeSavedMode": "fixed",
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "staticData": {
+      "global": {
+        "urlCache": {
+          "https://www.bing.com/": {
+            "stats": {
+              "gsb_status": "clean",
+              "gsb_threat": false,
+              "gsb_type": "",
+              "us_ready": true,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1781214072030
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1781214847424
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html?e2e=1782358328": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782358331247
+          },
+          "http://demoreview-phish-test.example.org/login?e2e=1782358394": {
+            "stats": {
+              "gsb_status": "clean",
+              "gsb_threat": false,
+              "gsb_type": "",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782358433345
+          },
+          "https://www.amtso.org/check-desktop-phishing-page/": {
+            "stats": {
+              "gsb_status": "clean",
+              "gsb_threat": false,
+              "gsb_type": "",
+              "us_ready": true,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782981731532
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html?demo=1782971039": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782971042266
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html?w=warm": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782981357975
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html?m=1-1782981380": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782981382346
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html?m=2-1782981392": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782981394686
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html?m=4-1782981417": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782981418808
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html?m=5-1782981429": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782981431144
+          },
+          "http://testsafebrowsing.appspot.com/s/phishing.html?f=1782987064": {
+            "stats": {
+              "gsb_status": "threat",
+              "gsb_threat": true,
+              "gsb_type": "SOCIAL_ENGINEERING",
+              "us_ready": false,
+              "us_malicious": false,
+              "us_score": 0
+            },
+            "ts": 1782987066407
+          }
+        }
+      }
+    },
+    "meta": {
+      "aiBuilderAssisted": true
+    },
+    "pinData": {},
+    "versionId": "7bf982d1-fdad-4de2-a6c0-70f92e26418a",
+    "activeVersionId": "7bf982d1-fdad-4de2-a6c0-70f92e26418a",
+    "versionCounter": 195,
+    "triggerCount": 1,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-04-23T07:06:47.221Z",
+        "createdAt": "2026-04-23T07:06:47.221Z",
+        "role": "workflow:owner",
+        "workflowId": "nLK3lYtY2gl9mYj5",
+        "projectId": "nvpwMZoZStjEx64h",
+        "project": {
+          "updatedAt": "2026-04-09T04:56:53.740Z",
+          "createdAt": "2026-04-09T04:55:58.106Z",
+          "id": "nvpwMZoZStjEx64h",
+          "name": "Ravi Arnan Irianto <raviarnankeren@gmail.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "23d22c3c-d51e-476b-98b2-9e2df64b7225"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": null,
+      "description": null
+    }
+  }
+]

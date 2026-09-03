@@ -10,6 +10,8 @@ services:
     restart: unless-stopped
     ports:
       - "5678:5678"
+    env_file:
+      - .env
     environment:
       - N8N_HOST=localhost
       - N8N_PORT=5678
@@ -17,7 +19,8 @@ services:
       - WEBHOOK_URL=http://localhost:5678/
       - GENERIC_TIMEZONE=Asia/Makassar
       - NODE_TLS_REJECT_UNAUTHORIZED=0
-      # Cegah Code node (Ollama/VT) mati di tengah lonjakan alert serentak
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Cegah Code node (Gemini/VT) mati di tengah lonjakan alert serentak
       - N8N_RUNNERS_TASK_TIMEOUT=300
       - N8N_RUNNERS_MAX_CONCURRENCY=10
     volumes:
@@ -84,7 +87,7 @@ services:
       - FLEET_PORT=8080
       - WAZUH_API_URL=https://127.0.0.1:55000
       - N8N_HEALTH_URL=http://127.0.0.1:5678/healthz
-      - OLLAMA_URL=http://127.0.0.1:11434/api/version
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - /home/ravi/Projects/soar-project/scripts:/scripts:ro
     command: ["python3", "/scripts/fleet-monitor.py"]

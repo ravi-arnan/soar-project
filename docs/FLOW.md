@@ -18,7 +18,7 @@ sequenceDiagram
     participant N8N as n8n Workflow<br/>OTAK (Deteksi Malware)
     participant VT as VirusTotal API
     participant WAPI as Wazuh API<br/>(/active-response)
-    participant Ollama as Ollama AI<br/>(llama3.2:3b)
+    participant Gemini as Gemini 2.0 Flash<br/>(API, hemat 4GB)
     participant TG as Telegram Bot
     actor SOC as SOC Analyst
 
@@ -50,9 +50,9 @@ sequenceDiagram
 
     Note over N8N: AR TIDAK otomatis. Severity hanya<br/>menentukan apakah pesan diberi tombol aksi.
 
-    N8N->>N8N: 16. Build Payload<br/>(prompt severity-aware)
-    N8N->>Ollama: 17. POST /api/generate<br/>(prompt, model)
-    Ollama-->>N8N: 18. Response (Bahasa Indonesia)
+    N8N->>N8N: 16. Build Payload<br/>(prompt severity-aware, model gemini-2.0-flash)
+    N8N->>Gemini: 17. POST generateContent<br/>(prompt, GEMINI_API_KEY)
+    Gemini-->>N8N: 18. Response Bahasa Indonesia<br/>(candidates[0].content.parts[0].text)
     N8N->>N8N: 19. Sanitize markdown chars
 
     alt should_active_response == true (HIGH/CRITICAL)
