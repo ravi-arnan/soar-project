@@ -2,6 +2,58 @@
 
 Menutup gap **D (keamanan platform)** + reproducibility di `ROADMAP.md`.
 
+## Quickstart — setup 1-perintah (arahan dospem 2026-09-11: "permudahkan setup lintas-device")
+
+### Server (1 mesin, semua service)
+
+```bash
+bash deploy/setup-server.sh          # interaktif: tanya Telegram/VT/Gemini key sekali,
+                                     # sisanya (encryption key, password acak, certs,
+                                     # compose up, integrasi Wazuh, import workflow) otomatis
+```
+
+Script idempoten — jalankan ulang aman. Yang tersisa manual cuma yang butuh
+akun browser kamu: buat bot @BotFather, buat API key n8n (Settings → n8n API),
+ganti password default Wazuh dashboard.
+
+### Sinkron credentials + workflow n8n (tanpa setup UI)
+
+```bash
+# Buat API key dulu: n8n UI → Settings → n8n API → Create API key
+N8N_OWNER_API_KEY=xxx VT_API_KEY=yyy python3 deploy/n8n-setup.py --all
+# atau tanpa VT_API_KEY (ditanya interaktif, tidak disimpan ke .env):
+N8N_OWNER_API_KEY=xxx python3 deploy/n8n-setup.py --all
+```
+
+Yang dilakukan: buat/reuse 5 credentials dari `.env` (Telegram, Wazuh basic-auth,
+GSB query-auth, urlscan header-auth, VirusTotal `x-apikey`) lalu import 4
+workflow dengan **remap credential ID by name** — kelemahan import-from-file UI
+(file bawa ID dari mesin lama → node merah) otomatis teratasi. Idempoten:
+credential/workflow dengan nama sama di-update, bukan diduplikat.
+`--dry-run` untuk lihat rencana tanpa API key.
+
+### Workstation (100 PC, 3 jalur — pilih sesuai selera)
+
+| Jalur | Perintah | Cocok untuk |
+|-------|----------|-------------|
+| **.deb / apt** | `agent-rs/build-deb.sh` lalu `sudo apt install ./soar-agent_0.1.0_amd64.deb` | admin yang terbiasa package manager |
+| **1 host manual** | `sudo AGENT_ID=004 SERVER=<ip> bash deploy/agent-install.sh` | 1-2 mesin / percobaan |
+| **fleet via Ansible** | isi `deploy/ansible/inventory-agents.ini` lalu `ansible-playbook -i inventory-agents.ini deploy-agents.yml -e server_ip=<ip>` | rollout massal + update binary sekali jalan |
+
+Konfigurasi per-host cuma 4 baris di `/etc/default/soar-agent` (AGENT_ID,
+AGENT_NAME, SERVER, WATCH) — binary sama untuk semua PC.
+
+### Dashboard: GUI atau TUI, data sama
+
+```bash
+python3 scripts/fleet-monitor.py                  # GUI web  http://0.0.0.0:8080
+python3 scripts/fleet-tui.py --url http://127.0.0.1:8080   # TUI (SSH-friendly)
+```
+
+TUI (`scripts/fleet-tui.py`, stdlib curses) membaca `/api/fleet` + `/api/events`
+yang sama dengan GUI — 4 view (overview/agents/threat/health), cari agent (`/`),
+saring severity (`e`), simulasi 100 PC (`s`).
+
 ## `hardened/` — deploy produksi (reverse-proxy + TLS + auth + segmentasi)
 
 Beda dari compose demo di root repo:

@@ -2,6 +2,19 @@
 
 Agen ringan SOAR alternatif Wazuh Agent. 1 binary **5.3 MB** (stripped, GNU) RSS 5.2 MB, watch file, hitung hash, POST ke n8n. Untuk 100 workstation: scp + systemd, tanpa enroll/key/manager.
 
+## Install via package manager (.deb)
+
+```bash
+./build-deb.sh                                # build musl + bungkus .deb
+sudo apt install ./dist/soar-agent_0.1.0_amd64.deb   # di tiap workstation
+sudo nano /etc/default/soar-agent             # isi AGENT_ID, AGENT_NAME, SERVER
+sudo systemctl enable --now soar-agent
+```
+
+Uninstall: `sudo apt remove soar-agent`. Upgrade: pasang .deb versi lebih tinggi.
+Rollout massal: `deploy/ansible/deploy-agents.yml` (1 perintah untuk N host).
+Setup 1 host tanpa .deb: `deploy/agent-install.sh`.
+
 ## Build
 
 Butuh Rust 1.70+. Di nixbox:

@@ -1,58 +1,69 @@
-# Handoff SOAR - 2026-09-04 dini hari
+# Handoff SOAR - 2026-09-11 malam
 
-- **Tanggal & Waktu**: 2026-09-04 01:58 WITA (sesi lanjutan: Gemini full + Fleet Monitor + RAG/SLA + VT limiter + USB scanner)
-- **Branch**: main, 12 commit bersih (HEAD `7ffeecc`), siap push
-- **Runtime**: rust-agent-ravi (003) release 5.3 MB stripped RSS 5.2 MB, fleet-monitor (docker, host network, port 8080), n8n 2.36.9 4 workflow aktif, Wazuh 4.9.2 GREEN, health-monitor, tg-callback-poller
+- **Tanggal & Waktu**: 2026-09-11 ~23:30-00:45 WITA (sesi: VS-antivirus + setup lintas-device + TUI + n8n otomatis + diagram)
+- **Branch**: main, commit bersih siap commit (lihat daftar file baru di bawah)
+- **Runtime**: n8n & fleet-monitor TIDAK jalan di laptop saat sesi ini (semua test dilakukan dengan instance sementara yang sudah di-cleanup)
 
-## Commit sesi ini (urut)
+## Konteks sesi: dua arahan dospem 2026-09-11
 
-| Commit | Isi |
-|--------|-----|
-| `89ca053` | feat: fleet monitor 100 PC desain Wazuh + heartbeat Rust + diagram otak (16 file, 1974 insert) |
-| `c446a89` | feat: full Gemini 2.0 Flash + Wazuh light (hemat 5GB) — hapus Ollama 4GB |
-| `1211e96` | fix: gemini 2.5 maxOutputTokens 200->800 + thinkingBudget 0 (MAX_TOKENS truncated fix) |
-| `af7f145` | feat: RAG playbook lokal + SLA 15m trusted autonomy |
-| `11d55c7` | feat: VT rate limit 15s + 429 retry 60s untuk 100 PC |
-| `c9c2471` | feat: fleet monitor multi-view ala Wazuh Dashboard asli (4 view + donut + events API) |
-| `cb4cf34` | fix: sidebar toggle statis, tidak menutupi konten |
-| `152f209` | fix: ikon inline SVG, hapus CDN lucide (offline-proof) |
-| `7a1ae55` | fix: UI review (warna ikon, chevron flip, kontras AA, badge dinamis) |
-| `85f48e8` | feat: USB dynamic scanner deteksi malware dari flashdisk |
-| `7ffeecc` | docs: checklist USB selesai |
+1. **"Apa bedanya dengan antivirus?"** → dijawab + didokumentasikan `docs/VS-ANTIVIRUS.md` (elevator pitch, tabel 9 dimensi, paragraf laporan, angka benchmark, poin "komplementer bukan kompetitor").
+2. **"Permudahkan setup SOAR lintas device" + kebayangan "script yang install semua service lalu minta API key"** → dibangun penuh, lihat di bawah. Bonus permintaan lanjutan: **dashboard TUI** kembaran GUI web, **automasi n8n** (credentials + workflow + remap), dan **diagram perspektif karyawan**.
 
-## Perubahan besar arsitektur
+## File baru (semua tested, belum di-commit)
 
-1. **Full Gemini 2.5 Flash API** (ganti Ollama lokal, hemat 4 GB): node `Gemini Generate` di `deteksi-malware.json` + `deteksi-phishing.json`, `GEMINI_API_KEY` di `.env` (gitignored), `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` di compose. Server kini ~5-6 GB (light) vs 11 GB. VT rate limit fix: `VT Rate Limiter 15s` + `VT 429? -> Wait 60s -> MalwareBazaar`. EICAR verified: Telegram analisis AI 3 kalimat penuh.
-2. **Fleet Monitor** `scripts/fleet-monitor.py` (satu file, stdlib): dashboard Wazuh-look, **multi-view** (Overview donut severity + efisiensi bar, Agents search, Threat Events filter, Health), sidebar toggle statis, ikon inline SVG offline, kontras AA. Endpoint: `GET /` (HTML), `/api/fleet` (Wazuh API 30s + heartbeat Rust), `/api/events` (ring 200), `POST /api/heartbeat`, `POST /webhook-log` (n8n bisa push alert). Berjalan sebagai container `fleet-monitor` (`network_mode: host`, port 8080) — host run `nohup` sering hang di NixOS, pakai docker. Simulasi 100 PC via tombol atau POST loop `004-100`.
-3. **RAG anti-halusinasi (F)**: `docs/playbooks/` (malware-critical, malware-high, unverified) + node `RAG Retrieve` (keyword severity, inject `Context playbook lokal` ke prompt Gemini).
-4. **Trusted autonomy SLA (F)**: `Send Telegram Alert -> Wait SLA 15m -> SLA Auto Escalate (CRITICAL/HIGH) -> Send Telegram Auto SLA`. Demo bisa ganti Wait jadi 1 menit.
-5. **USB dynamic scanner (saran dospem)**: agent scan `/run/media/<user>` tiap 2s, mount baru auto-watch RECURSIVE (subfolder ikut), unwatch saat cabut. Verified EICAR root + subfolder -> POST 200. Limitasi: race file-dibuat-saat-mount (polling 2s), upgrade path udev.
+| File | Isi |
+|------|-----|
+| `docs/VS-ANTIVIRUS.md` | Jawaban dospem: beda SOAR vs antivirus (elevator pitch + tabel + paragraf siap laporan) |
+| `deploy/setup-server.sh` | Bootstrap server 1-perintah idempoten: cek prereq → .env interaktif (tanya Telegram/GSB/URLScan/Gemini/Wazuh pass; generate encryption key + hash Caddy) → clone Wazuh v4.9.2 + certs → compose up 2 stack → integrasi Ansible (auto-detect docker gateway) → sinkron n8n (Step 7) → checklist manual. Flag: `--yes`, `--skip-wazuh`; `N8N_OWNER_API_KEY`/`VT_API_KEY` via env |
+| `deploy/n8n-setup.py` | Sinkron n8n via public API v1: buat/reuse 5 credentials dari .env (Telegram, Wazuh basic, GSB query, urlscan header, VT `x-apikey`) + **VT key via prompt/env, TIDAK ke .env** + import 4 workflow dengan **remap credential-ID by name** (15 ref — kelemahan import-UI: node merah di mesin baru → solved) + aktivasi. Idempoten (update bukan duplikat). `--dry-run` jalan tanpa API key |
+| `deploy/agent-install.sh` | Pasang soar-agent di 1 workstation: cari binary (/tmp atau repo) → install → systemd unit dengan `AGENT_ID/AGENT_NAME/SERVER/WATCH` → verifikasi fleet reachable |
+| `agent-rs/build-deb.sh` | Build musl statis + bungkus `.deb` (bin, unit, `/etc/default/soar-agent`, quarantine dir, postinst/prerm). Install: `sudo apt install ./soar-agent_0.1.0_amd64.deb` |
+| `agent-rs/dist/soar-agent.service` + `soar-agent.default` | Unit untuk .deb: `EnvironmentFile=/etc/default/soar-agent` — binary sama 100 PC, config per-host 4 baris. CATATAN: `$WATCH_ARGS` tanpa kurung kurawal (systemd split whitespace, kosong = nol argumen) |
+| `deploy/ansible/deploy-agents.yml` + `inventory-agents.ini.example` + `soar-agent.service.j2` | Rollout fleet: copy binary + render unit per-host (agent_id dari inventory) + tunggu heartbeat muncul di fleet-monitor |
+| `scripts/fleet-tui.py` | **TUI dashboard** kembaran fleet-monitor GUI — sumber data SAMA (`/api/fleet` + `/api/events`), stdlib curses. 4 view (overview/agents/events/health) + cari `/` + saring severity `e` + simulasi 100 PC `s` + `q`. Adaptive terminal sempit (80 kolom SSH), path left-truncate (basename tetap terlihat), error banner saat server mati (bukan layar kosong) |
+| `docs/diagrams/fig-karyawan-flow.mmd` + `.png` | Sequence harian perspektif karyawan: Sinta tidak menjalankan apa pun → hash JSON → verdict → Telegram admin → isolasi; else silent. Render mmdc + chrome lokal |
+| `docs/diagrams/fig-karyawan-setup-vs-harian.mmd` + `.png` | Flowchart 3 kotak: SEKALI SAJA (admin) / HARIAN (otomatis) / PANTAUAN (GUI+TUI) |
 
-## Payload & flow (tidak berubah)
+## File diubah
 
-- Rust agent POST `http://127.0.0.1:5678/webhook/wazuh-alert` (n8n otak) payload identik Wazuh (`scripts/custom-n8n.py:170`, filter `docs/FLOW.md:198`), heartbeat `--fleet-url http://127.0.0.1:8080/api/heartbeat --heartbeat-secs 15`.
-- Run agent: `RUST_LOG=info setsid ./agent-rs/target/release/soar-agent --webhook http://127.0.0.1:5678/webhook/wazuh-alert --agent-id 003 --agent-name rust-agent-ravi --fleet-url http://127.0.0.1:8080/api/heartbeat --heartbeat-secs 15 > /tmp/soar-agent.log 2>&1 &`
-- Dashboard: `http://127.0.0.1:8080` (Tailscale `100.95.198.108:8080` untuk 100 PC). Simulasi: tombol "Simulasi 100 PC" atau `for i in $(seq 4 100); do curl -X POST .../api/heartbeat -d '{"id":"'$i'",...}'; done`.
+- `deploy/README.md` — quickstart setup 1-perintah + tabel 3 jalur workstation + bagian n8n-setup + GUI/TUI
+- `agent-rs/README.md` — bagian install via .deb di atas bagian Build
+- `ROADMAP.md` — 2 baris ✅ Sebagian baru (setup lintas-device, TUI) di tabel status + entri sesi di ✅ dikerjakan + baris prioritas #9
+- `docs/ROADMAP-AGEN-RINGAN.md` — checklist 11 Sep (malam) ✅
 
 ## Keputusan desain sesi ini
 
-- **Hybrid tetap**: Wazuh baseline (001/002, deteksi depth, benchmark, konteks skripsi) + Rust agent (003..N, breadth 100 WS). Jangan buang Wazuh — judul, benchmark, dan komparasi empiris bergantung padanya.
-- **Kategori E (queue-mode Redis/PostgreSQL/HA) di-SKIP** sesi ini — berat/berisiko ke live, VT limiter + cache staticData sudah cukup untuk skala 100 PC demo. Tercatat future work.
-- **Gemini 2.0 tidak tersedia** di v1beta (404) — pakai `gemini-2.5-flash`, `maxOutputTokens 800` + `thinkingBudget 0` (200 bikin MAX_TOKENS karena thinking makan budget).
-- Host `nohup python fleet-monitor.py` hang di NixOS; container `network_mode: host` stabil.
+- **VT key tidak pernah ke .env** — via `VT_API_KEY` env / `--vt-key` / prompt interaktif, langsung jadi credential n8n. Alasan: .env disalin ke banyak compose, sedangkan VT key hanya dipakai node HTTP via credential store.
+- **Remap credential by name+type**, bukan by ID — file workflow repo membawa ID dari mesin lama (`4XbvXfmuxwJcgXcc` dst). Import-UI tidak meremap → node merah. n8n-setup match `credentials.<type>.name` dengan nama credential yang dibuat, tulis ulang ID-nya.
+- **TUI read-only kecuali simulasi** — keputusan respons tetap Telegram HITL; TUI cuma pemantauan (sejalan dengan prinsip trusted autonomy).
+- **`.deb` pakai EnvironmentFile** — binary identik 100 PC, per-host hanya `/etc/default/soar-agent`. Upgrade = pasang .deb versi lebih tinggi.
+- **setup-server.sh idempoten penuh** — semua langkah skip kalau sudah ada (clone, certs, .env nilai terisi). Re-run aman.
+
+## Test yang sudah dilakukan (semuanya hijau)
+
+- `py_compile` + `ruff check` fleet-tui.py & n8n-setup.py; `bash -n` 3 script shell
+- TUI smoke-test **pty asli** (python `pty.fork`, bukan `script` yang ribet partial-update) lawan fleet-monitor hidup: 4 view render, agent row + event CRITICAL + hash tampil, siklus `e` CRITICAL→HIGH→MEDIUM (SESUAI urutan SEV_ORDER), simulasi `s` → 98 agent, `q` exit, server mati → error banner
+- remap_credentials unit-test: match by name+type, type-mismatch tidak tersentuh, unknown dibiarkan, idempoten (pass kedua = 0)
+- n8n-setup dry-run: 5 credentials (VT skip tanpa key, ikut dengan `VT_API_KEY`) + 4 workflow (remap 4/4/4/3 ref)
+- Cleanup: fleet-monitor test instance mati, /tmp bersih
+
+## Belum dites live (lakukan di server)
+
+- [ ] `bash deploy/setup-server.sh` end-to-end di mesin/server bersih (perbaiki bind-mount compose kalau repo bukan di `~/Projects/soar-project` — script sudah mencetak peringatan)
+- [ ] `N8N_OWNER_API_KEY=xxx python3 deploy/n8n-setup.py --all` lawan n8n hidup — perhatikan bentuk respons public API v1 (terutama PUT aktivasi workflow)
+- [ ] `agent-rs/build-deb.sh` butuh rustup target musl (script sudah `rustup target add`)
+- [ ] ansible deploy-agents ke ≥1 workstation nyata
 
 ## Next Action
 
-- [ ] Fase 3 agen ringan (`docs/ROADMAP-AGEN-RINGAN.md:126`): benchmark final + update `docs/PERBANDINGAN-PENELITIAN.md` kolom Agen Ringan + screenshot Telegram/fleet untuk laporan.
-- [ ] Isi credential MalwareBazaar di n8n UI (node `MalwareBazaar Lookup` pakai `mb_auth_credential_id` placeholder) kalau mau ensemble VT+MB penuh.
-- [ ] Demo real: colok flashdisk fisik + copy EICAR (fake mount `/run/media/ravi/TEST-USB` sudah verified, USB real belum).
-- [ ] Ganti `GEMINI_API_KEY` di `.env` kalau quota habis (key saat ini tercatat di `.env`, jangan commit).
-- [ ] Push `git push` (12 commit lokal belum di remote).
-- [ ] Stop dev: `pkill -9 soar-agent`; fleet via `docker compose stop fleet-monitor`.
-- [ ] Cleanup EICAR quarantine `~/.soar-quarantine/` + file `~/Downloads/eicar-*` sesudah screenshot.
+- [ ] Commit sesi ini (10 file baru + 4 update, lihat tabel di atas)
+- [ ] Live-test setup-server + n8n-setup di server (checklist di atas)
+- [ ] Sisa Fase 3 agen ringan: `docs/PERBANDINGAN-PENELITIAN.md` kolom Agen Ringan + screenshot Telegram/fleet/TUI untuk laporan
+- [ ] Tanya dospem: apakah `docs/VS-ANTIVIRUS.md` cukup atau mau dimasukkan ke bab laporan (sub-bab "posisi terhadap antivirus")
+- [ ] Push commit yang masih lokal kalau ada
 
 ## Catatan penting
 
-- Semua file md laporan (ARCHITECTURE/FLOW/ROADMAP) sudah sinkron dengan Gemini + fleet; `docs/ARCHITECTURE.md:430` tabel light 5-6 GB, `docs/FLOW.md:17` Gemini, ROADMAP checklist 09 Sep USB done.
-- `agent-rs/target/` gitignored, jangan commit binary. `.env` gitignored (ada GEMINI key + Wazuh pass).
-- `docs/.~lock.*.pdf#` adalah lock file LibreOffice yang terbuka — jangan commit, tutup dulu dokumennya.
+- `agent-rs/target/` dan `.env` tetap gitignored. `docs/.~lock.*.pdf#` jangan di-commit (tutup dulu dokumennya di LibreOffice).
+- Diagram baru dirender pakai `npx -y @mermaid-js/mermaid-cli` + chrome lokal (`/etc/profiles/per-user/ravi/bin/google-chrome`), config puppeteer inline — path chrome beda antar mesin.
+- fleet-monitor di laptop sering di-reap (nohup tidak cukup) — kalau mau test lokal pakai `setsid nohup ... &` lalu `curl :8080/healthz` dulu.
