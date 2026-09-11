@@ -23,3 +23,12 @@ backups/
 /tmp/
 ossec.conf.bak-*
 n8n-workflows/*.BACKUP.json
+
+# Rust build artifacts (agent-rs)
+agent-rs/target/
+
+# Python cache
+__pycache__/
+
+# Output file default util `script` (testing TUI)
+typescript

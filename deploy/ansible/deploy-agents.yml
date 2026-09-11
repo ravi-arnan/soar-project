@@ -1,0 +1,87 @@
+---
+# deploy-agents.yml — rollout soar-agent Rust ke BANYAK workstation sekaligus
+# (jawaban setup lintas-device: 1 perintah dari server -> N laptop terpasang)
+#
+# Pemakaian (dari server / laptop admin):
+#   cd deploy/ansible
+#   cp inventory-agents.ini.example inventory-agents.ini   # isi daftar workstation
+#   # build binary statis dulu (sekali): agent-rs/build-deb.sh atau lihat agent-rs/README.md
+#   ansible-playbook -i inventory-agents.ini deploy-agents.yml \
+#     -e "server_ip=100.95.198.108"
+#
+# Agent id/nama diisi per-host di inventory (var agent_id / agent_name), atau
+# otomatis dari hostname kalau tidak diisi.
+#
+# ponytail: idempoten — jalankan ulang = update binary + unit tanpa trik. Binary
+# musl statis jalan di Ubuntu/Debian/Rocky/Alma/Fedora tanpa dependency.
+
+- name: Rollout soar-agent ke workstation
+  hosts: agents
+  become: true
+  gather_facts: true
+  vars:
+    server_ip: "100.95.198.108"
+    binary_src: "{{ playbook_dir }}/../../agent-rs/target/x86_64-unknown-linux-musl/release/soar-agent"
+    agent_name_default: "rust-agent-{{ inventory_hostname | lower | truncate(20, true, '') }}"
+
+  tasks:
+    - name: Cek binary musl sudah dibangun
+      ansible.builtin.stat:
+        path: "{{ binary_src }}"
+      delegate_to: localhost
+      become: false
+      register: bin
+      failed_when: not bin.stat.exists
+
+    - name: Install binary
+      ansible.builtin.copy:
+        src: "{{ binary_src }}"
+        dest: /usr/local/bin/soar-agent
+        mode: "0755"
+      notify: restart soar-agent
+
+    - name: Buat direktori karantina
+      ansible.builtin.file:
+        path: /var/ossec/quarantine
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Render systemd unit (agent id/nama per-host dari inventory)
+      ansible.builtin.template:
+        src: soar-agent.service.j2
+        dest: /etc/systemd/system/soar-agent.service
+        mode: "0644"
+      notify: restart soar-agent
+
+    - name: Enable + start service
+      ansible.builtin.systemd:
+        name: soar-agent
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Tunggu heartbeat masuk ke fleet-monitor
+      ansible.builtin.uri:
+        url: "http://{{ server_ip }}:8080/api/fleet"
+        return_content: true
+      register: fleet
+      until: "\"{{ agent_id | default('') }}\" in fleet.content or agent_name_default in fleet.content"
+      retries: 6
+      delay: 5
+      become: false
+      failed_when: false
+
+    - name: Status akhir
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: soar-agent aktif (id {{ agent_id | default('(dari hostname)') }}).
+          Cek dashboard http://{{ server_ip }}:8080 atau TUI: python3 scripts/fleet-tui.py
+
+  handlers:
+    - name: restart soar-agent
+      ansible.builtin.systemd:
+        name: soar-agent
+        state: restarted
+        daemon_reload: true

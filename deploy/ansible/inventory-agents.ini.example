@@ -1,0 +1,21 @@
+# Salin ke inventory-agents.ini lalu isi daftar workstation.
+# Var agent_id DISARANKAN unik per host (muncul di dashboard & HITL callback).
+#
+#   [agents]
+#   laptop-budi  ansible_host=192.168.18.101 ansible_user=budi agent_id=004 agent_name=laptop-budi
+#   laptop-citra ansible_host=192.168.18.102 ansible_user=citra agent_id=005 agent_name=laptop-citra
+#   pc-lab-01    ansible_host=192.168.18.103 ansible_user=lab   agent_id=006 agent_name=pc-lab-01
+#
+# Butuh SSH key tanpa password (ssh-copy-id <user>@<host>) ke tiap workstation.
+# Kalau user login bukan root, tambah: ansible_become=true ansible_become_pass=...
+#
+# Custom path pantau per host (opsional, default ~/Downloads,~/Desktop + USB):
+#   pc-lab-01 ... agent_watch=/home/lab/Downloads,/mnt/shared
+#
+# Jalankan:
+#   ansible-playbook -i inventory-agents.ini deploy-agents.yml -e "server_ip=100.95.198.108"
+
+[agents]
+# localhost ansible_connection=local agent_id=003 agent_name=rust-agent-ravi   # contoh: server juga jadi agent
+
+# --- tambahkan workstation di bawah ini ---
