@@ -1,0 +1,12 @@
+graph TD
+    A["Berkas baru / akses URL pada endpoint"] --> B["Wazuh Agent (FIM)<br/>hitung hash, kirim event"]
+    B --> C["Wazuh Manager<br/>cocokkan aturan, buat alert"]
+    C --> D["Skrip custom-n8n<br/>filter noise, kirim ke webhook"]
+    D --> E["n8n: ekstrak dan normalisasi alert"]
+    E --> F["Scan VirusTotal<br/>reputasi hash / URL"]
+    F --> G["Klasifikasi Severity<br/>CRITICAL / HIGH / MEDIUM"]
+    G --> H["Analisis AI lokal (Ollama)<br/>ringkasan Bahasa Indonesia"]
+    H --> I{"Severity CRITICAL atau HIGH?"}
+    I -->|"Ya"| J["Notifikasi Telegram<br/>+ tombol Isolasi / Abaikan"]
+    I -->|"Tidak (MEDIUM)"| K["Notifikasi Telegram<br/>info polos (senyap)"]
+    J --> L["Analis menyetujui tindakan<br/>(human-in-the-loop)"]

@@ -1,0 +1,16 @@
+[Unit]
+Description=SOAR Agen Ringan Rust (alternatif Wazuh Agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/soar-agent --webhook http://100.95.198.108:5678/webhook/wazuh-alert --agent-id 003 --agent-name rust-agent-ravi
+Restart=always
+RestartSec=5
+# ponytail: tanpa Docker, footprint 2-5 MB, cocok untuk 100 workstation
+Environment=RUST_LOG=info
+# quarantine butuh akses /var/ossec/quarantine, buat dulu: sudo mkdir -p /var/ossec/quarantine && sudo chown $USER /var/ossec/quarantine
+
+[Install]
+WantedBy=multi-user.target

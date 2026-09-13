@@ -1,0 +1,15 @@
+flowchart TD
+    A["🌐 Webhook (/tg-callback)<br/>Terima klik tombol Telegram (diteruskan poller)"] --> B["🧩 Parse Keputusan<br/>Baca aksi: Isolasi / Blokir / Abaikan.<br/>Ekstrak agentId + path file / URL dari pesan."]
+    B --> C["📱 Answer Callback<br/>Hentikan animasi loading di tombol Telegram"]
+    C --> D{"Perlu Tindakan?<br/>Isolasi/Blokir? (bukan Abaikan)"}
+    D -->|"Ya"| E["🔑 Get Wazuh Token<br/>Login API Wazuh :55000"]
+    E --> F["⚙️ Jalankan AR<br/>Pilih perintah sesuai aksi:<br/>!quarantine-file (malware) /<br/>!block-domain (phishing)"]
+    F --> G["✏️ Edit Pesan Isolasi<br/>Ubah pesan → 'DIISOLASI / DIBLOKIR'"]
+    D -->|"Tidak (Abaikan)"| H["✏️ Edit Pesan Abaikan<br/>Ubah pesan → 'FALSE POSITIVE — dibiarkan'"]
+
+    classDef dec fill:#FFF2CC,stroke:#D6B656,color:#1A1A1A;
+    classDef act fill:#F8CECC,stroke:#B85450,color:#1A1A1A;
+    classDef io fill:#DAE8FC,stroke:#6C8EBF,color:#1A1A1A;
+    class D dec;
+    class E,F act;
+    class A,G,H io;

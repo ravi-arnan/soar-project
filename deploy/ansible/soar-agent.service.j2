@@ -1,0 +1,14 @@
+[UNIT]
+Description=SOAR Agen Ringan Rust (alternatif Wazuh Agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/soar-agent --webhook http://{{ server_ip }}:5678/webhook/wazuh-alert --agent-id {{ agent_id }} --agent-name {{ agent_name | default(agent_name_default) }} --fleet-url http://{{ server_ip }}:8080/api/heartbeat{% if agent_watch is defined %} --watch {{ agent_watch }}{% endif %}
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target

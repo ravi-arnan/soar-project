@@ -1,0 +1,24 @@
+[package]
+name = "soar-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Agen ringan SOAR Rust - pantau file, hitung hash, POST ke n8n (alternatif Wazuh Agent)"
+license = "GPL-2.0"
+authors = ["Ravi Arnan <raviarnankeren@gmail.com>"]
+
+[dependencies]
+notify = "6.1"
+sha2 = "0.10"
+hex = "0.4"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+
+# ponytail: musl static untuk footprint 1-3 MB, deploy ke 100 workstation tanpa deps
+# build: cargo build --release --target x86_64-unknown-linux-musl

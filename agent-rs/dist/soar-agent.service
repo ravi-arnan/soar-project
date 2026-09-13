@@ -1,0 +1,16 @@
+[Unit]
+Description=SOAR Agen Ringan Rust (alternatif Wazuh Agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Konfigurasi per-host: /etc/default/soar-agent (AGENT_ID, AGENT_NAME, SERVER, WATCH)
+EnvironmentFile=/etc/default/soar-agent
+ExecStart=/usr/local/bin/soar-agent --webhook http://${SERVER}:5678/webhook/wazuh-alert --agent-id ${AGENT_ID} --agent-name ${AGENT_NAME} --fleet-url http://${SERVER}:8080/api/heartbeat $WATCH_ARGS
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target

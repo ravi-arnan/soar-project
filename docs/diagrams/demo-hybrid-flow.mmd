@@ -1,0 +1,13 @@
+graph TD
+    A["Berkas baru / akses URL pada endpoint"] --> B["Wazuh FIM: deteksi + hitung hash"]
+    B --> C["n8n: pengayaan VirusTotal + analisis AI lokal (Ollama)"]
+    C --> D{"Skor VirusTotal?"}
+    D -->|"malicious >= 20<br/>(keyakinan tinggi)"| E["ACTIVE RESPONSE OTOMATIS<br/>quarantine-file via Wazuh API"]
+    E --> F["Notifikasi Telegram:<br/>OTOMATIS DIISOLASI (tanpa tombol)"]
+    D -->|"malicious rendah / 0<br/>(kandidat false positive)"| G["Notifikasi Telegram<br/>+ tombol Isolasi / Abaikan"]
+    G --> H{"Analis menekan?"}
+    H -->|"Isolasi File"| I["quarantine-file via Wazuh API<br/>(human-in-the-loop)"]
+    H -->|"Abaikan"| J["Tandai FALSE POSITIVE<br/>(tidak ada aksi)"]
+    style E fill:#ffd6d6,stroke:#c00
+    style F fill:#ffd6d6,stroke:#c00
+    style G fill:#fff3cd,stroke:#c90

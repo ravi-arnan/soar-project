@@ -1,0 +1,30 @@
+flowchart LR
+    subgraph SEKALI["SEKALI SAJA — oleh Admin IT (karyawan tidak ikut)"]
+        A1["deploy/setup-server.sh<br/>(server: Wazuh + n8n + monitor<br/>+ tanya API key sekali)"]
+        A2["apt install .deb /<br/>ansible-playbook<br/>(100 laptop sekaligus)"]
+        A1 --> A2
+    end
+
+    subgraph HARIAN["HARIAN — otomatis, tanpa interaksi karyawan"]
+        B1["Karyawan download file<br/>(pakai laptop normal)"]
+        B2["Agent: hitung hash<br/>kirim JSON 1-2 KB"]
+        B3["n8n: VT/MB + Gemini AI<br/>→ severity + alasan"]
+        B4{"berbahaya?"}
+        B5["Telegram alert<br/>+ tombol ke admin"]
+        B6["silent<br/>(tanpa notifikasi)"]
+        B7["Admin klik Isolasi<br/>(SLA 15 m auto-eskalasi)"]
+        B8["File dikarantina<br/>di laptop karyawan"]
+        B1 --> B2 --> B3 --> B4
+        B4 -->|ya| B5 --> B7 --> B8
+        B4 -->|tidak| B6
+    end
+
+    subgraph PANTAU["PANTAUAN — admin"]
+        C1["GUI browser :8080<br/>atau TUI terminal"]
+        C2["100 laptop hijau = aman<br/>event + severity donut"]
+        C1 --> C2
+    end
+
+    SEKALI -.->|setup selesai| HARIAN
+    B5 -.-> C1
+    B8 -.-> C1

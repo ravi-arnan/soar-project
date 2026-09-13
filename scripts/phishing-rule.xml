@@ -1,0 +1,30 @@
+<!--
+  Wazuh custom rule untuk phishing URL detection.
+
+  Append ke /var/ossec/etc/rules/local_rules.xml di Wazuh MANAGER.
+  Rule ID 100002 sudah di-whitelist di integration block ossec.conf
+  untuk forward ke n8n webhook /wazuh-phishing.
+
+  Format event JSON yang diharapkan (di log file):
+    {"event_type":"phishing_url","url":"...","srcip":"...","source":"..."}
+
+  Source bisa: "proxy_squid", "dns_pihole", "email_gateway", "manual_test", dll.
+-->
+<group name="phishing,soar,">
+
+  <rule id="100002" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="event_type">phishing_url</field>
+    <description>Phishing URL terdeteksi dari $(source): $(url)</description>
+    <group>phishing,attack,pci_dss_11.4,gdpr_IV_35.7.d,</group>
+  </rule>
+
+  <!-- Optional: high-severity rule untuk known-bad source -->
+  <rule id="100003" level="13">
+    <if_sid>100002</if_sid>
+    <field name="confirmed_malicious">true</field>
+    <description>CONFIRMED malicious phishing URL: $(url) dari $(srcip)</description>
+    <group>phishing,attack,</group>
+  </rule>
+
+</group>

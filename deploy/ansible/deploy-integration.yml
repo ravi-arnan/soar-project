@@ -1,0 +1,106 @@
+---
+# IaC (kategori D) — reproduksi deploy integrasi SOAR ke Wazuh manager, ganti
+# langkah manual `docker cp`/`docker exec` di DEPLOYMENT.md Step 2 & AR scripts.
+# Idempoten: aman dijalankan ulang. Target = host yang menjalankan container
+# Wazuh (default localhost). Butuh Docker CLI di host.
+#
+#   ansible-playbook -i inventory.ini deploy-integration.yml
+#
+# ponytail: pakai `command: docker exec/cp` (bukan community.docker connection)
+# supaya nol dependency di luar Docker CLI. Upgrade path: kalau butuh check-mode
+# penuh, ganti ke community.docker.docker_container_* + delegate_to.
+
+- name: Deploy SOAR integration ke Wazuh manager
+  hosts: wazuh_server
+  gather_facts: false
+  vars:
+    manager: single-node-wazuh.manager-1        # nama container Wazuh manager
+    repo_scripts: "{{ playbook_dir }}/../../scripts"
+    # gateway docker network single-node_default -> tempat n8n dijangkau manager
+    n8n_gw: "172.20.0.1:5678"
+    malware_rules: "554,550,553,552,551"
+    phishing_rules: "87105,87106,100002"
+    ossec_conf: /var/ossec/etc/ossec.conf
+
+  tasks:
+    - name: Pastikan container manager berjalan
+      ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Running}}{% endraw %}' {{ manager }}
+      register: mgr
+      changed_when: false
+      failed_when: "'true' not in mgr.stdout"
+
+    # --- Integration bridge script ---
+    - name: Copy custom-n8n.py ke integrations/
+      ansible.builtin.command: >
+        docker cp {{ repo_scripts }}/custom-n8n.py
+        {{ manager }}:/var/ossec/integrations/custom-n8n
+      changed_when: true
+
+    - name: Set owner+mode integration script
+      ansible.builtin.command: docker exec {{ manager }} {{ item }}
+      loop:
+        - chown root:wazuh /var/ossec/integrations/custom-n8n
+        - chmod 750 /var/ossec/integrations/custom-n8n
+      changed_when: true
+
+    # --- Active Response scripts (quarantine-file, block-domain) ---
+    - name: Copy AR scripts ke active-response/bin/
+      ansible.builtin.command: >
+        docker cp {{ repo_scripts }}/{{ item }}
+        {{ manager }}:/var/ossec/active-response/bin/{{ item }}
+      loop:
+        - quarantine-file
+        - block-domain
+      changed_when: true
+
+    - name: Set owner+mode AR scripts
+      ansible.builtin.command: >
+        docker exec {{ manager }} {{ item[0] }} /var/ossec/active-response/bin/{{ item[1] }}
+      loop: "{{ ['chown root:wazuh', 'chmod 750'] | product(['quarantine-file', 'block-domain']) | list }}"
+      changed_when: true
+
+    # --- <integration> blocks di ossec.conf (idempoten via marker) ---
+    - name: Render integration blocks
+      ansible.builtin.copy:
+        dest: /tmp/soar-integration.xml
+        mode: "0644"
+        content: |
+          <!-- SOAR-N8N-INTEGRATION (managed by ansible; jangan edit tangan) -->
+          <integration>
+            <name>custom-n8n</name>
+            <hook_url>http://{{ n8n_gw }}/webhook/wazuh-alert</hook_url>
+            <rule_id>{{ malware_rules }}</rule_id>
+            <alert_format>json</alert_format>
+          </integration>
+          <integration>
+            <name>custom-n8n</name>
+            <hook_url>http://{{ n8n_gw }}/webhook/wazuh-phishing</hook_url>
+            <rule_id>{{ phishing_rules }}</rule_id>
+            <alert_format>json</alert_format>
+          </integration>
+
+    - name: Cek marker integrasi sudah ada
+      ansible.builtin.command: docker exec {{ manager }} grep -q SOAR-N8N-INTEGRATION {{ ossec_conf }}
+      register: has_marker
+      changed_when: false
+      failed_when: false
+
+    - name: Sisipkan integration blocks sebelum </ossec_config>
+      when: has_marker.rc != 0
+      block:
+        - ansible.builtin.command: docker cp /tmp/soar-integration.xml {{ manager }}:/tmp/soar-integration.xml
+          changed_when: true
+        # sisipkan fragment tepat sebelum penutup </ossec_config>
+        - ansible.builtin.command: >
+            docker exec {{ manager }} python3 -c "import pathlib;p=pathlib.Path('{{ ossec_conf }}');frag=pathlib.Path('/tmp/soar-integration.xml').read_text();t=p.read_text();p.write_text(t.replace('</ossec_config>', frag + '</ossec_config>', 1))"
+          changed_when: true
+
+    - name: Restart Wazuh manager (apply integrasi)
+      ansible.builtin.command: docker exec {{ manager }} /var/ossec/bin/wazuh-control restart
+      changed_when: true
+
+    - name: Verifikasi integratord running
+      ansible.builtin.command: docker exec {{ manager }} /var/ossec/bin/wazuh-control status
+      register: st
+      changed_when: false
+      failed_when: "'wazuh-integratord is running' not in st.stdout"
