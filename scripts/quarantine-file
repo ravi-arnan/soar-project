@@ -1,0 +1,59 @@
+#!/bin/bash
+# quarantine-file - Wazuh custom Active Response (SOAR B1)
+#
+# Memindahkan file malware yang di-flag ke folder karantina di agent.
+# Dipicu MANUAL via Wazuh API (persetujuan analis dari tombol Telegram),
+# bukan otomatis oleh rule. Menerima perintah JSON di stdin (protokol AR v1).
+#
+# Body API yang diharapkan: command "!quarantine-file", arguments ["<path_file>"]
+# -> Wazuh meneruskan path itu sebagai parameters.extra_args[0].
+
+LOG="/var/ossec/logs/active-responses.log"
+QUARANTINE_DIR="/var/ossec/quarantine"
+
+read -r INPUT
+
+# command top-level: "add" (jalankan) atau "delete" (rollback). Ambil sebelum
+# blok "parameters" supaya tidak tertukar dengan field lain di dalam alert.
+HEAD=${INPUT%%\"parameters\"*}
+COMMAND=$(printf '%s' "$HEAD" | sed -n 's/.*"command":"\([^"]*\)".*/\1/p')
+
+# path file target = elemen pertama extra_args
+FILE=$(printf '%s' "$INPUT" | sed -n 's/.*"extra_args":\["\([^"]*\)".*/\1/p')
+
+ts() { date '+%Y/%m/%d %H:%M:%S'; }
+
+if [ -z "$FILE" ]; then
+  echo "$(ts) quarantine-file: ERROR tidak ada path di extra_args" >> "$LOG"
+  exit 1
+fi
+
+mkdir -p "$QUARANTINE_DIR"
+chmod 700 "$QUARANTINE_DIR"
+
+case "$COMMAND" in
+  add)
+    if [ -f "$FILE" ]; then
+      DEST="$QUARANTINE_DIR/$(basename "$FILE").$(date +%s).quarantined"
+      if mv -f "$FILE" "$DEST"; then
+        chmod 000 "$DEST"
+        echo "$(ts) quarantine-file: QUARANTINED $FILE -> $DEST" >> "$LOG"
+      else
+        echo "$(ts) quarantine-file: GAGAL memindahkan $FILE" >> "$LOG"
+        exit 1
+      fi
+    else
+      echo "$(ts) quarantine-file: file tidak ditemukan (sudah hilang?): $FILE" >> "$LOG"
+    fi
+    ;;
+  delete)
+    # rollback: file karantina dibuat chmod 000 dan diberi suffix .quarantined;
+    # restore otomatis sengaja tidak dilakukan demi keamanan. Catat saja.
+    echo "$(ts) quarantine-file: rollback diminta untuk $FILE (restore manual)" >> "$LOG"
+    ;;
+  *)
+    echo "$(ts) quarantine-file: command tidak dikenal '$COMMAND'" >> "$LOG"
+    ;;
+esac
+
+exit 0

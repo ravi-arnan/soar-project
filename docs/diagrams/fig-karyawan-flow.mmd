@@ -1,0 +1,32 @@
+sequenceDiagram
+    autonumber
+    actor Kar as Karyawan (Sinta)
+    participant Ag as soar-agent (Rust, laptop Sinta)
+    participant N8N as n8n (otak, server)
+    participant TI as VirusTotal/MB + Gemini AI
+    participant TG as Telegram Bot
+    actor Adm as Admin IT
+    participant AR as Active Response
+
+    Note over Kar,Ag: Sinta TIDAK menjalankan apa pun — agent sudah terpasang sebagai service
+    Kar->>Ag: download invoice.pdf.exe ke ~/Downloads
+    Ag->>Ag: deteksi file baru (inotify), hitung sha256 (file TIDAK dikirim)
+    Ag->>N8N: POST JSON 1-2 KB (path, hash, perm, agent_id)
+    N8N->>N8N: filter noise (crdownload, lock, event deleted)
+    N8N->>TI: lookup hash + analisis AI (playbook lokal via RAG)
+    TI-->>N8N: verdict: CRITICAL (mis. 45/70 engine)
+
+    alt file berbahaya / mencurigakan
+        N8N->>TG: alert CRITICAL + 🧠 alasan + tombol [Isolasi] [Abaikan]
+        TG-->>Adm: notifikasi muncul di HP admin
+        Note over Adm: SLA 15 menit — tidak diklik → auto-eskalasi
+        Adm->>TG: klik Isolasi
+        TG->>N8N: callback (iso:007)
+        N8N->>AR: PUT /active-response (!quarantine-file)
+        AR->>Ag: perintah karantina ke laptop Sinta
+        Ag->>Ag: mv → /var/ossec/quarantine + chmod 000
+        N8N->>TG: pesan diedit: "DIISOLASI oleh <admin> pada <waktu> WITA"
+        Note over Kar: Sinta paling-paling lihat file-nya hilang dari Downloads —<br/>tidak ada alert, tidak ada interupsi
+    else file bersih (mayoritas kasus)
+        N8N-->>N8N: silent — tanpa notifikasi (desain anti alert-fatigue)
+    end

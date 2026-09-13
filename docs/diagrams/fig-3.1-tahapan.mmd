@@ -1,0 +1,13 @@
+graph TD
+    A([Mulai]) --> B[Studi Literatur & Kebutuhan]
+    B --> C[Desain Arsitektur Sistem]
+    C --> D[Instalasi dan Konfigurasi]
+    D --> E[Pengumpulan Log & Konfigurasi FIM]
+    E --> F[Pembangunan Playbook Orkestrasi n8n]
+    F --> G[Integrasi Threat Intel & AI Lokal]
+    G --> H[Integrasi Telegram + Active Response Human-in-the-Loop]
+    H --> I[Pengujian Sistem]
+    I --> J{Sistem Bekerja dengan Baik?}
+    J -->|Tidak| C
+    J -->|Ya| K[Dokumentasi]
+    K --> L([Selesai])

@@ -1,0 +1,34 @@
+# Wazuh Docker (upstream repo — track version saja di README)
+wazuh-docker/
+
+# Backup snapshots (lokal; sebagian memuat key API lama — JANGAN commit)
+backups/
+
+# Local environment / secrets
+.env
+.env.local
+*.key
+*.pem
+*.crt
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Logs / runtime data
+*.log
+/tmp/
+ossec.conf.bak-*
+n8n-workflows/*.BACKUP.json
+
+# Rust build artifacts (agent-rs)
+agent-rs/target/
+
+# Python cache
+__pycache__/
+
+# Output file default util `script` (testing TUI)
+typescript

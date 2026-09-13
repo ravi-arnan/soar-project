@@ -1,0 +1,14 @@
+graph TD
+    A["1 - ENDPOINT<br/>Wazuh Agent memantau berkas (FIM).<br/>Ada berkas baru / URL diakses"]
+    A --> B["2 - WAZUH MANAGER<br/>Cocokkan dengan aturan,<br/>buat 'alert'"]
+    B --> C["3 - JEMBATAN (custom-n8n)<br/>Saring noise, kirim alert ke n8n"]
+    C --> D["4 - n8n (OTAK SOAR)<br/>Tanya VirusTotal (hash berbahaya?)<br/>+ minta ringkasan AI lokal (Ollama)"]
+    D --> E{"5 - KEPUTUSAN<br/>Seberapa yakin ini malware?"}
+    E -->|"Sangat yakin<br/>(VT >= 20 deteksi)"| F["6a - KARANTINA OTOMATIS<br/>Wazuh isolasi berkas sendiri"]
+    E -->|"Ragu / VT = 0<br/>(mungkin false positive)"| G["6b - TANYA ANALIS<br/>Telegram + tombol Isolasi/Abaikan"]
+    F --> H["7 - NOTIFIKASI TELEGRAM<br/>Analis terima laporan di HP"]
+    G --> H
+    G -.->|"analis klik Isolasi"| F
+    style F fill:#ffd6d6,stroke:#c00
+    style G fill:#fff3cd,stroke:#c90
+    style E fill:#d6e4ff,stroke:#36c

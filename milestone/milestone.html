@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Milestone Tugas Akhir - Ravi Arnan Irianto</title>
+<style>
+  @page {
+    size: 8.5in 11in;
+    margin: 3cm 3cm 3cm 4cm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    margin: 0;
+    color: #000;
+  }
+  h1.judul {
+    font-size: 12pt;
+    font-weight: bold;
+    text-align: center;
+    margin: 0 0 12pt 0;
+    line-height: 1.5;
+  }
+  h2 {
+    font-size: 12pt;
+    font-weight: bold;
+    margin: 12pt 0 6pt 0;
+    line-height: 1.5;
+    page-break-after: avoid;
+  }
+  h2 .no { display: inline-block; width: 0.9cm; }
+  p {
+    text-align: justify;
+    margin: 0 0 6pt 0;
+    text-indent: 1.5cm;
+  }
+  p.noindent { text-indent: 0; }
+  ol.isi { margin: 0 0 6pt 0; padding-left: 1.5cm; }
+  ol.isi > li { text-align: justify; margin-bottom: 4pt; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 6pt;
+  }
+  table.identitas td {
+    border: 1px solid #000;
+    padding: 3pt 5pt;
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  table.identitas td.label { width: 4.6cm; font-weight: bold; }
+  table.data { font-size: 10pt; }
+  table.data th, table.data td {
+    border: 1px solid #000;
+    padding: 3pt 4pt;
+    vertical-align: top;
+    line-height: 1.25;
+    text-align: left;
+  }
+  table.data th { font-weight: bold; text-align: center; background: #e8e8e8; }
+  table.data td.c { text-align: center; }
+  table.gantt { font-size: 10pt; table-layout: fixed; }
+  table.gantt th, table.gantt td {
+    border: 1px solid #000;
+    padding: 3pt 4pt;
+    line-height: 1.25;
+    text-align: center;
+  }
+  table.gantt th.kiri, table.gantt td.kiri { text-align: left; }
+  table.gantt td.on { background: #555; }
+  caption.tabelcap {
+    caption-side: top;
+    text-align: center;
+    font-size: 12pt;
+    padding-bottom: 4pt;
+    line-height: 1.5;
+  }
+  caption.tabelcap b { font-weight: bold; }
+  tr { page-break-inside: avoid; }
+  table.halbaru { page-break-before: always; }
+  table.utuh { page-break-inside: avoid; }
+  .ttd { margin-top: 18pt; page-break-inside: avoid; break-inside: avoid; }
+  .ttd p { text-align: left; }
+  .ttd .spasi { height: 42pt; }
+  .ttd .spasi-antar { height: 12pt; }
+  .keterangan { font-size: 10pt; line-height: 1.3; text-indent: 0; }
+</style>
+</head>
+<body>
+
+<h1 class="judul">Milestone Tugas Akhir</h1>
+
+<table class="identitas">
+  <tr><td class="label">NIM</td><td>2305551076</td></tr>
+  <tr><td class="label">Nama</td><td>Ravi Arnan Irianto</td></tr>
+  <tr><td class="label">Bidang Keahlian</td><td>Network and Cloud Computing</td></tr>
+  <tr><td class="label">Mata Kuliah</td><td>Proyek 1</td></tr>
+  <tr><td class="label">Semester</td><td>Ganjil 2026/2027 (Semester 7), Agustus 2026 sampai Januari 2027</td></tr>
+  <tr><td class="label">Judul</td><td style="text-align: justify;">Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop</td></tr>
+  <tr><td class="label">Dosen Pembimbing</td><td>1. Ir. I Nyoman Piarsa, ST., MT., IPM.<br>2. A.A. Kt Agung Cahyawan Wiranatha, S.T., M.T.</td></tr>
+</table>
+
+<h2><span class="no">1.</span>Pendahuluan</h2>
+
+<p>Dokumen ini memuat milestone atau tahapan-tahapan penting pelaksanaan Tugas Akhir dengan judul Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop. Usulan ide Tugas Akhir tersebut telah dipaparkan dan disetujui oleh dosen pembimbing pada Seminar Ide, dan dokumen usulan ide yang telah disetujui dilampirkan bersama dokumen ini.</p>
+
+<p>Milestone yang disusun mencakup rentang waktu satu semester berjalan, yaitu Semester Ganjil 2026/2027 (Semester 7) pada mata kuliah Proyek 1, terhitung sejak Agustus 2026 sampai dengan Januari 2027. Penyusunan milestone bertujuan agar setiap tahapan penelitian memiliki luaran yang terukur, memiliki target waktu yang jelas, serta dapat dipantau capaiannya oleh dosen pembimbing pada setiap periode asistensi.</p>
+
+<h2><span class="no">2.</span>Capaian Awal (Baseline)</h2>
+
+<p>Sebelum periode Proyek 1 dimulai, sebuah purwarupa (prototype) sistem telah dikembangkan pada mata kuliah Topik Khusus Network sebagai studi kelayakan awal. Purwarupa tersebut menjadi fondasi pengembangan pada semester ini. Capaian yang telah diperoleh adalah sebagai berikut.</p>
+
+<ol class="isi">
+  <li>Integrasi end-to-end antara Wazuh sebagai mesin deteksi (SIEM dan File Integrity Monitoring) dengan n8n sebagai mesin orkestrasi playbook telah berjalan pada arsitektur multi-agent lintas distribusi (Ubuntu dan Rocky Linux) yang terhubung melalui mesh VPN.</li>
+  <li>Playbook deteksi dan respons untuk dua kelas ancaman, yaitu malware dan phishing, telah berfungsi dengan verifikasi threat intelligence VirusTotal, Google Safe Browsing, dan URLScan.io.</li>
+  <li>Mekanisme mitigasi aktif (Active Response) human-in-the-loop dua arah melalui Telegram telah berfungsi, meliputi karantina berkas dan pemblokiran domain beserta pencatatan jejak audit keputusan analis.</li>
+  <li>Pengukuran awal menunjukkan Mean Time To Respond (MTTR) sebesar 1,68 detik untuk jalur karantina malware otomatis (N=15) dan 2,13 detik untuk jalur pemblokiran domain phishing (N=5), serta reduksi false-positive sebesar 100% pada skenario berkas jinak (N=8) dibandingkan baseline deteksi berbasis aturan.</li>
+  <li>Pengerasan keamanan (hardening) platform tahap awal telah diterapkan melalui reverse proxy dengan TLS dan autentikasi, segmentasi jaringan, manajemen secret, serta Infrastructure as Code berbasis Ansible.</li>
+</ol>
+
+<p>Ukuran sampel pengujian awal tersebut masih terbatas dan cakupan verifikasi ancaman masih bertumpu pada satu sumber utama. Kedua hal inilah yang menjadi titik tolak penyusunan milestone pada semester ini.</p>
+
+<h2><span class="no">3.</span>Milestone dan Tahapan Pelaksanaan</h2>
+
+<p>Tahapan pelaksanaan Tugas Akhir pada Semester 7 dibagi menjadi tujuh milestone sebagaimana disajikan pada Tabel 1. Setiap milestone memiliki luaran konkret yang dapat diverifikasi sebagai dasar penilaian capaian.</p>
+
+<table class="data halbaru">
+  <caption class="tabelcap"><b>Tabel 1 </b>Milestone pelaksanaan Tugas Akhir Semester 7</caption>
+  <thead>
+    <tr>
+      <th style="width: 6%;">No</th>
+      <th style="width: 24%;">Milestone</th>
+      <th style="width: 36%;">Aktivitas Utama</th>
+      <th style="width: 24%;">Luaran</th>
+      <th style="width: 10%;">Target</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="c">M1</td>
+      <td>Konsolidasi purwarupa dan penetapan lingkungan uji</td>
+      <td>Stabilisasi purwarupa hasil studi kelayakan, penyelesaian sisa perbaikan keandalan, penyusunan prosedur pengujian baku, serta penetapan topologi dan konfigurasi lingkungan uji yang tetap agar hasil pengukuran dapat direproduksi.</td>
+      <td>Lingkungan uji yang stabil dan terdokumentasi, dokumen prosedur pengujian baku</td>
+      <td class="c">Agustus 2026</td>
+    </tr>
+    <tr>
+      <td class="c">M2</td>
+      <td>Perluasan verifikasi ancaman multi-sumber</td>
+      <td>Penambahan sumber threat intelligence selain VirusTotal (antara lain MalwareBazaar dan MISP), penerapan deteksi berkas eksekutabel berbasis magic byte, penerapan pemindaian ulang terjadwal, serta penyetelan masa berlaku (TTL) cache verdict.</td>
+      <td>Playbook deteksi versi multi-sumber, penurunan risiko false-negative</td>
+      <td class="c">September 2026</td>
+    </tr>
+    <tr>
+      <td class="c">M3</td>
+      <td>Penyempurnaan respons berjenjang berbasis keyakinan</td>
+      <td>Formalisasi aturan pemetaan tingkat keyakinan ancaman terhadap tingkat otonomi tindakan, penyempurnaan jalur human-in-the-loop, serta penerapan batas waktu (timeout) dan eskalasi bila analis tidak merespons.</td>
+      <td>Matriks confidence terhadap aksi, playbook respons berjenjang</td>
+      <td class="c">Oktober 2026</td>
+    </tr>
+    <tr>
+      <td class="c">M4</td>
+      <td>Integrasi analisis AI lokal dan explainability</td>
+      <td>Integrasi large language model on-premise sebagai penghasil ringkasan dan penjelasan keputusan, penerapan pembatas agar AI tidak pernah mengeksekusi Active Response secara mandiri, serta pengujian konsistensi keluaran AI.</td>
+      <td>Modul analisis AI lokal, format notifikasi beserta alasan keputusan</td>
+      <td class="c">Oktober 2026</td>
+    </tr>
+    <tr>
+      <td class="c">M5</td>
+      <td>Pengerasan keamanan dan reproduksibilitas sistem</td>
+      <td>Penyelesaian pengerasan platform SOAR pada sisi operasional (pembatasan firewall dan penggantian kredensial bawaan), penyempurnaan Infrastructure as Code agar seluruh proses penggelaran bersifat idempoten, serta penyusunan dokumentasi penggelaran.</td>
+      <td>Berkas penggelaran otomatis, dokumen panduan penggelaran</td>
+      <td class="c">November 2026</td>
+    </tr>
+    <tr>
+      <td class="c">M6</td>
+      <td>Pengujian dan evaluasi kuantitatif</td>
+      <td>Pengujian ulang dengan ukuran sampel diperbesar (N lebih besar atau sama dengan 30) untuk seluruh jalur respons, pengukuran MTTR jalur human-in-the-loop, pengujian beban, pengukuran tingkat false-negative, pemetaan cakupan deteksi terhadap MITRE ATT&amp;CK, serta perbandingan empiris terhadap baseline dan terhadap alternatif mesin orkestrasi.</td>
+      <td>Dataset hasil pengujian, tabel dan grafik evaluasi kinerja</td>
+      <td class="c">November sampai Desember 2026</td>
+    </tr>
+    <tr>
+      <td class="c">M7</td>
+      <td>Penyusunan laporan dan seminar Proyek 1</td>
+      <td>Analisis dan pembahasan hasil pengujian, penulisan draf laporan Tugas Akhir bab pendahuluan sampai dengan bab hasil dan pembahasan, asistensi dengan dosen pembimbing, serta pemaparan capaian pada seminar atau presentasi akhir mata kuliah Proyek 1.</td>
+      <td>Draf laporan Tugas Akhir, materi dan berkas presentasi Proyek 1</td>
+      <td class="c">Desember 2026 sampai Januari 2027</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2><span class="no">4.</span>Jadwal Pelaksanaan</h2>
+
+<p>Distribusi waktu pelaksanaan setiap milestone selama Semester 7 disajikan pada Tabel 2. Sel yang diarsir menunjukkan bulan pelaksanaan milestone yang bersangkutan.</p>
+
+<table class="gantt utuh">
+  <caption class="tabelcap"><b>Tabel 2 </b>Jadwal pelaksanaan milestone Semester Ganjil 2026/2027</caption>
+  <thead>
+    <tr>
+      <th class="kiri" style="width: 34%;">Milestone</th>
+      <th style="width: 11%;">Agu 2026</th>
+      <th style="width: 11%;">Sep 2026</th>
+      <th style="width: 11%;">Okt 2026</th>
+      <th style="width: 11%;">Nov 2026</th>
+      <th style="width: 11%;">Des 2026</th>
+      <th style="width: 11%;">Jan 2027</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td class="kiri">M1 Konsolidasi purwarupa dan lingkungan uji</td><td class="on"></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td class="kiri">M2 Verifikasi ancaman multi-sumber</td><td></td><td class="on"></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td class="kiri">M3 Respons berjenjang berbasis keyakinan</td><td></td><td></td><td class="on"></td><td></td><td></td><td></td></tr>
+    <tr><td class="kiri">M4 Analisis AI lokal dan explainability</td><td></td><td></td><td class="on"></td><td></td><td></td><td></td></tr>
+    <tr><td class="kiri">M5 Pengerasan keamanan dan reproduksibilitas</td><td></td><td></td><td></td><td class="on"></td><td></td><td></td></tr>
+    <tr><td class="kiri">M6 Pengujian dan evaluasi kuantitatif</td><td></td><td></td><td></td><td class="on"></td><td class="on"></td><td></td></tr>
+    <tr><td class="kiri">M7 Laporan dan seminar Proyek 1</td><td></td><td></td><td></td><td></td><td class="on"></td><td class="on"></td></tr>
+    <tr><td class="kiri">Asistensi dosen pembimbing</td><td class="on"></td><td class="on"></td><td class="on"></td><td class="on"></td><td class="on"></td><td class="on"></td></tr>
+  </tbody>
+</table>
+
+<h2><span class="no">5.</span>Indikator Keberhasilan</h2>
+
+<p>Pelaksanaan Tugas Akhir pada Semester 7 dinyatakan berhasil apabila indikator berikut terpenuhi.</p>
+
+<ol class="isi">
+  <li>Sistem SOAR berjalan stabil pada lingkungan uji dan mampu menangani skenario ancaman malware maupun phishing secara end-to-end, mulai dari deteksi, verifikasi, notifikasi, sampai dengan mitigasi aktif.</li>
+  <li>Verifikasi ancaman tidak lagi bergantung pada satu sumber threat intelligence tunggal, dan berkas eksekutabel yang belum dikenal tetap dieskalasi ke analis alih-alih dianggap bersih.</li>
+  <li>Hasil pengukuran MTTR dan reduksi false-positive diperoleh dari pengujian dengan ukuran sampel minimal 30 pengulangan untuk setiap jalur respons utama.</li>
+  <li>Setiap keputusan sistem disertai penjelasan alasan yang dapat dibaca analis, dan setiap tindakan mitigasi tercatat dalam jejak audit yang lengkap.</li>
+  <li>Draf laporan Tugas Akhir bab pendahuluan sampai dengan bab hasil dan pembahasan telah tersusun dan telah memperoleh persetujuan dosen pembimbing untuk dilanjutkan ke tahap berikutnya.</li>
+</ol>
+
+<h2><span class="no">6.</span>Risiko dan Rencana Mitigasi</h2>
+
+<p>Beberapa risiko yang dapat menghambat pencapaian milestone beserta rencana mitigasinya disajikan pada Tabel 3.</p>
+
+<table class="data utuh">
+  <caption class="tabelcap"><b>Tabel 3 </b>Risiko pelaksanaan dan rencana mitigasi</caption>
+  <thead>
+    <tr>
+      <th style="width: 6%;">No</th>
+      <th style="width: 40%;">Risiko</th>
+      <th style="width: 54%;">Rencana Mitigasi</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td class="c">1</td><td>Pembatasan kuota (rate limit) pada layanan threat intelligence gratis menghambat pengujian dengan sampel besar.</td><td>Penerapan cache verdict beserta masa berlaku, penjadwalan pengujian secara bertahap, serta penggunaan sumber cadangan sehingga analisis tetap berjalan saat satu sumber terbatas.</td></tr>
+    <tr><td class="c">2</td><td>Keterbatasan sumber daya perangkat keras saat model AI lokal dijalankan berdampingan dengan Wazuh dan n8n.</td><td>Pemisahan layanan inferensi AI dari jalur deteksi utama dan penggunaan model berukuran kecil, sehingga jalur deteksi tetap berjalan meskipun layanan AI tidak tersedia.</td></tr>
+    <tr><td class="c">3</td><td>Perubahan arsitektur pada tahap lanjut berpotensi mengganggu sistem yang sudah berjalan.</td><td>Pengujian perubahan pada lingkungan terpisah terlebih dahulu, seluruh konfigurasi disimpan pada version control, dan penggelaran dilakukan melalui Infrastructure as Code yang bersifat idempoten.</td></tr>
+    <tr><td class="c">4</td><td>Jadwal pengujian berbenturan dengan kegiatan akademik lain pada akhir semester.</td><td>Pengujian utama dijadwalkan lebih awal, yaitu pada November sampai Desember 2026, sehingga periode akhir semester difokuskan pada analisis data dan penulisan laporan.</td></tr>
+  </tbody>
+</table>
+
+<div class="ttd">
+<p class="noindent">Calon Pembimbing 1,</p>
+<div class="spasi"></div>
+<p class="noindent">(Ir. I Nyoman Piarsa, ST., MT., IPM.)</p>
+<div class="spasi-antar"></div>
+<p class="noindent">Calon Pembimbing 2,</p>
+<div class="spasi"></div>
+<p class="noindent">(A.A. Kt Agung Cahyawan Wiranatha, S.T., M.T.)</p>
+</div>
+
+</body>
+</html>

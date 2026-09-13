@@ -1,0 +1,17 @@
+{
+  "mode": "fn_rate",
+  "n": 15,
+  "silent_count": 0,
+  "review_count": 0,
+  "threat_count": 15,
+  "false_negative_rate_pct": 0.0,
+  "true_positive_rate_pct": 100.0,
+  "metadata": {
+    "timestamp": "2026-09-02T14:39:40.768209+00:00",
+    "mode": "fn-rate",
+    "n": 15,
+    "agent": "ravi-zorin",
+    "n8n_webhook_malware": "http://localhost:5678/webhook/wazuh-alert",
+    "n8n_webhook_phishing": "http://localhost:5678/webhook/wazuh-phishing"
+  }
+}

@@ -1,0 +1,108 @@
+<!--
+  Wazuh Agent syscheck (FIM) configuration — recommended untuk thesis SOAR.
+
+  Strategi: monitor lokasi yang relevan untuk threat model malware persistence
+  dan initial access, BUKAN ephemeral temp dirs yang penuh noise (/tmp).
+
+  Cara apply:
+    1. sudo nano /var/ossec/etc/ossec.conf
+    2. Cari block <syscheck>...</syscheck> existing
+    3. Replace dengan content di sini
+    4. Save, exit
+    5. sudo systemctl restart wazuh-agent
+-->
+<syscheck>
+  <disabled>no</disabled>
+
+  <!-- Frequency for full scan (24 hour) -->
+  <frequency>43200</frequency>
+
+  <scan_on_start>yes</scan_on_start>
+
+  <!-- HIGH-VALUE PATHS untuk malware/IoC detection -->
+
+  <!-- System config (persistence indicator) -->
+  <directories realtime="yes" check_all="yes" report_changes="yes">/etc</directories>
+
+  <!-- System binaries (replacement attack indicator) -->
+  <directories realtime="yes" check_all="yes">/usr/local/bin</directories>
+  <directories realtime="yes" check_all="yes">/usr/local/sbin</directories>
+
+  <!-- Cron persistence -->
+  <directories realtime="yes" check_all="yes" report_changes="yes">/etc/cron.d</directories>
+  <directories realtime="yes" check_all="yes" report_changes="yes">/etc/cron.hourly</directories>
+  <directories realtime="yes" check_all="yes" report_changes="yes">/etc/cron.daily</directories>
+  <directories realtime="yes" check_all="yes" report_changes="yes">/etc/cron.weekly</directories>
+  <directories realtime="yes" check_all="yes" report_changes="yes">/etc/cron.monthly</directories>
+  <directories realtime="yes" check_all="yes" report_changes="yes">/var/spool/cron</directories>
+
+  <!-- Systemd services (persistence) -->
+  <directories realtime="yes" check_all="yes" report_changes="yes">/etc/systemd/system</directories>
+
+  <!-- User-downloaded files (initial access vector — phishing attachment, drive-by download) -->
+  <directories realtime="yes" check_all="yes">/home/ravi/Downloads</directories>
+  <directories realtime="yes" check_all="yes">/home/ravi/Desktop</directories>
+
+  <!-- SSH config (key theft / backdoor key indicator) -->
+  <directories realtime="yes" check_all="yes" report_changes="yes">/home/ravi/.ssh</directories>
+  <directories realtime="yes" check_all="yes" report_changes="yes">/root/.ssh</directories>
+
+  <!-- IGNORE: file/dir yang umumnya berubah (false positive) -->
+  <ignore>/etc/mtab</ignore>
+  <ignore>/etc/hosts.deny</ignore>
+  <ignore>/etc/mail/statistics</ignore>
+  <ignore>/etc/random-seed</ignore>
+  <ignore>/etc/random.seed</ignore>
+  <ignore>/etc/adjtime</ignore>
+  <ignore>/etc/httpd/logs</ignore>
+  <ignore>/etc/utmpx</ignore>
+  <ignore>/etc/wtmpx</ignore>
+  <ignore>/etc/dumpdates</ignore>
+  <ignore>/etc/svc/volatile</ignore>
+  <ignore>/etc/.pwd.lock</ignore>
+  <ignore>/etc/.updated</ignore>
+  <ignore>/etc/ld.so.cache</ignore>
+  <ignore>/etc/blkid.tab</ignore>
+  <ignore>/etc/blkid.tab.old</ignore>
+
+  <!-- CUPS printer system — rotates often (subscriptions, jobs, certs) -->
+  <ignore>/etc/cups</ignore>
+
+  <!-- Snap mount points -->
+  <ignore type="sregex">^/etc/snap\.</ignore>
+
+  <!-- Backup/rotation file extensions -->
+  <ignore type="sregex">\.O$|\.bak$|\.old$|\.dpkg-(old|new|dist)$|\.ucf-(old|new|dist)$</ignore>
+
+  <!-- Cache / temp files yang sering update -->
+  <ignore type="sregex">\.log$|\.swp$|\.tmp$|~$|\.cache$</ignore>
+
+  <!-- Process lock files -->
+  <ignore type="sregex">/\.lock$|/\.pid$</ignore>
+
+  <!-- DNS/DHCP runtime state -->
+  <ignore type="sregex">^/etc/resolv\.conf$|^/etc/dhcp/dhclient.*\.lease$</ignore>
+
+  <!-- Apt/dpkg backup files -->
+  <ignore type="sregex">^/etc/apt/.*\.list~?$</ignore>
+
+  <!-- File types tertentu yang noise tinggi -->
+  <nodiff>/etc/ssl/private.key</nodiff>
+
+  <skip_nfs>yes</skip_nfs>
+  <skip_dev>yes</skip_dev>
+  <skip_proc>yes</skip_proc>
+  <skip_sys>yes</skip_sys>
+
+  <process_priority>10</process_priority>
+
+  <max_eps>50</max_eps>
+
+  <!-- Database synchronization settings -->
+  <synchronization>
+    <enabled>yes</enabled>
+    <interval>5m</interval>
+    <max_interval>1h</max_interval>
+    <max_eps>10</max_eps>
+  </synchronization>
+</syscheck>

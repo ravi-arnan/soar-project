@@ -1,0 +1,7 @@
+# Salin ke inventory.ini. Wazuh manager jalan via Docker di host ini.
+# Kalau server SOAR = mesin lokal, pakai localhost (connection=local).
+[wazuh_server]
+localhost ansible_connection=local
+
+# Contoh remote:
+# soar-server ansible_host=192.168.18.45 ansible_user=ravi

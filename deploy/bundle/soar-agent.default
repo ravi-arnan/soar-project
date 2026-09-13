@@ -1,0 +1,17 @@
+# Konfigurasi soar-agent per workstation (diisi admin setelah install).
+# Setelah mengubah file ini: sudo systemctl restart soar-agent
+
+# ID unik agent (004..100+) — muncul di Fleet Monitor & callback HITL
+AGENT_ID=004
+
+# Nama tampil di dashboard
+AGENT_NAME=laptop-nama-karyawan
+
+# IP server SOAR (Tailscale/LAN)
+SERVER=100.73.91.17
+
+# (Opsional) path tambahan dipantau, dipisah koma.
+# Default binary sudah memantau ~/Downloads, ~/Desktop, USB /run/media/<user>.
+# Kosongkan kecuali mau override:
+WATCH_ARGS=
+# WATCH_ARGS= --watch /home/user/Downloads,/mnt/shared

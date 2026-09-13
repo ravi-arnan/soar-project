@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    actor SOC as SOC Analyst
+    participant TG as Telegram Bot
+    participant Poller as tg-callback-poller
+    participant CB as n8n Callback Handler
+    participant WAPI as Wazuh API
+    participant Agent as Wazuh Agent
+
+    SOC->>TG: 1. Klik Isolasi File / Abaikan
+    TG-->>Poller: 2. callback_query (long-poll getUpdates)
+    Poller->>CB: 3. POST /webhook/tg-callback
+    CB->>CB: 4. Parse Keputusan (action+agentId)
+    CB->>TG: 5. answerCallbackQuery (Diproses...)
+    alt action == iso (Isolasi)
+        CB->>WAPI: 6a. POST authenticate -> JWT
+        CB->>WAPI: 7a. PUT /active-response (!quarantine-file, [path])
+        WAPI->>Agent: 8a. Forward AR command via 1514
+        Agent->>Agent: 9a. quarantine-file: mv -> /var/ossec/quarantine, chmod 000
+        CB->>TG: 10a. editMessageText DIISOLASI
+    else action == ign (Abaikan)
+        CB->>TG: 6b. editMessageText FALSE POSITIVE
+    end

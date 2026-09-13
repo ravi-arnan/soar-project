@@ -1,0 +1,37 @@
+flowchart TD
+    A["🌐 Webhook (/wazuh-phishing)<br/>Terima alert URL phishing dari Wazuh"] --> B{"Filter Alert Phishing<br/>Rule 100002 (phishing_url)?"}
+    B -->|Ya| C["🧹 Ekstrak Alert Phishing<br/>Ambil URL & domain.<br/>Tandai penanda demo 'demoreview'."]
+    B -->|Bukan| STOP1(["⏹️ Stop"])
+    C --> D["🗂️ Cek Cache URL<br/>Cari verdict URL di cache lokal (TTL 6 jam)"]
+    D --> E{"Cache Hit URL?"}
+    E -->|Ya| R
+    E -->|Tidak| F["🛡️ GSB Lookup<br/>Google Safe Browsing cek URL"]
+    F --> G{"GSB Threat?<br/>GSB tandai phishing?"}
+    G -->|"Ya"| R
+    G -->|"Tidak"| H["🔎 URLScan.io Submit<br/>Kirim URL untuk dipindai"]
+    H --> I["⏳ Tunggu Scan<br/>Jeda ±35 detik (scan berjalan)"]
+    I --> J["🔎 URLScan Result<br/>Ambil verdict + skor"]
+    J --> R["📊 Rangkum Phishing<br/>Tentukan: malicious / suspicious /<br/>AMAN / unverified (429/error)"]
+    R --> S{"Cek Ancaman<br/>Berbahaya?"}
+    S -->|"Tidak (AMAN)"| T["✅ Build Payload Aman"]
+    T --> U["📱 Send Telegram Info<br/>'URL AMAN'"]
+    S -->|"Ya"| V{"Auto Block?<br/>Keyakinan tinggi (GSB / malicious ≥ 5)?"}
+    V -->|"Ya — auto"| W["🔑 Get Wazuh Token"]
+    W --> WA["⚙️ Trigger Active Response<br/>!block-domain → sinkhole domain (/etc/hosts)"]
+    WA --> K
+    V -->|"Tidak — ambigu"| K["🧩 Build Payload<br/>Rakit konteks untuk AI"]
+    K --> M["🤖 Ollama Generate<br/>Analisis AI lokal"]
+    M --> N{"Tipe Notif?"}
+    N -->|"Auto-block"| P["📱 Send Telegram Info<br/>Notifikasi domain diblokir"]
+    N -->|"Perlu keputusan"| O["📱 Send Telegram Alert<br/>Tombol [Blokir] / [Abaikan]"]
+
+    Z["ℹ️ Node 'Submit URL VirusTotal' + 'Get URL Report':<br/>cadangan eskalasi manual — DI LUAR jalur otomatis<br/>(jalur otomatis pakai GSB + URLScan.io)"]
+
+    classDef dec fill:#FFF2CC,stroke:#D6B656,color:#1A1A1A;
+    classDef act fill:#F8CECC,stroke:#B85450,color:#1A1A1A;
+    classDef io fill:#DAE8FC,stroke:#6C8EBF,color:#1A1A1A;
+    classDef note fill:#EEEEEE,stroke:#999999,color:#333333;
+    class B,E,G,S,V,N dec;
+    class W,WA act;
+    class A,O,P,U io;
+    class Z note;

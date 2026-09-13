@@ -1,0 +1,11 @@
+<!--
+  Wazuh agent localfile config untuk monitor phishing event log.
+
+  Append ke <ossec_config> block di /var/ossec/etc/ossec.conf AGENT (host).
+  Wazuh logcollector akan tail file ini realtime, parse setiap baris JSON,
+  dan forward ke manager untuk rule matching.
+-->
+<localfile>
+  <log_format>json</log_format>
+  <location>/var/log/phishing-events.log</location>
+</localfile>
