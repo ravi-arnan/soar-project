@@ -1,0 +1,298 @@
+{
+  "mode": "mttr_fleet",
+  "stats": {
+    "label": "MTTR Malware (injeksi -> fleet-log)",
+    "n": 30,
+    "mean": 3.0,
+    "median": 3.07,
+    "min": 2.04,
+    "max": 4.09,
+    "stdev": 0.53,
+    "p95": 4.09,
+    "p99": 4.09,
+    "samples": [
+      2.040333315002499,
+      2.047311702001025,
+      2.0493405769957462,
+      2.0504727010047645,
+      2.065683512002579,
+      3.0460825839982135,
+      3.0476739430014277,
+      3.048470985995664,
+      3.051971364002384,
+      3.053164361997915,
+      3.0532607100030873,
+      3.054591498002992,
+      3.059385981003288,
+      3.061866751006164,
+      3.069088832999114,
+      3.071349357996951,
+      3.0727011089984444,
+      3.0733019610051997,
+      3.075816163000127,
+      3.0774636620044475,
+      3.077966140997887,
+      3.0780629689979833,
+      3.0791003859994817,
+      3.079538820005837,
+      3.0818148079997627,
+      3.0836638330001733,
+      3.133443062004517,
+      4.075504628999624,
+      4.089177806999942,
+      4.090556346003723
+    ],
+    "unit": "detik",
+    "timeouts": 0
+  },
+  "runs": [
+    {
+      "run": 1,
+      "filename": "bench-mfy0ps-000.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-000.com",
+      "elapsed_sec": 3.07,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:18:36.851198+00:00"
+    },
+    {
+      "run": 2,
+      "filename": "bench-mfy0ps-001.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-001.com",
+      "elapsed_sec": 3.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:18:55.903851+00:00"
+    },
+    {
+      "run": 3,
+      "filename": "bench-mfy0ps-002.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-002.com",
+      "elapsed_sec": 3.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:19:14.957613+00:00"
+    },
+    {
+      "run": 4,
+      "filename": "bench-mfy0ps-003.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-003.com",
+      "elapsed_sec": 3.07,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:19:34.030801+00:00"
+    },
+    {
+      "run": 5,
+      "filename": "bench-mfy0ps-004.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-004.com",
+      "elapsed_sec": 3.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:19:53.084590+00:00"
+    },
+    {
+      "run": 6,
+      "filename": "bench-mfy0ps-005.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-005.com",
+      "elapsed_sec": 3.13,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:20:12.218705+00:00"
+    },
+    {
+      "run": 7,
+      "filename": "bench-mfy0ps-006.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-006.com",
+      "elapsed_sec": 3.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:20:31.300950+00:00"
+    },
+    {
+      "run": 8,
+      "filename": "bench-mfy0ps-007.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-007.com",
+      "elapsed_sec": 3.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:20:50.379149+00:00"
+    },
+    {
+      "run": 9,
+      "filename": "bench-mfy0ps-008.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-008.com",
+      "elapsed_sec": 3.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:21:09.457732+00:00"
+    },
+    {
+      "run": 10,
+      "filename": "bench-mfy0ps-009.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-009.com",
+      "elapsed_sec": 3.07,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:21:28.529492+00:00"
+    },
+    {
+      "run": 11,
+      "filename": "bench-mfy0ps-010.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-010.com",
+      "elapsed_sec": 3.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:21:47.584462+00:00"
+    },
+    {
+      "run": 12,
+      "filename": "bench-mfy0ps-011.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-011.com",
+      "elapsed_sec": 2.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:22:05.632327+00:00"
+    },
+    {
+      "run": 13,
+      "filename": "bench-mfy0ps-012.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-012.com",
+      "elapsed_sec": 3.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:22:24.678976+00:00"
+    },
+    {
+      "run": 14,
+      "filename": "bench-mfy0ps-013.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-013.com",
+      "elapsed_sec": 2.07,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:22:42.745358+00:00"
+    },
+    {
+      "run": 15,
+      "filename": "bench-mfy0ps-014.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-014.com",
+      "elapsed_sec": 3.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:23:01.829462+00:00"
+    },
+    {
+      "run": 16,
+      "filename": "bench-mfy0ps-015.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-015.com",
+      "elapsed_sec": 3.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:23:20.905715+00:00"
+    },
+    {
+      "run": 17,
+      "filename": "bench-mfy0ps-016.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-016.com",
+      "elapsed_sec": 3.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:23:39.954623+00:00"
+    },
+    {
+      "run": 18,
+      "filename": "bench-mfy0ps-017.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-017.com",
+      "elapsed_sec": 4.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:24:00.030492+00:00"
+    },
+    {
+      "run": 19,
+      "filename": "bench-mfy0ps-018.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-018.com",
+      "elapsed_sec": 4.09,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:24:20.121417+00:00"
+    },
+    {
+      "run": 20,
+      "filename": "bench-mfy0ps-019.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-019.com",
+      "elapsed_sec": 2.04,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:24:38.162188+00:00"
+    },
+    {
+      "run": 21,
+      "filename": "bench-mfy0ps-020.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-020.com",
+      "elapsed_sec": 4.09,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:24:58.251751+00:00"
+    },
+    {
+      "run": 22,
+      "filename": "bench-mfy0ps-021.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-021.com",
+      "elapsed_sec": 3.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:25:17.300100+00:00"
+    },
+    {
+      "run": 23,
+      "filename": "bench-mfy0ps-022.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-022.com",
+      "elapsed_sec": 3.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:25:36.379669+00:00"
+    },
+    {
+      "run": 24,
+      "filename": "bench-mfy0ps-023.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-023.com",
+      "elapsed_sec": 2.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:25:54.430781+00:00"
+    },
+    {
+      "run": 25,
+      "filename": "bench-mfy0ps-024.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-024.com",
+      "elapsed_sec": 3.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:26:13.510996+00:00"
+    },
+    {
+      "run": 26,
+      "filename": "bench-mfy0ps-025.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-025.com",
+      "elapsed_sec": 2.05,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:26:31.560721+00:00"
+    },
+    {
+      "run": 27,
+      "filename": "bench-mfy0ps-026.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-026.com",
+      "elapsed_sec": 3.06,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:26:50.623153+00:00"
+    },
+    {
+      "run": 28,
+      "filename": "bench-mfy0ps-027.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-027.com",
+      "elapsed_sec": 3.08,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:27:09.701667+00:00"
+    },
+    {
+      "run": 29,
+      "filename": "bench-mfy0ps-028.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-028.com",
+      "elapsed_sec": 3.06,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:27:28.761457+00:00"
+    },
+    {
+      "run": 30,
+      "filename": "bench-mfy0ps-029.com",
+      "path": "/home/ravi-zorin/Downloads/bench-mfy0ps-029.com",
+      "elapsed_sec": 3.07,
+      "status": "logged",
+      "timestamp": "2026-09-15T13:27:47.831011+00:00"
+    }
+  ],
+  "metadata": {
+    "timestamp": "2026-09-15T13:27:47.832616+00:00",
+    "mode": "mttr-fleet",
+    "n": 30,
+    "agent": "ravi-zorin",
+    "n8n_webhook_malware": "http://localhost:5678/webhook/wazuh-alert",
+    "n8n_webhook_phishing": "http://localhost:5678/webhook/wazuh-phishing"
+  }
+}
