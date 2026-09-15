@@ -126,10 +126,10 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
 
         <div
           className="cursor-pointer hover:bg-[#F8FAFC] py-2 rounded transition-colors"
-          onClick={() => onNavigate('agents')}
+          onClick={() => onNavigate('security-events')}
         >
-          <div className="text-[12px] text-[#5A626F] font-medium">Never connected agents</div>
-          <div className="text-[32px] font-semibold text-[#64748B] leading-tight mt-1">0</div>
+          <div className="text-[12px] text-[#5A626F] font-medium">Threat events</div>
+          <div className="text-[32px] font-semibold text-[#64748B] leading-tight mt-1">{stats.events_total}</div>
         </div>
       </div>
 
