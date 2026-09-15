@@ -19,13 +19,35 @@ interface AgentsManagementProps {
   onSelectAgent: (agentId: string) => void;
   /** Fleet live dari /api/fleet. */
   agents: FleetAgent[];
+  /** Buka view Settings (opsional; tombol gear disembunyikan bila tak ada). */
+  onOpenSettings?: () => void;
 }
 
 /** Keliling donut status (r=38), disamakan dengan desain Wazuh. */
 const DONUT_CIRCUMFERENCE = 240;
 
-export function AgentsManagement({ onSelectAgent, agents: fleetAgents }: AgentsManagementProps) {
+export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetAgents }: AgentsManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
+
+  /** Unduh tabel agent sebagai CSV (data live yang tampil). */
+  const exportCsv = () => {
+    const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const lines = agents.map((a) =>
+      [a.id, a.name, a.ip, a.groups.join(';'), a.os, a.version, a.lastKeepAlive, a.status]
+        .map(cell)
+        .join(',')
+    );
+    const blob = new Blob(
+      [[['id', 'name', 'ip', 'groups', 'os', 'version', 'last_keep_alive', 'status'].join(','), ...lines].join('\n')],
+      { type: 'text/csv' }
+    );
+    const url = URL.createObjectURL(blob);
+    const el = document.createElement('a');
+    el.href = url;
+    el.download = 'agents.csv';
+    el.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Petakan agent fleet -> bentuk tabel ala Wazuh Dashboard.
   const agents = useMemo(
@@ -225,17 +247,27 @@ export function AgentsManagement({ onSelectAgent, agents: fleetAgents }: AgentsM
         <div className="flex items-center justify-between mb-3">
           <div className="text-[14px] font-semibold text-[#1A1C21]">Agents ({agents.length})</div>
           <div className="flex items-center gap-4 text-[12px]">
-            <button className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium">
+            <a
+              href="https://github.com/ravi-arnan/soar-project/tree/main/deploy"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium"
+            >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>Deploy new agent</span>
-            </button>
-            <button className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium">
+            </a>
+            <button
+              onClick={exportCsv}
+              className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium"
+            >
               <Download className="w-3.5 h-3.5" />
               <span>Export formatted</span>
             </button>
-            <button className="text-[#5A626F] hover:text-[#1A1C21]">
-              <Settings className="w-4 h-4" />
-            </button>
+            {onOpenSettings && (
+              <button onClick={onOpenSettings} className="text-[#5A626F] hover:text-[#1A1C21]">
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
 

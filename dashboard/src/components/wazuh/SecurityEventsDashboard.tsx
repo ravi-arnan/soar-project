@@ -37,6 +37,7 @@ export function SecurityEventsDashboard({
 }: SecurityEventsDashboardProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>('dashboard');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [query, setQuery] = useState('');
 
   // Event live -> baris tabel ala Wazuh. `level` mengikuti bucket severity fleet
   // (CRITICAL=12, HIGH=8, MEDIUM=5, UNVERIFIED=4, INFO=3).
@@ -55,6 +56,15 @@ export function SecurityEventsDashboard({
       })),
     [events]
   );
+
+  // Filter search dari WazuhFilterBar: cocokkan ke deskripsi / agent / rule.
+  const visibleAlerts = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return alertsData;
+    return alertsData.filter((r) =>
+      `${r.description} ${r.agentName} ${r.agentId} ${r.ruleId}`.toLowerCase().includes(q)
+    );
+  }, [alertsData, query]);
 
   // Top 5 agent menurut jumlah event.
   const topAgents = useMemo(() => {
@@ -109,7 +119,7 @@ export function SecurityEventsDashboard({
       </div>
 
       {/* Filter and Search Bar */}
-      <WazuhFilterBar onRefresh={onRefresh} />
+      <WazuhFilterBar onRefresh={onRefresh} onSearch={setQuery} />
 
       {/* Top 4 Metric KPI Counters — angka live dari /api/fleet.
           Bucket severity fleet dipetakan ke 4 tile Wazuh (CRITICAL / HIGH / MEDIUM). */}
@@ -333,14 +343,16 @@ export function SecurityEventsDashboard({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EBEFF5]">
-              {!alertsData.length && (
+              {!visibleAlerts.length && (
                 <tr>
                   <td colSpan={9} className="py-6 text-center text-[#8A94A6]">
-                    belum ada event — drop EICAR di folder yang diawasi agent
+                    {query
+                      ? `tidak ada event cocok "${query}"`
+                      : 'belum ada event — drop EICAR di folder yang diawasi agent'}
                   </td>
                 </tr>
               )}
-              {alertsData.map((row) => {
+              {visibleAlerts.map((row) => {
                 const isExpanded = expandedRow === row.id;
                 return (
                   <React.Fragment key={row.id}>

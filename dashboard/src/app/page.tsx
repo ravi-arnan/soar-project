@@ -125,7 +125,11 @@ export default function Home() {
         )}
 
         {currentView === 'agents' && (
-          <AgentsManagement agents={agents} onSelectAgent={handleSelectAgent} />
+          <AgentsManagement
+            agents={agents}
+            onSelectAgent={handleSelectAgent}
+            onOpenSettings={() => setCurrentView('settings')}
+          />
         )}
 
         {currentView === 'agent-detail' && (
