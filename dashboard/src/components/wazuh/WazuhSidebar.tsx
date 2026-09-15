@@ -6,16 +6,9 @@ import {
   LayoutGrid,
   Shield,
   FileCheck,
-  Activity,
-  CheckCircle2,
-  Bug,
-  Crosshair,
   Server,
-  FileText,
+  Box,
   Settings,
-  Database,
-  Terminal,
-  ChevronRight,
   ExternalLink,
 } from 'lucide-react';
 import { WazuhLogo } from './WazuhLogo';
@@ -58,26 +51,14 @@ export function WazuhSidebar({
       ],
     },
     {
-      title: 'Auditing and Policy Monitoring',
-      items: [
-        { id: 'policy-monitoring', label: 'Policy monitoring', icon: Activity },
-        { id: 'system-auditing', label: 'System auditing', icon: Activity },
-        { id: 'sca', label: 'Security configuration assessment', icon: CheckCircle2 },
-      ],
-    },
-    {
       title: 'Threat Detection and Response',
       items: [
-        { id: 'vulnerabilities', label: 'Vulnerabilities', icon: Bug },
-        { id: 'mitre', label: 'MITRE ATT&CK', icon: Crosshair },
+        { id: 'threat-intel', label: 'Threat Intel', icon: Box },
       ],
     },
     {
       title: 'Management',
       items: [
-        { id: 'rules', label: 'Rules', icon: FileText },
-        { id: 'decoders', label: 'Decoders', icon: Database },
-        { id: 'dev-tools', label: 'Dev Tools', icon: Terminal },
         { id: 'settings', label: 'Settings', icon: Settings },
       ],
     },

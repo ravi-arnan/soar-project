@@ -8,7 +8,7 @@ import { SecurityEventsDashboard } from '@/components/wazuh/SecurityEventsDashbo
 import { AgentsManagement } from '@/components/wazuh/AgentsManagement';
 import { AgentDetailView } from '@/components/wazuh/AgentDetailView';
 import { FimDashboard } from '@/components/wazuh/FimDashboard';
-import { VulnerabilitiesDashboard } from '@/components/wazuh/VulnerabilitiesDashboard';
+import { ThreatIntelView } from '@/components/wazuh/ThreatIntelView';
 import { SettingsView } from '@/components/wazuh/SettingsView';
 import { useFleet } from '@/lib/fleet';
 
@@ -43,10 +43,10 @@ export default function Home() {
         { label: 'Integrity monitoring' },
       ];
     }
-    if (currentView === 'vulnerabilities') {
+    if (currentView === 'threat-intel') {
       return [
         { label: 'Modules', onClick: () => setCurrentView('modules') },
-        { label: 'Vulnerabilities' },
+        { label: 'Threat Intel' },
       ];
     }
     if (currentView === 'agents') {
@@ -106,6 +106,7 @@ export default function Home() {
               if (modKey === 'agents') setCurrentView('agents');
               else if (modKey === 'security-events') setCurrentView('security-events');
               else if (modKey === 'integrity-monitoring') setCurrentView('integrity-monitoring');
+              else if (modKey === 'threat-intel') setCurrentView('threat-intel');
               else if (modKey === 'vulnerabilities') setCurrentView('vulnerabilities');
               else setCurrentView('security-events');
             }}
@@ -133,14 +134,14 @@ export default function Home() {
             onNavigateTab={(tab) => {
               if (tab === 'Security events') setCurrentView('security-events');
               if (tab === 'Integrity monitoring') setCurrentView('integrity-monitoring');
-              if (tab === 'Vulnerabilities') setCurrentView('vulnerabilities');
+              if (tab === 'Threat Intel') setCurrentView('threat-intel');
             }}
           />
         )}
 
         {currentView === 'integrity-monitoring' && <FimDashboard events={events} />}
 
-        {currentView === 'vulnerabilities' && <VulnerabilitiesDashboard />}
+        {currentView === 'threat-intel' && <ThreatIntelView events={events} />}
 
         {currentView === 'settings' && (
           <SettingsView
