@@ -19,6 +19,10 @@ struct Args {
     #[arg(long, default_value = "http://100.73.91.17:5678/webhook/wazuh-alert")]
     webhook: String,
 
+    /// Webhook n8n Deteksi Phishing (sensor URL dari file .url/.html).
+    #[arg(long, default_value = "http://100.73.91.17:5678/webhook/wazuh-phishing")]
+    phishing_webhook: String,
+
     #[arg(long, default_value = "003")]
     agent_id: String,
 
@@ -92,6 +96,85 @@ fn build_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
             "mode": "realtime"
         }
     })
+}
+
+/// Sensor URL phishing: ekstrak http(s) dari file pointer/attachment.
+/// Phishing TA sering masuk sebagai lampiran (.url shortcut, .html invoice
+/// palsu). Tanpa regex crate: pindai substring, hentikan di delimiter.
+/// Baca dibatasi 256KB, maks 5 URL unik per file (hemat kuota GSB/URLScan).
+fn extract_urls(path: &Path) -> Vec<String> {
+    const MAX_READ: u64 = 256 * 1024;
+    const MAX_URLS: usize = 5;
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return vec![],
+    };
+    let mut buf = Vec::new();
+    if file.take(MAX_READ).read_to_end(&mut buf).is_err() {
+        return vec![];
+    }
+    let text = String::from_utf8_lossy(&buf);
+    let mut out: Vec<String> = vec![];
+    let mut i = 0;
+    while i < text.len() && out.len() < MAX_URLS {
+        let rest = &text[i..];
+        // Ambil kemunculan paling awal dari kedua skema (jangan prioritaskan
+        // https: http://a lalu https://b harus kena dua-duanya).
+        let start = rest
+            .find("https://")
+            .into_iter()
+            .chain(rest.find("http://"))
+            .min()
+            .map(|s| i + s);
+        let start = match start {
+            Some(s) => s,
+            None => break,
+        };
+        let mut end = start;
+        for (j, c) in text[start..].char_indices() {
+            if c.is_whitespace() || "\"'<>(),;\\".contains(c) {
+                break;
+            }
+            end = start + j + c.len_utf8();
+        }
+        let url = text[start..end].trim_end_matches(|c| c == '.' || c == ')' || c == ',').to_string();
+        if url.len() > 10 && !out.contains(&url) {
+            out.push(url);
+        }
+        i = end.max(start + 1);
+    }
+    out
+}
+
+/// Ekstensi yang memicu sensor phishing (selain tetap/divert jalur malware).
+/// Bentuk sama dengan payload uji E3 (rule 100002) yang dipakai benchmark.
+fn build_phishing_payload(args: &Args, path: &Path, url: &str) -> serde_json::Value {
+    serde_json::json!({
+        "rule": {"id": "100002", "level": 10, "description": "Phishing URL detected."},
+        "agent": {"id": args.agent_id, "name": args.agent_name},
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "data": {
+            "url": url,
+            "srcip": "0.0.0.0",
+            "event_type": "phishing_url",
+            "source_file": path.to_string_lossy()
+        }
+    })
+}
+
+/// Retry 3x backoff dipakai jalur malware maupun phishing.
+async fn post_with_retry(webhook: &str, payload: &serde_json::Value, path: &Path) -> bool {
+    for attempt in 1..=3 {
+        match post_to_n8n(webhook, payload).await {
+            Ok(_) => return true,
+            Err(e) => {
+                warn!(attempt, error = %e, "POST gagal, retry");
+                tokio::time::sleep(Duration::from_secs(attempt)).await;
+            }
+        }
+    }
+    error!(path = %path.display(), "POST gagal 3x, drop event");
+    false
 }
 
 async fn post_to_n8n(webhook: &str, payload: &serde_json::Value) -> Result<()> {
@@ -359,6 +442,27 @@ async fn main() -> Result<()> {
             }
             last_sent.insert(path.clone(), now);
 
+            info!(path = %path.display(), "file event -> cek sensor phishing");
+
+            let lower = path.to_string_lossy().to_lowercase();
+            let is_url_file = lower.ends_with(".url");
+            let is_html = lower.ends_with(".html") || lower.ends_with(".htm");
+
+            // Sensor URL phishing (jalur reaktif Deteksi Phishing): ekstrak
+            // http(s) dari shortcut/attachment lalu POST per URL.
+            // .url = pointer saja -> phishing only (hash file-nya tak bermakna
+            // buat VT). .html/.htm = attachment -> dua jalur (hash + URL).
+            if is_url_file || is_html {
+                for url in extract_urls(&path) {
+                    info!(url = %url, path = %path.display(), "URL -> webhook phishing");
+                    let payload = build_phishing_payload(&args, &path, &url);
+                    post_with_retry(&args.phishing_webhook, &payload, &path).await;
+                }
+                if is_url_file {
+                    continue;
+                }
+            }
+
             info!(path = %path.display(), "file event -> hitung hash");
 
             let hash = match sha256_file(&path) {
@@ -371,24 +475,7 @@ async fn main() -> Result<()> {
 
             let payload = build_payload(&args, &path, &hash);
             info!(hash = %hash, path = %path.display(), "POST ke n8n");
-
-            // Retry 3x dengan backoff
-            let mut ok = false;
-            for attempt in 1..=3 {
-                match post_to_n8n(&args.webhook, &payload).await {
-                    Ok(_) => {
-                        ok = true;
-                        break;
-                    }
-                    Err(e) => {
-                        warn!(attempt, error = %e, "POST gagal, retry");
-                        tokio::time::sleep(Duration::from_secs(attempt)).await;
-                    }
-                }
-            }
-            if !ok {
-                error!(path = %path.display(), "POST gagal 3x, drop event");
-            }
+            post_with_retry(&args.webhook, &payload, &path).await;
         }
     }
 
@@ -527,5 +614,40 @@ mod tests {
         ] {
             assert!(!should_ignore(Path::new(p)), "jangan diabaikan: {p}");
         }
+    }
+
+    #[test]
+    fn extract_urls_dari_shortcut_dan_html() {
+        let dir = std::env::temp_dir();
+        let url_path = dir.join("soar-test-invoice.url");
+        std::fs::write(
+            &url_path,
+            "[InternetShortcut]\nURL=https://phish.example.com/login?u=1\nIconFile=x\n",
+        )
+        .unwrap();
+        assert_eq!(
+            extract_urls(&url_path),
+            vec!["https://phish.example.com/login?u=1".to_string()]
+        );
+
+        let html_path = dir.join("soar-test-faktur.html");
+        std::fs::write(
+            &html_path,
+            "<html><a href=\"http://a.example/x\">klik</a> dan http://a.example/x lagi, lalu https://b.example/y.</html>",
+        )
+        .unwrap();
+        // Duplikat dibuang, trailing titik dibuang
+        assert_eq!(
+            extract_urls(&html_path),
+            vec!["http://a.example/x".to_string(), "https://b.example/y".to_string()]
+        );
+
+        let kosong = dir.join("soar-test-kosong.html");
+        std::fs::write(&kosong, "<html>tidak ada link</html>").unwrap();
+        assert!(extract_urls(&kosong).is_empty());
+
+        std::fs::remove_file(&url_path).ok();
+        std::fs::remove_file(&html_path).ok();
+        std::fs::remove_file(&kosong).ok();
     }
 }
