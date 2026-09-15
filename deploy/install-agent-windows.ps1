@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 $AGENT_ID = $env:AGENT_ID
 $AGENT_NAME = $env:AGENT_NAME
 $SERVER = "100.73.91.17"
-$BINARY_URL = "http://$SERVER`:8000/soar-agent.exe"
+$BINARY_URL = "https://github.com/ravi-arnan/soar-project/releases/download/v0.2.0/soar-agent.exe"
 $LOCAL_PATH = "$env:ProgramFiles\soar-agent\soar-agent.exe"
 
 if (-not $AGENT_ID) {

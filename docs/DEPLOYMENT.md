@@ -464,20 +464,29 @@ curl -X POST http://localhost:5678/webhook/wazuh-alert -d '{}'  # test
 
 ### Issue: Telegram parse error "Can't find end of entity"
 
-Cause: AI response contains unbalanced markdown chars.
+Cause: path file / jawaban Ollama (teks bebas) mengandung karakter Markdown
+(`_ * [ ] ( )`), sementara node Send Telegram Alert pakai `parse_mode: Markdown`.
 
-Fix: ensure Ollama Generate code has sanitization:
-```javascript
-.replace(/[*_`\[\]()]/g, '')
-```
+Fix (14 Sep, sudah live): escape 3 interpolasi di node Send Telegram Alert
+(filename, filepath, ollama_response) via `.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1')`.
+`vt_footer` dibiarkan mentah (link disengaja). Lihat `scripts/patch-n8n-fp-guard.py::patch_telegram`.
 
 ### Issue: False positive flood dari /tmp atau /var paths
 
-Fix: add path prefix ke `NOISY_PATH_PREFIXES` di `scripts/custom-n8n.py`, redeploy:
+Tiga lapis pertahanan (14 Sep), jangan cuma satu:
+1. Agent: `should_ignore()` di `agent-rs/src/main.rs` (prefix, pola `dosdevices/.git/node_modules/cache`, ekstensi noise). Test: `cargo test ignore_fp_noise_14sep`.
+2. Workflow: kondisi `cond-not-noise` (op string native `notRegex`) di node Filter Alert Malware — pola mirror agent. Patch: `scripts/patch-n8n-fp-guard.py`.
+3. Wazuh/custom: `NOISY_PATH_PREFIXES` di `scripts/custom-n8n.py`, redeploy:
 ```bash
 docker cp scripts/custom-n8n.py single-node-wazuh.manager-1:/var/ossec/integrations/custom-n8n
 docker exec single-node-wazuh.manager-1 /var/ossec/bin/wazuh-control restart
 ```
+
+Gotcha n8n (14 Sep, exec 719/720/721/723): nilai kondisi di JSON workflow HARUS
+berprefix `=` agar dievaluasi (`={{ ... }}`, bukan `{{ ... }}` — tanpa itu
+dianggap string literal). Node IF tidak support regex literal/`.test`/`.includes`
+di kiri; pakai op string native (`contains/notContains/endsWith/notRegex`;
+`notRegex` makan literal regex `/pola/flags` di kanan).
 
 ## Reference Materials
 

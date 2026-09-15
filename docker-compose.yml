@@ -96,6 +96,30 @@ services:
     depends_on:
       - n8n
 
+  # Dashboard fleet (UI Wazuh lengkap dari wazuh-dashboard-clone) — menggantikan
+  # tampilan fleet-monitor.py. Backend datanya TETAP fleet-monitor.py: Next
+  # hanya mem-proxy /api/* ke sana (FLEET_API_URL), jadi agent & n8n tidak perlu
+  # diubah. Build: docker build -t soar-fleet-dashboard ./dashboard
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    image: soar-fleet-dashboard:latest
+    container_name: fleet-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      # fleet-monitor pakai network_mode: host, jadi dari container harus lewat
+      # gateway host (127.0.0.1 di dalam container bukan host).
+      - FLEET_API_URL=http://host.docker.internal:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - fleet-monitor
+
 volumes:
   n8n_data:
   health_state:

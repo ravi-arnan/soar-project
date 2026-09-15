@@ -1,15 +1,171 @@
-# Handoff SOAR - 2026-09-11 malam
+# Handoff SOAR - 2026-09-14 (lanjutan)
 
-- **Tanggal & Waktu**: 2026-09-11 ~23:30-00:45 WITA (sesi: VS-antivirus + setup lintas-device + TUI + n8n otomatis + diagram)
-- **Branch**: main, commit bersih siap commit (lihat daftar file baru di bawah)
-- **Runtime**: n8n & fleet-monitor TIDAK jalan di laptop saat sesi ini (semua test dilakukan dengan instance sementara yang sudah di-cleanup)
+## 0. Fix dashboard 500 + kolom IP/OS (sesi nixbox, 14 Sep sore)
 
-## Konteks sesi: dua arahan dospem 2026-09-11
+**Dashboard `/api/fleet` + `/api/events` 500** — akar: `rewrites()` di
+`next.config.ts` dievaluasi SEKALI saat `next build` lalu destination
+di-serialize ke `.next/routes-manifest.json` (bukan per-request). Image lama
+ke-bake `http://127.0.0.1:8080` yang dari dalam container = dirinya sendiri
+→ `ECONNREFUSED` → 500. Env runtime `FLEET_API_URL` tidak ngaruh.
 
-1. **"Apa bedanya dengan antivirus?"** → dijawab + didokumentasikan `docs/VS-ANTIVIRUS.md` (elevator pitch, tabel 9 dimensi, paragraf laporan, angka benchmark, poin "komplementer bukan kompetitor").
-2. **"Permudahkan setup SOAR lintas device" + kebayangan "script yang install semua service lalu minta API key"** → dibangun penuh, lihat di bawah. Bonus permintaan lanjutan: **dashboard TUI** kembaran GUI web, **automasi n8n** (credentials + workflow + remap), dan **diagram perspektif karyawan**.
+- Diubah: `dashboard/Dockerfile` — ARG default → `host.docker.internal:8080`,
+  deps/builder → `node:24-slim` (layer cache alpine corrupt:
+  `lightningcss.linux-x64-musl.node` hilang, `--no-cache` gagal build).
+- Diubah: `dashboard/next.config.ts` — komentar diluruskan (build-time baking)
+  + fallback default → `host.docker.internal:8080`.
+- Live: rebuild `soar-fleet-dashboard:latest`
+  (`--build-arg FLEET_API_URL=http://host.docker.internal:8080`), container
+  restart dengan `--add-host host.docker.internal:host-gateway`.
+  Verifikasi: `:3000/api/fleet` + `/api/events` + `/healthz` 200, log bersih
+  dari ECONNREFUSED.
 
-## File baru (semua tested, belum di-commit)
+**Kolom IP semua `127.0.0.1`** — akar: agent kirim `"ip":"127.0.0.1"` hardcoded
+di heartbeat (`agent-rs/src/main.rs`), server (`fleet-monitor.py`) percaya saja.
+
+- Diubah: agent kirim `"ip":""` + `os` lowercase (`linux|windows|macos`,
+  cocok dengan `osType()` dashboard).
+- Diubah: server petakan `"" / 127.0.0.1 / 0.0.0.0 / localhost / ::1` →
+  `self.client_address[0]` (IP TCP asli). Ini JUGA menyembuhkan binary lama
+  yang belum rebuild. File tersync ke ravi-debian, `fleet-monitor` di-restart.
+- Verifikasi live: `002 nixbox 192.168.1.26`, `003 ravi-debian 100.73.91.17`,
+  `006 ideapc 100.124.118.45`. `000 wazuh.manager 127.0.0.1` = benar by design
+  (manager Wazuh selalu self-loopback).
+
+**Kolom OS cuma nixbox** — binary lama (003/005/006) belum punya field `os`
+sama sekali → dashboard tampilkan `-`. Butuh binary baru:
+
+- Baru: `deploy/rebuild-agent-binaries.sh` (jalan DI ravi-debian, butuh sudo):
+  `cargo build --release` (registry 284M sudah cache) → install + restart 003;
+  `--windows` cross-compile `.exe` via rustup+mingw (linker sudah ada);
+  `--deb` bungkus `.deb` dari binary gnu.
+- Diubah: `agent-rs/build-deb.sh` — `BIN` bisa di-override
+  (`BIN=target/release/soar-agent ./build-deb.sh`), default tetap musl.
+- Binary nixbox sudah diverifikasi kirim `{"ip":"","os":"linux"}` (dummy server).
+- `002 nixbox`: modul NixOS build dari source lokal → ikut fix saat rebuild.
+
+**Update 14 Sep malam (password sudo dipakai via stdin, tidak disimpan):**
+
+- ✅ `002 nixbox`: `sudo nixos-rebuild switch --impure` sukses (pure mode menolak
+  import absolute path). Binary baru verified live: `002 nixbox 192.168.1.26 linux`.
+- ✅ Server-side IP fix verified live sebelum server down (002/003/006 IP asli).
+- ⚠️ `003 ravi-debian`: binary nixbox TIDAK bisa dipakai (glibc 2.42 +
+  interpreter /nix/store → 203/EXEC). Restore binary lama dari .deb (active).
+  Binary gnu Debian-native SUDAH dibuild di server
+  (`agent-rs/target/release/soar-agent`, 5.5MB, interpreter /lib64) — tinggal
+  install + restart.
+- ✅ `soar-agent.exe` BARU berhasil di-cross-compile DI NIXBOX (7.9MB, PE32+,
+  ada di `deploy/bundle/soar-agent.exe`): rustup stable 1.98.1 + target
+  `x86_64-pc-windows-gnu` + linker mingw nixpkgs + `-L` pthreads
+  (`pkgsCross.mingwW64.windows.pthreads`, mingw-w64 ≥ 12 tidak bundle pthread).
+- 🔴 **ravi-debian DOWN** sejak ~18:00 (ping/SSH No route, ARP FAILED; tunnel
+  hanya sajikan halaman Access). Kemungkinan mati listrik/tidur (baterai X260).
+  **Update 20:30: server NYALA lagi.** Lanjutan dikerjakan:
+  1. ✅ exe + ps1 baru diantar ke server; file server :8000 ternyata root-nya
+     `/home/ravi/public` (bukan deploy/bundle) → copy ke sana, verified
+     `200 7928320` (byte pas = binary baru).
+  2. ✅ `003 ravi-debian`: binary gnu Debian-native (5.5MB) terpasang +
+     restart, verified live `003 ravi-debian 100.73.91.17 linux`.
+  3. ✅ `fleet-dashboard` container Up healthy, `:3000/api/fleet` 200.
+  4. ⏳ SISA: 005/006 reinstall via ps1 (manual di PC Windows, butuh admin):
+     `Stop-Service soar-agent; sc.exe delete soar-agent` lalu
+     `$env:AGENT_ID="005" $env:AGENT_NAME="toshiba-bapak" powershell -File install-agent-windows.ps1`
+     (006: ID 006 / ideapc). 005 belum heartbeat sejak outage (mungkin PC mati).
+- `deploy/rebuild-agent-binaries.sh` disesuaikan: linux pakai rustup stable
+  (cargo distro 1.85 terlalu tua), catat pelajaran glibc/nix.
+
+**TINGGAL RAVI (butuh sudo / akses mesin):**
+
+1. ravi-debian: `cd ~/Projects/soar-project && ./deploy/rebuild-agent-binaries.sh --windows`
+2. nixbox (sini): `sudo nixos-rebuild switch`
+3. 005/006: jalankan ulang `install-agent-windows.ps1` dengan exe baru di `deploy/bundle/`
+
+## 1. Dashboard fleet diganti UI Wazuh (`dashboard/`)
+
+Permintaan: "existing dashboard fleet ganti dengan milik wazuh-dashboard-clone karena UI-nya sudah proper, dan UI-nya harus sama persis".
+
+**Keputusan arsitektur**: `scripts/fleet-monitor.py` **TETAP** dipakai, tapi turun peran jadi **backend data (headless)** — dia titik masuk data (`POST /api/heartbeat` dari soar-agent, `POST /webhook-log` dari n8n, poll Wazuh API). Kalau `.py` dihapus, 100 agent + workflow n8n harus diarahkan ulang. Yang diganti hanya lapisan tampilan.
+
+UI diambil **apa adanya** dari `wazuh-dashboard-clone` (komponen Next.js utuh → dijamin identik, tidak diport ke vanilla JS yang berisiko drift).
+
+- **Baru**: `dashboard/` — Next.js 16 standalone. Hanya deps yang dipakai komponen (`react`, `next`, `lucide-react`, `tailwindcss`, `tw-animate-css`, `shadcn`). Dep berat clone (`three`, `gsap`, `lenis`) dibuang.
+- **Baru**: `dashboard/src/lib/fleet.ts` — types + `useFleet()` (poll `/api/fleet` + `/api/events` tiap 5s, error non-fatal → data terakhir tetap tampil).
+- **Baru**: `dashboard/next.config.ts` — `rewrites` `/api/*` → `FLEET_API_URL` (default `http://127.0.0.1:8080`), + `turbopack.root` (wajib: parent `/home/ravi/Projects` punya lockfile lain yang bikin resolusi CSS gagal).
+- **Diubah**: `docker-compose.yml` + `dashboard/Dockerfile` — service `dashboard` di :3000, `FLEET_API_URL=http://host.docker.internal:8080` (fleet-monitor `network_mode: host`, sudah dites: `127.0.0.1:8080` dari dalam container = container sendiri).
+
+**Data live yang sudah diwire**:
+| View | Sumber |
+|------|--------|
+| Modules KPI + badge sidebar | `stats.total/active/disconnected` |
+| Agents table + donut status + coverage | `agents[]` |
+| Agent detail header + FIM recent events | agent terpilih + event `agent_id` |
+| Security events table + KPI + Top 5 agents donut | `events[]` + `stats.severity` |
+| FIM daftar file + SHA256 + hits | path & hash unik dari `events[]` |
+| Health n8n/AI/Wazuh | footer sidebar, dot `API` di header |
+
+**Masih statis (tidak ada sumbernya di API)**: chart evolusi, MITRE ATT&CK, Compliance PCI DSS, SCA CIS, seluruh halaman Vulnerabilities. Mapping KPI: `Level 12+`=CRITICAL, `Authentication failure`=HIGH, `Authentication success`=MEDIUM.
+
+Verifikasi: `npm run check` (lint 0 error / 16 warning warisan clone, typecheck, build) ✅.
+
+## 2. n8n "Deteksi Malware": node `Log ke Fleet` ✅
+
+Workflow **live** (id `1MVcpL7ZKfBhR2tc`, 12 node) ternyata sudah **menyimpang** dari file repo `n8n-workflows/deteksi-malware.json` (23 node, id beda) — live sudah pakai Ollama, repo masih Gemini/RAG/SLA. **Jangan import file repo**, nanti menimpa yang jalan.
+
+- Ditambah lewat **n8n public API** (`PUT /api/v1/workflows/...`), bukan UI.
+- Node `Log ke Fleet` (HTTP Request v4.4) → `POST http://host.docker.internal:8080/webhook-log`, `onError: continueRegularOutput` (dashboard mati tidak mematikan deteksi).
+- Wiring: `Rangkum Hasil` → `[Cek Ancaman, Log ke Fleet]` — **cabang paralel**, alur AR/Telegram tidak disentuh.
+- Script idempoten: `scripts/patch-n8n-log-fleet.py`. Backup: `backups/deteksi-malware-live-*.json`.
+- Dites: `POST /webhook-log` → muncul di `/api/events` ✅.
+
+## 3. Nixbox agent via NixOS — **tinggal jalankan**
+
+NixOS tidak punya dpkg, dan binary di `agent-rs/target/release/` ter-link ke glibc `/nix/store` (bukan musl) → bisa rusak kena GC. Jadi dibuat derivasi Nix yang build dari source.
+
+- **Baru**: `deploy/nixos/soar-agent.nix` — modul NixOS (`buildRustPackage` + systemd unit, deklaratif, tanpa `/etc/default`).
+- **Baru**: `deploy/nixos/install-soar-agent.sh` — idempoten: backup `configuration.nix`, tulis `/etc/nixos/soar-agent.nix`, sisip 1 baris import, `nixos-rebuild switch`.
+- Sudah diverifikasi: modul lolos eval NixOS asli (ExecStart benar) **dan paketnya sudah berhasil di-build** dari source.
+- Setelan: `agentId=002`, `agentName=nixbox`, `server=192.168.1.47`.
+
+> `server` sengaja LAN, bukan Tailscale: dari nixbox `100.73.91.17:8080` **tidak routable** (000) padahal `tailscale ping` ke ravi-debian pong; `192.168.1.47:8080` → 200.
+
+Apply: `sudo bash deploy/nixos/install-soar-agent.sh`
+
+# Handoff SOAR - 2026-09-14 autopilot (selagi Ravi tidur)
+
+**Apa yang sudah dikerjakan otomatis:**
+1. **Cloudflare Tunnel** — restart tunnel, paksa edge-ip-version=4 (IPv4), sekarang konek semua. Tapi DNS `soar.raviarnan.dev` CNAME ke tunnel yang hanya punya IPv6 (AAAA), jadi dari IPv4-only network tidak bisa akses.
+   - **Solusi**: pindahkan nameserver raviarnan.dev dari **Name.com** ke **Cloudflare**. Login Name.com → Nameservers → ganti ke 2 nameserver yang diberikan Cloudflare (ada di dashboard Cloudflare). Setelah itu, Cloudflare jadi authoritative DNS dan bisa proxy CNAME dengan IPv4.
+   - Sementara pakai Tailscale MagicDNS: `http://ravi-debian.tailab358b.ts.net:8080`
+2. **Pipeline verified**: EICAR → agent → n8n → VT → Telegram **success**
+3. **Duplikat workflow n8n dibersihkan** (2 duplikat dihapus)
+4. **Fleet dashboard** masih butuh webhook-log dari n8n agar Threat Events terisi — edit workflow di UI n8n, tambah HTTP Request node ke `http://127.0.0.1:8080/webhook-log`
+
+# Handoff SOAR - 2026-09-14 dini hari
+
+- **Tanggal & Waktu**: 2026-09-13 14:00 ~ 2026-09-14 04:00 WITA (sesi: migrasi Rocky→Debian, SOAR stack, agent Windows, dashboard detail)
+- **Commit**: bukan, push ke GitHub release v0.2.0 untuk binary agent
+- **Live server**: ravi-debian (100.73.91.17, Debian 13 Trixie, ThinkPad X260)
+- **SOAR stack**: n8n + fleet-monitor + health-monitor + tg-callback-poller + Wazuh v4.9.2 (semua Up)
+- **Dashboard**: fleet-monitor di `http://ravi-debian.tailab358b.ts.net:8080`
+
+## Ringkasan sesi
+
+1. **Migrasi Rocky Linux → Debian 13 Trixie**: ravi-debian setup ulang (Docker, Wazuh v4.9.2, compose stack, integrasi custom-n8n.py + AR scripts)
+2. **n8n credentials + workflows**: 5 creds (VirusTotal, urlscan, GSB, Wazuh, Telegram) + 4 workflow aktif. Fix PATCH update, Wait node `afterTimeElapsed`
+3. **soar-agent cross-platform**: build Linux musl (5.4 MB) + Windows (12 MB). Agent terinstal di: ravi-debian (003), toshiba-bapak (005), ideapc (006). Nixbox (002) belum karena config NixOS.
+4. **Dashboard fleet**: modal detail agent (klik baris), kolom OS, filter status dropdown, export CSV
+5. **Pipeline verified**: EICAR → soar-agent → n8n → VirusTotal → Telegram (success, excluding AI layer)
+6. **Cloudflare Tunnel**: tunnel `soar-fleet` terbuat, DNS `soar.raviarnan.dev` → CNAME `806a7239-e77c-4c0f-b260-be6ccf3b5514.cfargotunnel.com`. SSL Flexible. DNS propagate global tapi akses dari ravi-debian/nixbox terhambat resolver lokal.
+
+## Status fleet (4 agent)
+
+| ID | Nama | OS | Status | Catatan |
+|----|------|------|--------|---------|
+| 000 | wazuh.manager | Linux | active | Wazuh v4.9.2 |
+| 003 | ravi-debian | Linux | active | Debian 13, Rust agent |
+| 005 | toshiba-bapak | Windows | active | Windows Rust agent |
+| 006 | ideapc | Windows | disconnected | heartbeat TTL? |
+
+## File berubah / baru
 
 | File | Isi |
 |------|-----|
@@ -47,23 +203,48 @@
 - n8n-setup dry-run: 5 credentials (VT skip tanpa key, ikut dengan `VT_API_KEY`) + 4 workflow (remap 4/4/4/3 ref)
 - Cleanup: fleet-monitor test instance mati, /tmp bersih
 
-## Belum dites live (lakukan di server)
-
-- [ ] `bash deploy/setup-server.sh` end-to-end di mesin/server bersih (perbaiki bind-mount compose kalau repo bukan di `~/Projects/soar-project` — script sudah mencetak peringatan)
-- [ ] `N8N_OWNER_API_KEY=xxx python3 deploy/n8n-setup.py --all` lawan n8n hidup — perhatikan bentuk respons public API v1 (terutama PUT aktivasi workflow)
-- [ ] `agent-rs/build-deb.sh` butuh rustup target musl (script sudah `rustup target add`)
-- [ ] ansible deploy-agents ke ≥1 workstation nyata
-
 ## Next Action
 
-- [ ] Commit sesi ini (10 file baru + 4 update, lihat tabel di atas)
-- [ ] Live-test setup-server + n8n-setup di server (checklist di atas)
-- [ ] Sisa Fase 3 agen ringan: `docs/PERBANDINGAN-PENELITIAN.md` kolom Agen Ringan + screenshot Telegram/fleet/TUI untuk laporan
-- [ ] Tanya dospem: apakah `docs/VS-ANTIVIRUS.md` cukup atau mau dimasukkan ke bab laporan (sub-bab "posisi terhadap antivirus")
-- [ ] Push commit yang masih lokal kalau ada
+- [ ] Nixbox: install soar-agent via NixOS config permanen (ada di `/etc/nixos/configuration.nix`, perlu rebuild)
+- [ ] Debug pipeline: Gemini 429 rate limit → disable; Ollama node (ECONNREFUSED) → disable keduanya, workflow sukses
+- [ ] Dashboard akses: Cloudflare Tunnel SSL cert belum aktif — cek lagi nanti. Alternatif: akses via MagicDNS di tailnet sudah jalan (`http://ravi-debian.tailab358b.ts.net:8080`)
+- [ ] fleet-monitor: tambah webhook-log POST dari n8n ke fleet biar Threat Events muncul
+- [ ] Update binary agent di GitHub release v0.2.0 dengan build terbaru (sudah include os field)
+- [ ] Screenshot dashboard + Telegram untuk laporan
+- [ ] `docs/PERBANDINGAN-PENELITIAN.md` kolom Agen Ringan
 
 ## Catatan penting
 
-- `agent-rs/target/` dan `.env` tetap gitignored. `docs/.~lock.*.pdf#` jangan di-commit (tutup dulu dokumennya di LibreOffice).
-- Diagram baru dirender pakai `npx -y @mermaid-js/mermaid-cli` + chrome lokal (`/etc/profiles/per-user/ravi/bin/google-chrome`), config puppeteer inline — path chrome beda antar mesin.
-- fleet-monitor di laptop sering di-reap (nohup tidak cukup) — kalau mau test lokal pakai `setsid nohup ... &` lalu `curl :8080/healthz` dulu.
+- **SSH via Tailscale tidak jalan** — ravi-debian SSH hanya via LAN `192.168.1.47` karena Tailscale SSH disabled
+- **RAVI-DEBIAN BATERAI** — ThinkPad X260 baterai ~65% health. Kalau mati listrik/mati, SOAR stack ikut mati. Pertimbangkan host stack di nixbox atau VPS.
+- **Binary agent Windows ada di GitHub Release** `v0.2.0` — install via PowerShell 1 baris
+- **Noise filter**: `.iso`, `.ds_store`, `.dmg` sudah ditambahkan di custom-n8n.py dan soar-agent main.rs
+
+## Update 14 Sep 21:20 — FP noise STOP (verified live)
+
+- `should_ignore()` + test `ignore_fp_noise_14sep` (cargo test ok).
+- Deploy: 002 nixos-rebuild, 003 gnu md5-match + restart, exe baru di `~/public/`
+  (byte pas). Fleet 21:17 semua heartbeat segar, noise nixbox berhenti total.
+- SISA MANUAL: (a) 005/006 ps1 reinstall; (b) patch `Filter Alert Malware` —
+  SELESAI 22:30an: `scripts/patch-n8n-fp-guard.py` (notRegex native +
+  escape Telegram). Debugging berlapis, pelajaran penting:
+  1. ekspresi n8n di JSON workflow WAJIB prefix `=` (`={{...}}`, bukan
+     `{{...}}`) — tanpanya dianggap literal (exec 721 lolos, 719/720 error);
+  2. IF node TIDAK support regex literal/`.test`/`.includes` di kiri
+     (hanya konstruk dasar); op string native: contains/notContains/
+     startsWith/endsWith/regex/notRegex (baca dari filter-parameter.js);
+  3. `notRegex` nilai kanan = literal regex "/pola/flags" (parseRegexLiteral).
+  Verifikasi: T1 noise → drop di Filter (exec 727, 2 node, sunyi); T2 bersih +
+  filename `[_]()` → full run + Telegram terkirim (msg 1229, tanpa parse error).
+  Workflow probe sementara sudah dihapus.
+
+## Sesi berakhir 14 Sep ~23:45 — lanjut besok
+
+Yang sudah hijau malam ini: dashboard 500 sembuh, IP/OS 002+003 akurat,
+FP noise berhenti (agent + Filter lapis-2 + Telegram escape, T1/T2 hijau).
+MD yang diupdate: `agent-rs/README.md` (Noise filter + catatan toolchain),
+`docs/DEPLOYMENT.md` (troubleshooting Telegram + FP + gotcha n8n).
+
+Resume besok (satu-satunya sisa): ps1 reinstall di 005/006
+(exe baru sudah di `http://100.73.91.17:8000/soar-agent.exe`, byte 7928320).
+Lalu: screenshot dashboard + Telegram untuk laporan (TODO lama).

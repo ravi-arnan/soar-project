@@ -30,6 +30,16 @@ cargo build --release --target x86_64-unknown-linux-musl
 ls -lh target/x86_64-unknown-linux-musl/release/soar-agent
 ```
 
+Catatan toolchain (kejadian 14 Sep, jangan diulang):
+- Binary nixbox (glibc 2.42, interpreter `/nix/store/...`) TIDAK jalan di
+  Debian (glibc 2.41) → `status=203/EXEC`. Build 003 HARUS di ravi-debian
+  (rustup stable; cargo distro 1.85 terlalu tua untuk Cargo.lock).
+- Cross `.exe` Windows hanya bisa via rustup stable + target
+  `x86_64-pc-windows-gnu` + linker mingw (`...-w64-mingw32-gcc`) +
+  `RUSTFLAGS="-L <nixpkgs pkgsCross.mingwW64.windows.pthreads>/lib"`
+  (mingw-w64 ≥ 12 tidak bundle `libpthread.a`, rust butuh `-l:libpthread.a`).
+- Lihat `deploy/rebuild-agent-binaries.sh` (urutan build + deploy lengkap).
+
 ## Jalankan
 
 ```bash
@@ -44,6 +54,10 @@ RUST_LOG=info ./target/release/soar-agent --webhook http://100.73.91.17:5678/web
 ## USB dynamic scanner
 
 Saran dospem (deteksi malware dipindah dari flashdisk): scan `/run/media/<user>` tiap 2 detik. Flashdisk colok kapan pun auto-watch **recursive** (subfolder ikut), dicabut auto-unwatch. File yang dibuat saat mount belum ter-watch (race 2 detik pertama) bisa terlewat — upgrade path: udev mount event.
+
+## Noise filter (`should_ignore`)
+
+File yang di-skip (tidak di-hash, tidak di-POST, hemat kuota VT + anti spam Telegram): prefix `/tmp/`, `/var/cache|log|tmp`, `/tmp/.vscode-`, `/tmp/org.chromium|com.brave|mozilla-`, dsb; pola bebas di mana saja `/dosdevices/` (mirror Wine!), `/.git/`, `/node_modules/`, `/__pycache__/`, `/cache/`; ekstensi `.iso .dmg .db-wal .db-shm .db-journal .tmp .log .swp .ds_store .thumbs.db` + akhiran `~`. Mirror ke lapis-2: kondisi `cond-not-noise` (op `notRegex`) di node Filter workflow Deteksi Malware. Test: `cargo test ignore_fp_noise_14sep`.
 
 ## Heartbeat Fleet Monitor
 
