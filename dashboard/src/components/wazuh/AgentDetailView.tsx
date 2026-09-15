@@ -48,7 +48,7 @@ export function AgentDetailView({
     'Integrity monitoring',
     'SCA',
     'System Auditing',
-    'Vulnerabilities',
+    'Threat Intel',
     'MITRE ATT&CK',
   ];
   const currentTab = activeTab ?? tabs[0];
