@@ -198,3 +198,28 @@ Seluruh benchmark dijalankan via `scripts/benchmark-soar.py` terhadap sistem liv
 - `docs/bench-mttr-phishing.json` — detail 10 run MTTR phishing
 - `docs/bench-load.json` — detail 20 run load test
 - `docs/bench-fn-rate.json` — detail 15 run FN rate
+
+## 10. MTTR End-to-End via Fleet-Log (2026-09-15, N=30)
+
+Menutup gap yang dicatat di 9.1: waktu webhook (0,03 dtk) bukan waktu pipeline
+karena webhook live ber-`responseMode: onReceived`. Metode baru
+(`scripts/benchmark-soar.py --mode mttr-fleet`): injeksi alert EICAR → polling
+`/api/events` tiap 1 detik hingga verdict tercatat node Log ke Fleet
+(tepat setelah Rangkum Hasil). Diukur: webhook → filter → ekstrak → lookup VT →
+rangkum → fleet-log. Jeda 16 dtk antar-run (hormati rate-limit VT free).
+
+| Statistik | Nilai |
+|-----------|-------|
+| **Rata-rata** | **3,00 detik** |
+| Median | 3,07 detik |
+| Min – Maks | 2,04 – 4,09 detik |
+| Std. deviasi | ± 0,53 detik |
+| P95 | 4,09 detik |
+| Timeout (>120 dtk) | 0/30 |
+
+**Interpretasi:** dari alert masuk hingga verdict tercatat **≈3 detik** (N=30,
+tanpa timeout). Rantai yang diukur sudah termasuk lookup VirusTotal live dan
+percabangan OTX fallback. Bandingkan: webhook saja 0,03 dtk (9.1) vs pipeline
+verdict 3,0 dtk — selisihnya adalah biaya intel lookup yang sebenarnya.
+
+- `docs/bench-mttr-fleet-20260915-N30.json` — detail 30 run
