@@ -11,6 +11,8 @@ Metodologi selaras dengan docs/EVALUASI-METRIK.md.
 
 Usage:
     python3 benchmark-soar.py --mode mttr-malware  --n 30 --delay 2
+    python3 benchmark-soar.py --mode mttr-fleet    --n 30 --delay 16
+    (mttr-fleet: ukur injeksi -> event fleet-log; jujur untuk webhook onReceived)
     python3 benchmark-soar.py --mode mttr-phishing --n 10 --delay 5
     python3 benchmark-soar.py --mode load          --n 20 --concurrency 5
     python3 benchmark-soar.py --mode vt-cold       --n 10
@@ -35,8 +37,13 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 # ─── Konfigurasi ────────────────────────────────────────────────────────
-N8N_WEBHOOK_MALWARE = os.getenv("N8N_WEBHOOK_MALWARE", "http://localhost:5678/webhook/wazuh-alert")
-N8N_WEBHOOK_PHISHING = os.getenv("N8N_WEBHOOK_PHISHING", "http://localhost:5678/webhook/wazuh-phishing")
+N8N_WEBHOOK_MALWARE = os.getenv(
+    "N8N_WEBHOOK_MALWARE", "http://localhost:5678/webhook/wazuh-alert"
+)
+N8N_WEBHOOK_PHISHING = os.getenv(
+    "N8N_WEBHOOK_PHISHING", "http://localhost:5678/webhook/wazuh-phishing"
+)
+FLEET_EVENTS_URL = os.getenv("FLEET_EVENTS_URL", "http://localhost:8080/api/events")
 WAZUH_API = os.getenv("WAZUH_API", "https://172.17.0.1:55000")
 AGENT_ID = os.getenv("AGENT_ID", "001")
 AGENT_NAME = os.getenv("AGENT_NAME", "ravi-zorin")
@@ -57,6 +64,7 @@ PHISHING_URLS_MALICIOUS = [
 
 # ─── Helpers ────────────────────────────────────────────────────────────
 
+
 def ts_now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -64,7 +72,9 @@ def ts_now():
 def http_post(url, payload, timeout=TIMEOUT):
     """POST JSON, return (response_json, elapsed_ms)."""
     data = json.dumps(payload).encode()
-    req = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    req = Request(
+        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
+    )
     t0 = time.monotonic()
     try:
         with urlopen(req, timeout=timeout) as resp:
@@ -79,6 +89,15 @@ def http_post(url, payload, timeout=TIMEOUT):
         return {"error": str(e)}, elapsed
 
 
+def http_get(url, timeout=10):
+    """GET JSON, return dict ({} jika gagal)."""
+    try:
+        with urlopen(url, timeout=timeout) as resp:
+            return json.loads(resp.read().decode())
+    except (URLError, OSError, ValueError):
+        return {}
+
+
 def random_hash():
     """Generate random SHA256 (tidak dikenal VT → zero-day path)."""
     return hashlib.sha256(os.urandom(32)).hexdigest()
@@ -87,7 +106,11 @@ def random_hash():
 def fake_fim_alert(filename, filepath, sha256, rule_level=10, agent_id=AGENT_ID):
     """Bangun payload FIM alert yang meniru Wazuh."""
     return {
-        "rule": {"id": "553", "level": rule_level, "description": "File added to the system."},
+        "rule": {
+            "id": "553",
+            "level": rule_level,
+            "description": "File added to the system.",
+        },
         "syscheck": {
             "path": filepath,
             "sha256_after": sha256,
@@ -131,19 +154,22 @@ def stats_summary(samples, label=""):
 
 def print_table(stats, unit="ms"):
     """Cetak tabel ringkasan ke stderr."""
-    print(f"\n{'='*60}", file=sys.stderr)
+    print(f"\n{'=' * 60}", file=sys.stderr)
     print(f"  {stats.get('label', 'Results')}  (N={stats['n']})", file=sys.stderr)
-    print(f"{'='*60}", file=sys.stderr)
+    print(f"{'=' * 60}", file=sys.stderr)
     print(f"  Rata-rata : {stats['mean']:.2f} {unit}", file=sys.stderr)
     print(f"  Median    : {stats['median']:.2f} {unit}", file=sys.stderr)
-    print(f"  Min – Max : {stats['min']:.2f} – {stats['max']:.2f} {unit}", file=sys.stderr)
+    print(
+        f"  Min – Max : {stats['min']:.2f} – {stats['max']:.2f} {unit}", file=sys.stderr
+    )
     print(f"  Std dev   : ±{stats['stdev']:.2f} {unit}", file=sys.stderr)
     print(f"  P95       : {stats['p95']:.2f} {unit}", file=sys.stderr)
     print(f"  P99       : {stats['p99']:.2f} {unit}", file=sys.stderr)
-    print(f"{'='*60}\n", file=sys.stderr)
+    print(f"{'=' * 60}\n", file=sys.stderr)
 
 
 # ─── Mode: MTTR Malware ────────────────────────────────────────────────
+
 
 def bench_mttr_malware(n, delay):
     """Ukur waktu dari alert injection hingga n8n selesai proses.
@@ -165,16 +191,18 @@ def bench_mttr_malware(n, delay):
         elapsed_sec = elapsed_ms / 1000
         samples_sec.append(elapsed_sec)
 
-        results.append({
-            "run": i + 1,
-            "hash": h,
-            "filename": fname,
-            "elapsed_ms": round(elapsed_ms, 2),
-            "elapsed_sec": round(elapsed_sec, 4),
-            "response": resp,
-            "timestamp": ts_now(),
-        })
-        print(f"  [{i+1:3d}/{n}] {elapsed_sec:.2f}s  hash={h[:12]}…", file=sys.stderr)
+        results.append(
+            {
+                "run": i + 1,
+                "hash": h,
+                "filename": fname,
+                "elapsed_ms": round(elapsed_ms, 2),
+                "elapsed_sec": round(elapsed_sec, 4),
+                "response": resp,
+                "timestamp": ts_now(),
+            }
+        )
+        print(f"  [{i + 1:3d}/{n}] {elapsed_sec:.2f}s  hash={h[:12]}…", file=sys.stderr)
 
         if i < n - 1:
             time.sleep(delay)
@@ -185,7 +213,69 @@ def bench_mttr_malware(n, delay):
     return {"mode": "mttr_malware", "stats": st, "runs": results}
 
 
+# ─── Mode: MTTR Malware via Fleet Log ────────────────────────────────
+
+
+def bench_mttr_fleet(n, delay, timeout=120):
+    """Ukur MTTR end-to-end yang jujur: injeksi alert -> event verdict muncul
+    di fleet-monitor /api/events (node Log ke Fleet, tepat setelah Rangkum
+    Hasil). Dipakai karena webhook live ber-responseMode onReceived sehingga
+    waktu HTTP response BUKAN waktu pipeline.
+    """
+    print(f"[mttr-fleet] N={n}, delay={delay}s antar-run", file=sys.stderr)
+    samples_sec = []
+    results = []
+    tag = "mf" + "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
+
+    for i in range(n):
+        fname = f"bench-{tag}-{i:03d}.com"
+        fpath = f"/home/{AGENT_NAME}/Downloads/{fname}"
+        payload = fake_fim_alert(fname, fpath, EICAR_HASH, rule_level=12)
+
+        t0 = time.monotonic()
+        http_post(N8N_WEBHOOK_MALWARE, payload)
+        elapsed = None
+        deadline = t0 + timeout
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            data = http_get(FLEET_EVENTS_URL)
+            evs = data.get("events", data) if isinstance(data, dict) else data
+            if isinstance(evs, list) and any(
+                isinstance(e, dict) and e.get("path") == fpath for e in evs
+            ):
+                elapsed = time.monotonic() - t0
+                break
+        if elapsed is None:
+            elapsed = timeout
+            status = "timeout"
+        else:
+            status = "logged"
+            samples_sec.append(elapsed)
+
+        results.append(
+            {
+                "run": i + 1,
+                "filename": fname,
+                "path": fpath,
+                "elapsed_sec": round(elapsed, 2),
+                "status": status,
+                "timestamp": ts_now(),
+            }
+        )
+        print(f"  [{i + 1:3d}/{n}] {elapsed:.2f}s  {status}  {fname}", file=sys.stderr)
+
+        if i < n - 1:
+            time.sleep(delay)
+
+    st = stats_summary(samples_sec, "MTTR Malware (injeksi -> fleet-log)")
+    st["unit"] = "detik"
+    st["timeouts"] = n - len(samples_sec)
+    print_table(st, "detik")
+    return {"mode": "mttr_fleet", "stats": st, "runs": results}
+
+
 # ─── Mode: MTTR Phishing ───────────────────────────────────────────────
+
 
 def bench_mttr_phishing(n, delay):
     """Ukur MTTR phishing: URL → n8n selesai proses (GSB + URLScan)."""
@@ -202,15 +292,17 @@ def bench_mttr_phishing(n, delay):
         elapsed_sec = elapsed_ms / 1000
         samples_sec.append(elapsed_sec)
 
-        results.append({
-            "run": i + 1,
-            "url": url,
-            "elapsed_ms": round(elapsed_ms, 2),
-            "elapsed_sec": round(elapsed_sec, 4),
-            "response": resp,
-            "timestamp": ts_now(),
-        })
-        print(f"  [{i+1:3d}/{n}] {elapsed_sec:.2f}s  url={url[:50]}", file=sys.stderr)
+        results.append(
+            {
+                "run": i + 1,
+                "url": url,
+                "elapsed_ms": round(elapsed_ms, 2),
+                "elapsed_sec": round(elapsed_sec, 4),
+                "response": resp,
+                "timestamp": ts_now(),
+            }
+        )
+        print(f"  [{i + 1:3d}/{n}] {elapsed_sec:.2f}s  url={url[:50]}", file=sys.stderr)
 
         if i < n - 1:
             time.sleep(delay)
@@ -222,6 +314,7 @@ def bench_mttr_phishing(n, delay):
 
 
 # ─── Mode: Load Test ───────────────────────────────────────────────────
+
 
 def bench_load(n, concurrency):
     """Kirim N alert secara bersamaan (concurrency threads).
@@ -250,21 +343,29 @@ def bench_load(n, concurrency):
         for fut in as_completed(futures):
             r = fut.result()
             results.append(r)
-            print(f"  [{r['run']:3d}/{n}] {r['elapsed_ms']:.0f}ms  hash={r['hash'][:12]}…", file=sys.stderr)
+            print(
+                f"  [{r['run']:3d}/{n}] {r['elapsed_ms']:.0f}ms  hash={r['hash'][:12]}…",
+                file=sys.stderr,
+            )
 
     wall_total = (time.monotonic() - wall_start) * 1000
     latencies = [r["elapsed_ms"] for r in results]
     st = stats_summary(latencies, f"Load Test (concurrency={concurrency})")
     st["unit"] = "ms"
     st["wall_total_ms"] = round(wall_total, 2)
-    st["throughput_per_sec"] = round(n / (wall_total / 1000), 2) if wall_total > 0 else 0
+    st["throughput_per_sec"] = (
+        round(n / (wall_total / 1000), 2) if wall_total > 0 else 0
+    )
     print_table(st, "ms")
-    print(f"  Wall time total: {wall_total/1000:.1f}s", file=sys.stderr)
-    print(f"  Throughput: {st['throughput_per_sec']:.2f} alert/detik\n", file=sys.stderr)
+    print(f"  Wall time total: {wall_total / 1000:.1f}s", file=sys.stderr)
+    print(
+        f"  Throughput: {st['throughput_per_sec']:.2f} alert/detik\n", file=sys.stderr
+    )
     return {"mode": "load", "stats": st, "runs": results}
 
 
 # ─── Mode: VT Cold vs Cache ───────────────────────────────────────────
+
 
 def bench_vt_cold(n):
     """Bandingkan VT response time untuk hash yang belum dikenal (cold)
@@ -282,7 +383,10 @@ def bench_vt_cold(n):
         t0 = time.monotonic()
         resp, elapsed_ms = http_post(N8N_WEBHOOK_MALWARE, payload)
         cold_samples.append(elapsed_ms / 1000)
-        print(f"  cold [{i+1:3d}/{n}] {elapsed_ms/1000:.2f}s  hash={h[:12]}…", file=sys.stderr)
+        print(
+            f"  cold [{i + 1:3d}/{n}] {elapsed_ms / 1000:.2f}s  hash={h[:12]}…",
+            file=sys.stderr,
+        )
         time.sleep(16)  # hormati rate-limit VT free (≤4/mnt)
 
     # Sekarang kirim hash yang sama lagi → harus cache hit
@@ -297,7 +401,10 @@ def bench_vt_cold(n):
         t0 = time.monotonic()
         resp, elapsed_ms = http_post(N8N_WEBHOOK_MALWARE, payload)
         hot_samples.append(elapsed_ms / 1000)
-        print(f"  hot  [{i+1:3d}/{n}] {elapsed_ms/1000:.2f}s  hash={h[:12]}…", file=sys.stderr)
+        print(
+            f"  hot  [{i + 1:3d}/{n}] {elapsed_ms / 1000:.2f}s  hash={h[:12]}…",
+            file=sys.stderr,
+        )
         time.sleep(2)
 
     cold_st = stats_summary(cold_samples, "VT Cold (hash baru)")
@@ -323,6 +430,7 @@ def bench_vt_cold(n):
 
 
 # ─── Mode: False-Negative Rate ────────────────────────────────────────
+
 
 def bench_fn_rate(n):
     """Ukur false-negative rate: kirim file yang SEHARUSNYA terdeteksi
@@ -352,7 +460,11 @@ def bench_fn_rate(n):
         if isinstance(resp, dict):
             has_review = resp.get("review_unknown", False)
         elif isinstance(resp, list) and resp:
-            has_review = resp[0].get("review_unknown", False) if isinstance(resp[0], dict) else False
+            has_review = (
+                resp[0].get("review_unknown", False)
+                if isinstance(resp[0], dict)
+                else False
+            )
 
         status = "silent" if is_silent else ("review" if has_review else "threat")
         if status == "silent":
@@ -362,15 +474,19 @@ def bench_fn_rate(n):
         else:
             threat_count += 1
 
-        results.append({
-            "run": i + 1,
-            "hash": h,
-            "filename": fname,
-            "ext": ext,
-            "status": status,
-            "elapsed_ms": round(elapsed_ms, 2),
-        })
-        print(f"  [{i+1:3d}/{n}] {status:8s}  {fname}  hash={h[:12]}…", file=sys.stderr)
+        results.append(
+            {
+                "run": i + 1,
+                "hash": h,
+                "filename": fname,
+                "ext": ext,
+                "status": status,
+                "elapsed_ms": round(elapsed_ms, 2),
+            }
+        )
+        print(
+            f"  [{i + 1:3d}/{n}] {status:8s}  {fname}  hash={h[:12]}…", file=sys.stderr
+        )
         time.sleep(2)
 
     total = len(results)
@@ -383,25 +499,30 @@ def bench_fn_rate(n):
         "review_count": review_count,
         "threat_count": threat_count,
         "false_negative_rate_pct": fn_rate,
-        "true_positive_rate_pct": round((review_count + threat_count) / total * 100, 2) if total > 0 else 0,
+        "true_positive_rate_pct": round((review_count + threat_count) / total * 100, 2)
+        if total > 0
+        else 0,
     }
     print(f"\n  Total: {total}", file=sys.stderr)
     print(f"  Silent (FN): {silent_count} ({fn_rate}%)", file=sys.stderr)
     print(f"  Review (HITL): {review_count}", file=sys.stderr)
     print(f"  Threat (auto): {threat_count}", file=sys.stderr)
-    print(f"  True-positive rate: {summary['true_positive_rate_pct']}%\n", file=sys.stderr)
+    print(
+        f"  True-positive rate: {summary['true_positive_rate_pct']}%\n", file=sys.stderr
+    )
     return summary
 
 
 # ─── Mode: All ─────────────────────────────────────────────────────────
 
+
 def bench_all(n, delay=2, concurrency=5):
     """Jalankan semua mode secara berurutan."""
     results = {}
-    print("\n" + "="*60, file=sys.stderr)
+    print("\n" + "=" * 60, file=sys.stderr)
     print("  FULL BENCHMARK — SOAR Open-Source", file=sys.stderr)
     print(f"  {ts_now()}", file=sys.stderr)
-    print("="*60 + "\n", file=sys.stderr)
+    print("=" * 60 + "\n", file=sys.stderr)
 
     results["mttr_malware"] = bench_mttr_malware(n, delay)
     results["mttr_phishing"] = bench_mttr_phishing(min(n, 10), delay)
@@ -414,15 +535,31 @@ def bench_all(n, delay=2, concurrency=5):
 
 # ─── Main ───────────────────────────────────────────────────────────────
 
+
 def main():
     parser = argparse.ArgumentParser(description="Benchmark & load-test SOAR")
-    parser.add_argument("--mode", choices=["mttr-malware", "mttr-phishing", "load",
-                                           "vt-cold", "fn-rate", "all"],
-                        default="all", help="Mode benchmark")
+    parser.add_argument(
+        "--mode",
+        choices=[
+            "mttr-malware",
+            "mttr-fleet",
+            "mttr-phishing",
+            "load",
+            "vt-cold",
+            "fn-rate",
+            "all",
+        ],
+        default="all",
+        help="Mode benchmark",
+    )
     parser.add_argument("--n", type=int, default=30, help="Jumlah sampel (N)")
     parser.add_argument("--delay", type=float, default=2, help="Jeda antar-run (detik)")
-    parser.add_argument("--concurrency", type=int, default=5, help="Thread parallel (load test)")
-    parser.add_argument("--output", type=str, default=None, help="Output file JSON (default: stdout)")
+    parser.add_argument(
+        "--concurrency", type=int, default=5, help="Thread parallel (load test)"
+    )
+    parser.add_argument(
+        "--output", type=str, default=None, help="Output file JSON (default: stdout)"
+    )
     args = parser.parse_args()
 
     print(f"Benchmark SOAR — mode={args.mode}, N={args.n}", file=sys.stderr)
@@ -432,6 +569,8 @@ def main():
 
     if args.mode == "mttr-malware":
         result = bench_mttr_malware(args.n, args.delay)
+    elif args.mode == "mttr-fleet":
+        result = bench_mttr_fleet(args.n, args.delay)
     elif args.mode == "mttr-phishing":
         result = bench_mttr_phishing(args.n, args.delay)
     elif args.mode == "load":
