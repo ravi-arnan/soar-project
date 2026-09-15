@@ -7,17 +7,24 @@ import {
   ShieldCheck,
   Box,
   Grid,
+  Server,
+  HeartPulse,
 } from 'lucide-react';
 
-import type { FleetStats } from '@/lib/fleet';
+import type { FleetAgent, FleetHealth, FleetStats } from '@/lib/fleet';
 
 interface ModulesHubProps {
   onNavigate: (moduleKey: string) => void;
   /** Ringkasan fleet dari /api/fleet (live). */
   stats: FleetStats;
+  agents: FleetAgent[];
+  health?: FleetHealth;
 }
 
-export function ModulesHub({ onNavigate, stats }: ModulesHubProps) {
+export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProps) {
+  const linux = agents.filter((a) => (a.os || '').toLowerCase().includes('linux')).length;
+  const windows = agents.filter((a) => (a.os || '').toLowerCase().includes('windows')).length;
+  const stackOk = [health?.n8n, health?.gemini, health?.wazuh_api].filter(Boolean).length;
   const sections = [
     {
       title: 'SECURITY INFORMATION MANAGEMENT',
@@ -67,6 +74,23 @@ export function ModulesHub({ onNavigate, stats }: ModulesHubProps) {
             'Security events from the knowledge base of adversary tactics and techniques based on real-world observations',
           icon: Grid,
           soon: true,
+        },
+      ],
+    },
+    {
+      title: 'FLEET OVERVIEW',
+      modules: [
+        {
+          id: 'agents',
+          title: 'Fleet inventory',
+          description: `${stats.active}/${stats.total} aktif — Linux ${linux}, Windows ${windows}, ${stats.rust} Rust + ${stats.wazuh} Wazuh.`,
+          icon: Server,
+        },
+        {
+          id: 'settings',
+          title: 'Stack health',
+          description: `${stackOk}/3 layanan hidup (n8n, AI, Wazuh API). Lihat status dan endpoint backend.`,
+          icon: HeartPulse,
         },
       ],
     },
