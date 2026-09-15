@@ -73,6 +73,14 @@ Ketiga angka mendukung klaim keunggulan pada tabel perbandingan (respons berjenj
 - **MTTR diukur dengan VT cache hangat** dan jalur GSB cepat; panggilan dingin / rate-limit / jalur URLScan (±35 dtk) akan lebih lambat (perlu diukur terpisah).
 - **FP diukur untuk berkas jinak (true-negative)**; **false-negative** (malware/URL tak-dikenal/zero-day) belum diuji — keterbatasan reputasi (roadmap kategori B).
 - Rate-limit VT free (≤4/mnt) membatasi **throughput** — perlu uji beban banyak-alert-serentak.
+- **Sensor file-drop, bukan proteksi browsing.** Agent memantau file yang jatuh di
+  Downloads/Desktop (termasuk `.url`/`.html` untuk jalur phishing), tetapi **klik
+  link di browser/email tidak dimonitor**. Proteksi real-time butuh browser
+  extension, DNS filter, atau proxy — di luar scope, dicatat sebagai kerja lanjutan.
+- **Ekstraksi URL terbatas `.url`/`.html`.** Link di dalam PDF (mis. modus undangan
+  pernikahan via WhatsApp) **tidak diekstrak** — butuh PDF parser (`/URI`).
+  Varian APK undangan tetap tertutup jalur malware (hash → VT) selama di folder awasi.
+- **Folder awasi terbatas** Downloads/Desktop (+USB). File di luar itu tak terpantau.
 
 ## 8. Pengukuran lanjutan (untuk bab evaluasi penuh)
 
