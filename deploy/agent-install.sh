@@ -40,6 +40,13 @@ if [ ! -f "$BIN_SRC" ]; then
     [ -f "$c" ] && BIN_SRC="$c" && break
   done
 fi
+# Kalau belum ada di lokal, download dari GitHub Release
+if [ ! -f "$BIN_SRC" ] && command -v curl >/dev/null 2>&1; then
+  echo "      tidak ada di lokal, download dari GitHub release..."
+  curl -fSL -o /tmp/soar-agent \
+    https://github.com/ravi-arnan/soar-project/releases/download/v0.2.0/soar-agent \
+    && BIN_SRC=/tmp/soar-agent
+fi
 if [ ! -f "$BIN_SRC" ]; then
   echo "[x] binary tidak ditemukan ($BIN_SRC). Dapatkan dulu: build $REPO_HINT, atau scp, atau pakai .deb."
   exit 1

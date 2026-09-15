@@ -128,6 +128,18 @@ def fetch_wazuh_agents(cfg):
     for url in urls:
         try:
             agents = _fetch_wazuh_once(url, cfg)
+            # ponytail: Wazuh single-node punya agent 001 (Wazuh manager
+            # self) yang memang ada di API. Kalau API balik 0 item, berarti
+            # agent Wazuh belum enroll / API belum siap, jangan cache 0
+            # (biar tidak bikin dashboard nampilin "0 wazuh agent" sementara
+            # manager-nya sendiri masih hidup). Biarin cache lama, fallback
+            # heartbeat Rust yang nampilin. Upgrade path: poll berkala.
+            if not agents:
+                print(
+                    f"wazuh API {url} balik 0 agent, keep cache {len(WAZUH_CACHE['data'])}",
+                    flush=True,
+                )
+                continue
             WAZUH_CACHE["data"] = agents
             WAZUH_CACHE["fetched_at"] = now
             return agents
@@ -155,6 +167,7 @@ def build_fleet(cfg):
                 "ip": a.get("ip", "-"),
                 "version": a.get("version", "-"),
                 "lastKeepAlive": a.get("lastKeepAlive", "-"),
+                "os": a.get("os", "unknown"),
                 "binary": "50 MB",
                 "ram": "~50 MB",
             }
@@ -170,6 +183,7 @@ def build_fleet(cfg):
             "id": hid,
             "name": hb.get("name", f"rust-agent-{hid}"),
             "type": "rust",
+            "os": hb.get("os", "unknown"),
             "status": status,
             "ip": hb.get("ip", "-"),
             "version": hb.get("version", "0.1.0"),
@@ -336,6 +350,15 @@ function ic(name,w){w=w||16;return `<svg viewBox="0 0 24 24" width="${w}" height
 
   .mono{font-family:ui-monospace,"Cascadia Code",Menlo,monospace;font-size:11.5px}
   .muted{color:#69707d}
+  .modal{display:none;position:fixed;inset:0;z-index:100;background:rgba(1,26,47,.5);align-items:center;justify-content:center}
+  .modal.on{display:flex}
+  .modal-bd{background:#fff;border-radius:6px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+  .modal-bd h2{margin:0 0 16px;font-size:16px;color:#011a2f}
+  .modal-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf0f4;font-size:13px}
+  .modal-row .l{color:#69707d}
+  .modal-row .r{color:#26292e;font-weight:500}
+  .modal-close{float:right;background:none;border:0;cursor:pointer;color:#69707d;font-size:20px;padding:0;line-height:1}
+  .modal-close:hover{color:#011a2f}
 
   /* News feed ala Wazuh dashboard */
   .feed{display:flex;flex-direction:column;gap:0}
@@ -417,17 +440,24 @@ function ic(name,w){w=w||16;return `<svg viewBox="0 0 24 24" width="${w}" height
   <!-- ================= AGENTS ================= -->
   <section class="view" id="v-agents">
     <h1 class="pv">Agents</h1>
-    <div class="pvsub">Polling Wazuh API 30s + heartbeat Rust 60s. Badge biru = agen ringan Rust, abu = Wazuh.</div>
+    <div class="pvsub">Polling Wazuh API 30s + heartbeat Rust 60s. Klik baris untuk detail agent.</div>
     <div class="toolbar">
-      <input id="q" placeholder="Cari nama / IP / ID..." oninput="renderAgents()" style="padding:7px 10px;border:1px solid #d3dae6;border-radius:4px;font-size:12.5px;width:220px">
+      <input id="q" placeholder="Cari nama / IP / ID..." oninput="renderAgents()" style="padding:7px 10px;border:1px solid #d3dae6;border-radius:4px;font-size:12.5px;width:180px">
+      <select id="sf" onchange="renderAgents()" style="padding:7px 10px;border:1px solid #d3dae6;border-radius:4px;font-size:12.5px">
+        <option value="">Semua status</option>
+        <option>active</option>
+        <option>disconnected</option>
+      </select>
       <button class="btn sec" onclick="load()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh</button>
       <button class="btn" onclick="simulate()"><i data-lucide="users" style="width:12px;height:12px"></i> Simulasi 100 PC</button>
-      <span class="sub muted" style="font-size:11.5px">POST /api/heartbeat untuk real agent</span>
+      <span class="sp"></span>
+      <a href="#" onclick="exportCSV();return false" style="font-size:12px;color:#00618a"><i data-lucide="download" style="width:12px;height:12px;vertical-align:-2px"></i> CSV</a>
+      <span class="sub muted" id="acount" style="font-size:11.5px"></span>
     </div>
     <div class="panel">
       <div class="tbl-scroll">
       <table>
-        <thead><tr><th>ID</th><th>Nama</th><th>Tipe</th><th>Status</th><th>IP</th><th>Versi</th><th>Last keep alive</th><th>Binary</th><th>RAM</th></tr></thead>
+        <thead><tr><th>ID</th><th>Nama</th><th>Tipe</th><th>OS</th><th>Status</th><th>IP</th><th>Versi</th><th>Last keep alive</th><th>Binary</th><th>RAM</th></tr></thead>
         <tbody id="tbody"></tbody>
       </table>
       </div>
@@ -465,6 +495,12 @@ function ic(name,w){w=w||16;return `<svg viewBox="0 0 24 24" width="${w}" height
     </div>
   </section>
 </div>
+
+<div class="modal" id="modal"><div class="modal-bd">
+  <button class="modal-close" onclick="closeModal()">&times;</button>
+  <h2 id="modal-title">Agent Details</h2>
+  <div id="modal-body"></div>
+</div></div>
 
 <script>
 let DATA=null, timer=5;
@@ -531,18 +567,41 @@ function renderOverview(){
     :'<div class="fi muted">Belum ada event. Drop file di ~/Downloads agen, atau lihat simulasi tombol Agents.</div>';
 }
 
+function showDetail(a){
+  document.getElementById('modal-title').textContent=a.name;
+  const rows=[['ID',a.id],['Nama',a.name],['Tipe',a.type],['Status',a.status],['IP',a.ip],['Versi',a.version],
+    ['Binary',a.binary],['RAM',a.ram],['Last Keep Alive',(a.lastKeepAlive||'-').slice(0,19)],
+    ['Age (detik)',a.age_sec!=null?a.age_sec+'s':'-']];
+  document.getElementById('modal-body').innerHTML=rows.map(r=>`<div class="modal-row"><span class="l">${r[0]}</span><span class="r mono">${esc(r[1])}</span></div>`).join('');
+  document.getElementById('modal').classList.add('on');
+}
+function closeModal(){document.getElementById('modal').classList.remove('on')}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+
 function renderAgents(){
   const q=(document.getElementById('q').value||'').toLowerCase();
+  const sf=document.getElementById('sf').value;
+  let rows=DATA.agents.filter(a=>!q||[a.id,a.name,a.ip,a.os].join(' ').toLowerCase().includes(q));
+  if(sf)rows=rows.filter(a=>a.status===sf);
+  document.getElementById('acount').textContent=`${rows.length}/${DATA.agents.length} agent`;
   const tb=document.getElementById('tbody');
-  const rows=DATA.agents.filter(a=>!q||[a.id,a.name,a.ip].join(' ').toLowerCase().includes(q));
-  tb.innerHTML=rows.length?rows.map(a=>`<tr>
+  tb.innerHTML=rows.length?rows.map(a=>`<tr onclick="showDetail(${JSON.stringify(a).replace(/"/g,'&quot;')})" style="cursor:pointer">
     <td class="mono">${esc(a.id)}</td><td>${esc(a.name)}</td>
     <td><span class="chip ${a.type==='rust'?'c-rust':'c-wz'}">${esc(a.type)}</span></td>
+    <td class="mono">${esc(a.os||'-')}</td>
     <td><span class="chip ${a.status==='active'?'c-ok':'c-no'}">${esc(a.status)}</span></td>
     <td class="mono">${esc(a.ip)}</td><td class="mono">${esc(a.version)}</td>
     <td class="mono muted">${esc((a.lastKeepAlive||'-').slice(0,19))}</td>
     <td class="mono">${esc(a.binary)}</td><td class="mono">${esc(a.ram)}</td></tr>`).join('')
-  :'<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">tidak ada agent cocok</td></tr>';
+  :'<tr><td colspan="10" class="muted" style="text-align:center;padding:24px">tidak ada agent cocok</td></tr>';
+}
+
+function exportCSV(){
+  const h=['ID','Nama','Tipe','OS','Status','IP','Versi','LastKeepAlive','Binary','RAM'];
+  const rows=DATA.agents.map(a=>[a.id,a.name,a.type,a.os,a.status,a.ip,a.version,(a.lastKeepAlive||'').slice(0,19),a.binary,a.ram]);
+  const csv=[h.join(','),...rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','))].join('\n');
+  const b=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='soar-fleet.csv';a.click();
 }
 
 function renderEvents(){
@@ -657,11 +716,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not hid:
                     raise ValueError("need id")
                 # IP dari X-Forwarded atau remote
-                ip = j.get("ip") or self.client_address[0]
+                # ponytail: binary lama kirim "127.0.0.1" hardcoded, anggap
+                # kosong -> pakai IP TCP asli pengirim (kolom IP dashboard
+                # akurat tanpa harus rebuild semua agent dulu).
+                _sent_ip = (j.get("ip") or "").strip()
+                if _sent_ip in ("", "127.0.0.1", "0.0.0.0", "localhost", "::1"):
+                    _sent_ip = ""
+                ip = _sent_ip or self.client_address[0]
                 HEARTBEATS[hid] = {
                     "name": j.get("name", f"rust-agent-{hid}"),
                     "ip": ip,
                     "version": j.get("version", "0.1.0"),
+                    "os": j.get("os", "unknown"),
                     "last_hash": j.get("last_hash", ""),
                     "last_seen": time.time(),
                 }

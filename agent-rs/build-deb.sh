@@ -27,7 +27,9 @@ VERSION="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
 ARCH="amd64"
 DIST="dist"
 DEBROOT="$DIST/soar-agent_${VERSION}_${ARCH}"
-BIN="target/x86_64-unknown-linux-musl/release/soar-agent"
+# ponytail: default musl statis; override BIN=... untuk toolchain tanpa std
+# musl (mis. cargo distro): BIN=target/release/soar-agent ./build-deb.sh
+BIN="${BIN:-target/x86_64-unknown-linux-musl/release/soar-agent}"
 
 echo "[1/4] build musl statis"
 rustup target add x86_64-unknown-linux-musl 2>/dev/null || true

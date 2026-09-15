@@ -118,8 +118,24 @@ fn should_ignore(path: &Path) -> bool {
     // jangan kirim /tmp, /var/cache, dll biar hemat VT quota
     // Juga filter ekstensi noise: file ISO installer, DS_Store, thumbs.db
     let lower = path.to_string_lossy().to_lowercase();
-    const NOISY_EXT: &[&str] = &[".iso", ".ds_store", ".thumbs.db", ".dmg"];
+    const NOISY_EXT: &[&str] = &[
+        ".iso",
+        ".ds_store",
+        ".thumbs.db",
+        ".dmg",
+        // ponytail: sqlite WAL/SHM (browser, opencode, dsb) churn tiap detik
+        // dan tidak pernah jadi vektor malware -> jangan hash + jangan POST.
+        ".db-wal",
+        ".db-shm",
+        ".db-journal",
+        ".tmp",
+        ".log",
+        ".swp",
+    ];
     if NOISY_EXT.iter().any(|e| lower.ends_with(e)) {
+        return true;
+    }
+    if lower.ends_with('~') {
         return true;
     }
     const NOISY_PREFIXES: &[&str] = &[
@@ -138,6 +154,23 @@ fn should_ignore(path: &Path) -> bool {
         "/tmp/mozilla-",
     ];
     NOISY_PREFIXES.iter().any(|p| s.starts_with(p))
+        || {
+            // ponytail: FP 14 Sep — USB watcher recursive masuk ke mirror Wine
+            // (/run/media/.../dosdevices/z:/home/...) + repo/tooling (/.git/,
+            // /node_modules/, /__pycache__/, /cache/). File di sini (git objects,
+            // db snapshot, browser cache) bukan vektor infeksi workstation.
+            // Upgrade path: hapus pengecualian ini kalau scope diperluas ke
+            // server-side FIM penuh (saat itu pakai allowlist, bukan denylist).
+            const NOISY_CONTAINS: &[&str] = &[
+                "/dosdevices/",
+                "/.git/",
+                "/node_modules/",
+                "/__pycache__/",
+                "/.cache/",
+                "/cache/",
+            ];
+            NOISY_CONTAINS.iter().any(|p| lower.contains(p))
+        }
 }
 
 #[tokio::main]
@@ -264,11 +297,26 @@ async fn main() -> Result<()> {
             Err(_) => return,
         };
         loop {
+            // ponytail: os ringkas "linux"|"windows"|"macos" (cfg compile-time,
+            // tanpa dependensi baru). Dipakai dashboard buat ikon OS.
+            let os = if cfg!(target_os = "windows") {
+                "windows"
+            } else if cfg!(target_os = "macos") {
+                "macos"
+            } else {
+                "linux"
+            };
+            // ponytail: jangan hardcoded "127.0.0.1" (bug lama: semua agent
+            // nampilin 127.0.0.1 di kolom IP). Kosongin -> server fallback ke
+            // self.client_address[0] = IP asli pengirim (lihat fleet-monitor.py
+            // do_POST /api/heartbeat). Ini bikin kolom IP akurat tanpa agent
+            // butuh lib deteksi-interface.
             let payload = serde_json::json!({
                 "id": hb_id,
                 "name": hb_name,
                 "version": env!("CARGO_PKG_VERSION"),
-                "ip": "127.0.0.1",
+                "os": os,
+                "ip": "",
             });
             if let Err(e) = client.post(&fleet_url).json(&payload).send().await {
                 warn!(error = %e, fleet_url = %fleet_url, "heartbeat fleet gagal (fleet-monitor belum jalan?)");
@@ -446,4 +494,38 @@ fn do_quarantine(path: &str) -> Result<String> {
     }
     info!(src = %path, dest = %dest.display(), "quarantined");
     Ok(dest.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn ignore_fp_noise_14sep() {
+        // FP nyata 14 Sep: mirror Wine + git objects + sqlite WAL + cache
+        for p in [
+            "/run/media/ravi/GamesRavi/anime-game-launcher/prefix/dosdevices/z:/home/ravi/.local/share/opencode/opencode-stable.db-wal",
+            "/run/media/ravi/X/prefix/dosdevices/c:/Cols distribution/setup.exe",
+            "/home/ravi/Projects/soar-project/.git/objects/39/5b802d685e32b69fbfca5202df78c907366d53",
+            "/home/ravi/x/node_modules/.bin/jest",
+            "/home/ravi/x/__pycache__/a.pyc",
+            "/home/ravi/.cache/mozilla/firefox/1.cache",
+            "/home/ravi/Downloads/app.iso",
+            "/tmp/.vscode-server/x",
+            "/home/ravi/doc.txt~",
+            "/home/ravi/a.db-shm",
+        ] {
+            assert!(should_ignore(Path::new(p)), "harus diabaikan: {p}");
+        }
+        // Vektor asli tetap lolos: exe/zip/script di Downloads, Desktop, USB non-mirror
+        for p in [
+            "/home/ravi/Downloads/invoice.exe",
+            "/home/ravi/Desktop/update.zip",
+            "/run/media/ravi/FLASHDISK/crack.bat",
+            "C:\\Users\\Bapak\\Downloads\\doc.pdf.exe",
+        ] {
+            assert!(!should_ignore(Path::new(p)), "jangan diabaikan: {p}");
+        }
+    }
 }

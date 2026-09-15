@@ -9,7 +9,8 @@
 
 | # | Karya / Sumber (jenis) | Orkestrasi (SOAR) | SIEM | Ancaman ditangani | Sumber intel/reputasi | Human-in-the-loop 2-arah | Active Response otomatis | Respons berjenjang berbasis keyakinan | AI analisis | Multi-agent lintas-OS |
 |---|------------------------|-------------------|------|-------------------|-----------------------|--------------------------|--------------------------|----------------------------------------|-------------|------------------------|
-| **0** | **Karya ini (2026)** | **n8n** | **Wazuh** | **Malware + Phishing** | **VirusTotal + Google Safe Browsing + URLScan.io** | **✔ (tombol Telegram → AR)** | **✔ quarantine-file + sinkhole domain** | **✔ (VT-gated: auto / tombol / sunyi)** | **✔ lokal (Ollama llama3.2:3b)** | **✔ (Ubuntu + Rocky 9)** |
+| **0** | **Karya ini (2026) — Stack utama** | **n8n** | **Wazuh** | **Malware + Phishing** | **VirusTotal + Google Safe Browsing + URLScan.io** | **✔ (tombol Telegram → AR)** | **✔ quarantine-file + sinkhole domain** | **✔ (VT-gated: auto / tombol / sunyi)** | **✔ lokal (Ollama llama3.2:3b)** | **✔ (Ubuntu + Rocky 9)** |
+| **0a** | **Karya ini — Agen Ringan Rust (alternatif)** | **n8n** | **FIM Rust (5,3 MB)** | **Malware (file)** | **VirusTotal + MalwareBazaar** | **✔ (tombol Telegram → AR)** | **✔ quarantine-file via HTTP lokal** | **✔ (VT-gated, sama dgn #0)** | **✔ lokal (Gemini 2.5 Flash)** | **✔ (Linux + Windows + NixOS)** |
 | 1 | Wazuh + Shuffle, serangan app-layer Windows — *jurnal IJESTE, 2025* | Shuffle | Wazuh | Serangan application-layer | – | ✘ (otomatis) | ✔ | ✘ | ✘ | – |
 | 2 | Wazuh + Active Response + Telegram, brute force — *jurnal, 2024* | Native Wazuh AR | Wazuh | Brute force | ✘ | **1-arah** (notif) | ✔ (blok IP) | ✘ | ✘ | ✘ |
 | 3 | Wazuh + n8n + VirusTotal + Gmail — *blog (Medium)* | n8n | Wazuh | Malware (file) | VirusTotal | **1-arah** (email) | ✘ (enrichment saja) | ✘ | ✘ | – |

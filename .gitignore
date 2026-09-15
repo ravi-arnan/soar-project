@@ -32,3 +32,9 @@ __pycache__/
 
 # Output file default util `script` (testing TUI)
 typescript
+
+# Playwright browser data (lokal)
+.playwright-mcp/
+
+# Binary build artifacts
+result
