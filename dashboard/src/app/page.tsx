@@ -9,6 +9,7 @@ import { AgentsManagement } from '@/components/wazuh/AgentsManagement';
 import { AgentDetailView } from '@/components/wazuh/AgentDetailView';
 import { FimDashboard } from '@/components/wazuh/FimDashboard';
 import { VulnerabilitiesDashboard } from '@/components/wazuh/VulnerabilitiesDashboard';
+import { SettingsView } from '@/components/wazuh/SettingsView';
 import { useFleet } from '@/lib/fleet';
 
 export default function Home() {
@@ -50,6 +51,12 @@ export default function Home() {
     }
     if (currentView === 'agents') {
       return [{ label: 'Agents', onClick: () => setCurrentView('agents') }];
+    }
+    if (currentView === 'settings') {
+      return [
+        { label: 'Modules', onClick: () => setCurrentView('modules') },
+        { label: 'Settings' },
+      ];
     }
     if (currentView === 'agent-detail') {
       return [
@@ -134,6 +141,15 @@ export default function Home() {
         {currentView === 'integrity-monitoring' && <FimDashboard events={events} />}
 
         {currentView === 'vulnerabilities' && <VulnerabilitiesDashboard />}
+
+        {currentView === 'settings' && (
+          <SettingsView
+            health={health}
+            stats={stats}
+            generatedAt={snapshot.generated_at}
+            online={online}
+          />
+        )}
       </main>
     </div>
   );
