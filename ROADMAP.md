@@ -68,8 +68,8 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | ✅ **SELESAI** (2026-07-02) | **Zero-day / file baru → 0/70** | ⚠️ **False-negative** (jahat dianggap bersih → disuppress diam-diam) | Node `Rangkum Hasil` kini: file **eksekutabel/berisiko** (ekstensi .sh/.exe/.ps1/… ) yang **tak dikenal VT** → `review_unknown=true` → **THREAT jalur tombol (HITL)**, bukan silent/auto. File jinak non-eksekutabel tetap sunyi. **Terverifikasi:** `.sh` unknown → Telegram Alert (tombol); `.txt` unknown → sunyi. **Batas:** file eksekutabel **tanpa ekstensi** (ELF) belum tertangkap → lanjutan: deteksi magic-byte/exec-bit |
 | ⬜ Lanjutan | Hanya melihat **hash dikenal** (ganti 1 byte → hash baru) | Reputasi hash mudah dielakkan | **Deteksi perilaku** (rule Wazuh, sandbox lokal spt CAPEv2) |
 | ✅ Script siap (2026-09-02) | *Detection lag* (verdict berubah seiring waktu) | Cache bisa menyajikan verdict basi | **TTL diferensial** (`scripts/apply-b-ttl-rescan.py`): malicious 7 hari, clean 24 jam, unknown 6 jam. Verdict bersih di-cache lebih singkat → re-scan lebih cepat → turunkan FN rate |
-| ✅ Script siap (2026-09-02) | Ketergantungan 1 sumber | Single point of intel-failure | **MalwareBazaar** sebagai sumber kedua (`scripts/apply-b-malwarebazaar.py`): ensemble VT+MB (VT atau MB mendeteksi → THREAT). Perlu buat credential MB di n8n + jalankan script |
-| ✅ Sudah ada | Rate limit / downtime | Analisis gagal | Ditangani `vt_unverified` (jangan dianggap bersih) |
+| ✅ Script siap (2026-09-02) | Ketergantungan 1 sumber | Single point of intel-failure | **MalwareBazaar** sebagai sumber kedua (`scripts/apply-b-malwarebazaar.py`): ensemble VT+MB (VT atau MB mendeteksi → THREAT). **OTX AlienVault** sebagai fallback saat VT rate-limit/error (`scripts/patch-n8n-otx.py`). |
+| ✅ Sudah ada (2026-09-15) | Rate limit / downtime | Analisis gagal | **OTX fallback** dipicu saat VT 429 — verdict dari OTX menggantikan. Idempoten patch script. |
 
 **Prinsip:** perlakukan VT/GSB/URLScan sebagai **corroboration multi-sinyal**, bukan otoritas tunggal.
 
