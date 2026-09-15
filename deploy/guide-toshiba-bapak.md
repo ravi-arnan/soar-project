@@ -23,7 +23,7 @@ Invoke-WebRequest -Uri $url -OutFile $out
 # 3. Install ulang dengan ID yang benar
 $env:AGENT_ID = "005"
 $env:AGENT_NAME = "toshiba-bapak"
-$env:SERVER = "http://192.168.1.47:8080"
+$env:SERVER = "100.73.91.17"
 $env:WATCH = "C:\Users\$env:USERNAME\Downloads;C:\Users\$env:USERNAME\Desktop"
 powershell -File install-agent-windows.ps1
 ```
