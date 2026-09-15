@@ -102,12 +102,14 @@ export default function Home() {
         {currentView === 'modules' && (
           <ModulesHub
             stats={stats}
+            agents={agents}
+            health={health}
             onNavigate={(modKey) => {
               if (modKey === 'agents') setCurrentView('agents');
               else if (modKey === 'security-events') setCurrentView('security-events');
               else if (modKey === 'integrity-monitoring') setCurrentView('integrity-monitoring');
               else if (modKey === 'threat-intel') setCurrentView('threat-intel');
-              else if (modKey === 'vulnerabilities') setCurrentView('vulnerabilities');
+              else if (modKey === 'settings') setCurrentView('settings');
               else setCurrentView('security-events');
             }}
           />
