@@ -129,9 +129,9 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 
 | Status | Item | Catatan |
 |--------|------|---------|
-| ✅ **SELESAI** (2026-09-02) | **H1 — Update image & recreate** | n8n `2.35.7 → 2.36.9` (di atas semua versi patch CVE 2026); python/caddy/Wazuh di-pull; container di-recreate & sehat (indexer GREEN) |
-| ✅ **SELESAI** (2026-09-02) | **H2 — Pin versi n8n** | `image: n8nio/n8n` → `n8nio/n8n:2.36.9` di `docker-compose.yml` root & `deploy/hardened/docker-compose.yml`. Digest tag = digest image berjalan (`a9e2e3c8…`), container di-recreate & sehat (healthz 200) |
-| ⬜ Ditunda pasca-TA | **H3 — Upgrade Wazuh 4.9.2 → 4.14.7** | Stable terbaru jalur 4.x (30 Jul 2026). Ikuti panduan resmi `upgrading-wazuh-docker` (path cert dashboard/indexer berubah, update image + `wazuh_manager.conf`). **Agent wajib di-upgrade bareng** (kompatibilitas versi — risiko seperti insiden 4.14.5 dulu). Uji di lingkungan terpisah dulu |
+| ✅ **SELESAI** (2026-07-06, update 2026-09-02, update 2026-09-16) | **H1 — Update n8n & recreate** | `2.35.7 → 2.36.9` (2026-09-02, di atas semua CVE 2026) → **2.40.0** (2026-09-16). Image baru langsung `docker compose pull` + `up -d`; 4 workflow tetap active, healthz 200. |
+| ✅ **SELESAI** (2026-09-02) | **H2 — Pin versi n8n** | `image: n8nio/n8n` → `n8nio/n8n:2.36.9` (dulu) → `2.40.0` (sekarang) di compose. |
+| ✅ **SELESAI** (2026-09-16) | **H3 — Upgrade Wazuh 4.9.2 → 4.10.5** | Pull image manager/indexer/dashboard (3 kontainer). Compose recreate. API 401 (auth normal), fleet health wazuh_api True. Pipeline end-to-end diverifikasi. 4.14.7 tetap ditunda pasca-TA karena breaking path cert/agent. |
 | ⬜ Jangan dikejar | **H4 — Wazuh 5.0** | Masih **beta** (beta5, 1 Sep 2026) & breaking besar: engine sendiri, hapus Filebeat, path `/var/wazuh-manager`, hapus agent ID 000 → berdampak integratord + AR path lama. Evaluasi pasca-TA |
 | Catatan | **H5 — Alternatif "lebih ringan"** | Tidak ada pengganti Wazuh setara yang lebih ringan: osquery/Falco/Velociraptor = fungsi lebih sedikit; Elastic/Graylog/Security Onion = selevel/lebih berat (Graylog SSPL). Resource sekarang sehat (~2,7 GB: indexer 1,5 GB, manager 0,5 GB, dashboard 0,2 GB, n8n 0,37 GB) |
 
@@ -150,8 +150,23 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 9. 🟢 **I — Agen Ringan** — diagram + Rust 5.3 MB + EICAR E2E + USB recursive scanner + fleet monitor DONE (2026-09-04). Setup lintas-device + TUI dashboard (2026-09-11). Sisa Fase 3: benchmark final + laporan (`docs/ROADMAP-AGEN-RINGAN.md:126`).
 10. ✅ **RAG anti-halusinasi + Trusted autonomy (F)** — selesai (2026-09-04): playbook lokal inject + SLA 15m auto-eskalasi.
 11. **Arsitektur queue-mode + HA (E)** — SKIP untuk TA (berisiko ke live); VT limiter + cache staticData cukup untuk demo 100 PC. Future work pasca-sidang.
-12. **Modernisasi stack (H3/H4, pasca-TA)** — upgrade Wazuh 4.14.7 terjadwal; evaluasi 5.0 setelah stabil.
+12. ✅ **Modernisasi stack (H3, 2026-09-16)** — Upgrade Wazuh `4.9.2 → 4.10.5` selesai. Ditunda: **4.14.7** pasca-TA (breaking path cert/agent).
 13. **I-future — Fork Wazuh diet** — pasca sidang, hanya jika perlu klaim optimasi.
+14. ⬜ **Selesai-kan sisa dashboard (2026-09-16 scan)** — Live-kan MITRE ATT&CK module, visualisasi severity, webhook-log phishing, link hash → VT/OTX. Detail di tabel "Scan aplikasi" di atas.
+15. ✅ **Fitur dashboard fase 2 (2026-09-16)** — Metrics CPU/RAM per agent via heartbeat (agent Rust `sysinfo` v0.2.0 → fleet `/api/fleet` + history `/api/metrics` → strip metadata + grafik garis di agent detail) · Tombol Karantina/Blokir di tabel events → command queue `POST /api/commands` di-poll agent (quarantine `do_quarantine` + sinkhole hosts `do_sinkhole`, validasi ketat, keluar-saja aman NAT) · Network map hub-and-spoke (SVG native, klik node → detail) · Tombol SSH per agent (salin perintah, Opsi A tanpa RCE).
+
+## Scan aplikasi 2026-09-16 — sisa yang belum live di dashboard/fleet
+
+Hasil tes end-to-end 16 Sep: semua workflow n8n (Deteksi Malware, Deteksi Phishing, Proaktif Phishing, Telegram Callback) + agent Rust + fleet API + dashboard **100% jalan**. Duplikat workflow dibersihkan (ZSAV8 Proaktif + D2ApFC Telegram). Binary agent 003 di-update ke versi dengan sensor phishing. Sisa gap yang baru ditemukan saat scan:
+
+| Prioritas | Item | Kategori | Berat | Aksi |
+|-----------|------|----------|-------|------|
+| Tertinggi | **M — MITRE ATT&CK module `soon`** di dashboard (`ModulesHub.tsx`) — label "Segera", tidak bisa diklik, mapping rule Wazuh → teknik MITRE sudah ada di `docs/MITRE-ATTACK-MAPPING.md` | I/G | sedang | ✅ **SELESAI (2026-09-16)** — komponen `MitreAttackView.tsx` baru, 6 playbook + 10 teknik unik, label "Segera" dihapus, view bisa diklik. Deployed |
+| Tinggi | **Benchmark MTTR resmi N≥30** (`scripts/benchmark-soar.py`) — belum pernah disimpan hasil final (folder `result/` kosong) | C | sedang | ✅ **SELESAI (2026-09-16)** — `result/bench-mttr-malware-n30.json` (mean 0.04s webhook) + mttr-fleet (mean 9.04s ke fleet-log). Live endpoint |
+| Menengah | **Event severity belum divisualisasi** — fleet-monitor kirim `severity`, dashboard belum tampilkan pie/bar breakdown per severity, hanya angka total | I | kecil | ✅ **SELESAI (2026-09-16)** — donut severity live (CRITICAL/HIGH/MEDIUM/UNVERIFIED) ganti chart statis |
+| Menengah | **`/webhook-log` hanya dari Deteksi Malware** — Deteksi Phishing & Proaktif belum nge-log ke fleet, dashboard tidak melihat event phishing | B/I | kecil | ✅ **SELESAI (2026-09-16)** — node `Log ke Fleet` ditambahkan ke `Deteksi Phishing`, event phishing tampil di fleet (exec success) |
+| Kecil | **Hash event tidak link ke VT/OTX** — tiap event punya `hash`, dashboard belum buat tautan `https://virustotal.com/gui/file/<hash>` | I | 1 baris | ✅ **SELESAI (2026-09-16)** — kolom "Hash (VT)" link ke VirusTotal di SecurityEventsDashboard |
+| Rendah (berat) | **SCA module `soon`** (`ModulesHub.tsx`) — butuh polling Wazuh SCA endpoint, tapi soar-agent bukan Wazuh agent (tak ada isi SCA) | I/G | sedang | ⬜ Arsipkan; SCA relevan kalau ada agent Wazuh sungguhan |
 
 ## Prinsip arah tesis
 > SOAR open-source yang **confidence-based, transparan, dan sadar-degradasi** untuk menekan alert fatigue tanpa silent-failure — dengan human-in-the-loop yang dapat dipertanggungjawabkan.

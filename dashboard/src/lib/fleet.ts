@@ -26,6 +26,8 @@ export interface FleetAgent {
   ram: string;
   last_hash?: string;
   age_sec?: number;
+  cpu_pct?: number;
+  ram_gb?: { total?: number; used?: number };
 }
 
 export interface FleetEvent {
@@ -37,6 +39,8 @@ export interface FleetEvent {
   severity?: string;
   status: string;
   ai?: string;
+  url?: string;
+  verdict?: string;
 }
 
 export interface FleetHealth {

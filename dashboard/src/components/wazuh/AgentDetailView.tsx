@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Maximize2,
   Calendar,
@@ -30,6 +30,69 @@ const STATUS_DOT: Record<string, string> = {
   disconnected: '#BD271E',
   never_connected: '#98A2B3',
 };
+
+interface MetricPoint {
+  ts: string;
+  cpu_pct: number;
+  ram_used: number;
+  ram_total: number;
+}
+
+/** Grafik garis resource (CPU% + RAM GB) dari /api/metrics, SVG native. */
+function ResourceChart({ agentId }: { agentId: string }) {
+  const [points, setPoints] = useState<MetricPoint[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/metrics?agent_id=${encodeURIComponent(agentId)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive) setPoints(d.points || []);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [agentId]);
+
+  if (!points.length) {
+    return (
+      <div className="text-[12px] text-[#8A94A6] py-6 text-center">
+        Belum ada data resource — menunggu heartbeat agent (60 dtk).
+      </div>
+    );
+  }
+
+  const W = 400;
+  const H = 120;
+  const maxCpu = Math.max(10, ...points.map((p) => p.cpu_pct));
+  const maxRam = Math.max(1, ...points.map((p) => p.ram_total || p.ram_used));
+  const n = points.length;
+  const x = (i: number) => (n === 1 ? W / 2 : (i / (n - 1)) * W);
+  const cpuLine = points.map((p, i) => `${x(i).toFixed(1)},${(H - (p.cpu_pct / maxCpu) * (H - 10) - 5).toFixed(1)}`).join(' ');
+  const ramLine = points.map((p, i) => `${x(i).toFixed(1)},${(H - (p.ram_used / maxRam) * (H - 10) - 5).toFixed(1)}`).join(' ');
+  const last = points[n - 1];
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-28">
+        <line x1="0" y1={H - 1} x2={W} y2={H - 1} stroke="#D3DAE6" strokeWidth="1" />
+        <polyline points={cpuLine} fill="none" stroke="#006BB4" strokeWidth="1.5" />
+        <polyline points={ramLine} fill="none" stroke="#00A389" strokeWidth="1.5" />
+      </svg>
+      <div className="flex items-center gap-4 mt-1 text-[11px] text-[#5A626F]">
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#006BB4]"></span>
+          CPU {last.cpu_pct.toFixed(1)}%
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#00A389]"></span>
+          RAM {last.ram_used.toFixed(1)}/{last.ram_total.toFixed(1)} GB
+        </span>
+        <span className="ml-auto">{n} titik</span>
+      </div>
+    </div>
+  );
+}
 
 export function AgentDetailView({
   agentId = '004',
@@ -156,6 +219,24 @@ export function AgentDetailView({
           <div className="text-[#5A626F] mt-0.5">{formatWazuhTime(agent?.lastKeepAlive || '-')}</div>
         </div>
 
+        <div>
+          <div className="text-[#8A94A6] text-[11px]">CPU</div>
+          <div className="font-mono text-[#1A1C21] mt-0.5">
+            {typeof agent?.cpu_pct === 'number' && agent.cpu_pct > 0
+              ? `${agent.cpu_pct.toFixed(1)}%`
+              : '-'}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[#8A94A6] text-[11px]">RAM used / total</div>
+          <div className="font-mono text-[#1A1C21] mt-0.5">
+            {agent?.ram_gb?.total
+              ? `${(agent.ram_gb.used || 0).toFixed(1)} / ${agent.ram_gb.total.toFixed(1)} GB`
+              : '-'}
+          </div>
+        </div>
+
         <button className="flex items-center gap-1 text-[#006BB4] hover:underline border border-[#D3DAE6] px-2.5 py-1 rounded bg-[#F8FAFC]">
           <span>Last 7 days</span>
           <ChevronDown className="w-3 h-3" />
@@ -280,8 +361,17 @@ export function AgentDetailView({
         </div>
       </div>
 
-      {/* Bottom Row: Events Count Evolution & SCA Scan */}
+      {/* Bottom Row: Resource usage & Events Count Evolution */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Card: Resource usage (live dari heartbeat agent) */}
+        <div className="bg-white border border-[#D3DAE6] rounded p-4">
+          <div className="flex items-center justify-between mb-3 border-b border-[#EBEFF5] pb-2">
+            <div className="text-[13px] font-semibold text-[#1A1C21]">Resource usage</div>
+            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6]" />
+          </div>
+          <ResourceChart agentId={agentId} />
+        </div>
+
         {/* Card 4: Events Count Evolution */}
         <div className="bg-white border border-[#D3DAE6] rounded p-4">
           <div className="flex items-center justify-between mb-3 border-b border-[#EBEFF5] pb-2">

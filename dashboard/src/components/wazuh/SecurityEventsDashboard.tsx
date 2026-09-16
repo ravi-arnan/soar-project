@@ -38,6 +38,36 @@ export function SecurityEventsDashboard({
   const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>('dashboard');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [query, setQuery] = useState('');
+  /** Status antrean AR per baris: queued | gagal | mengirim. */
+  const [arState, setArState] = useState<Record<number, string>>({});
+
+  /** Extract domain dari URL event phishing (untuk sinkhole). */
+  function domainOf(url: string): string {
+    try {
+      const h = new URL(url).hostname;
+      if (h && /^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(h)) return h;
+    } catch {}
+    const m = url.match(/https?:\/\/([^/:?\s#]+)/i);
+    return m ? m[1] : '';
+  }
+
+  /** Antrekan perintah ke agent via fleet-monitor (di-poll agent, keluar-saja). */
+  async function queueCommand(rowId: number, agentId: string, action: 'quarantine' | 'sinkhole', target: string) {
+    const label = action === 'quarantine' ? `karantina file ${target}` : `sinkhole domain ${target}`;
+    if (!window.confirm(`Antrekan ${label} di agent ${agentId}?`)) return;
+    setArState((s) => ({ ...s, [rowId]: 'mengirim...' }));
+    try {
+      const r = await fetch('/api/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId, action, target, by: 'dashboard' }),
+      });
+      const j = await r.json();
+      setArState((s) => ({ ...s, [rowId]: r.ok && j.status === 'queued' ? 'queued ✓' : `gagal: ${j.error || r.status}` }));
+    } catch (e) {
+      setArState((s) => ({ ...s, [rowId]: 'gagal: jaringan' }));
+    }
+  }
 
   // Event live -> baris tabel ala Wazuh. `level` mengikuti bucket severity fleet
   // (CRITICAL=12, HIGH=8, MEDIUM=5, UNVERIFIED=4, INFO=3).
@@ -48,6 +78,9 @@ export function SecurityEventsDashboard({
         time: formatWazuhTime(e.ts),
         agentId: e.agent_id || '-',
         agentName: e.agent || '-',
+        hash: e.hash || '',
+        rawPath: e.path && e.path !== '-' ? e.path : '',
+        rawUrl: e.url || '',
         techniques: '-',
         tactics: '-',
         description: e.ai ? `${e.path || '-'} — ${e.ai}` : e.path || e.status || '-',
@@ -152,50 +185,71 @@ export function SecurityEventsDashboard({
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Card 1: Alert Level Evolution */}
+        {/* Card 1: Severity breakdown donut */}
         <div className="bg-white border border-[#D3DAE6] rounded p-4 relative">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">Alert level evolution</div>
+            <div className="text-[13px] font-semibold text-[#1A1C21]">Severity breakdown</div>
             <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6] cursor-pointer hover:text-[#1A1C21]" />
           </div>
 
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex-1 h-56 flex flex-col justify-end">
-              <svg viewBox="0 0 400 160" className="w-full h-full overflow-visible">
-                <defs>
-                  <linearGradient id="grad1" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#006BB4" stopOpacity="0.8" />
-                    <stop offset="100%" stopColor="#006BB4" stopOpacity="0.2" />
-                  </linearGradient>
-                  <linearGradient id="grad2" x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#BD271E" stopOpacity="0.8" />
-                    <stop offset="100%" stopColor="#BD271E" stopOpacity="0.2" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M0,130 Q40,110 80,120 T160,115 T240,125 T320,100 L380,30 L400,140 L0,140 Z"
-                  fill="url(#grad1)"
-                />
-                <path
-                  d="M0,140 Q40,130 80,135 T160,130 T240,135 T320,120 L380,60 L400,150 L0,150 Z"
-                  fill="url(#grad2)"
-                />
-                <line x1="0" y1="150" x2="400" y2="150" stroke="#D3DAE6" strokeWidth="1" />
+          <div className="flex items-center justify-center gap-6 h-56">
+            <div className="relative w-40 h-40 flex items-center justify-center">
+              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                <circle cx="50" cy="50" r="38" fill="none" stroke="#EBEFF5" strokeWidth="18" />
+                {(() => {
+                  const sev = stats.severity;
+                  const total = sev.CRITICAL + sev.HIGH + sev.MEDIUM + sev.UNVERIFIED || 1;
+                  const items = [
+                    { label: 'CRITICAL', count: sev.CRITICAL, color: '#BD271E' },
+                    { label: 'HIGH', count: sev.HIGH, color: '#D97706' },
+                    { label: 'MEDIUM', count: sev.MEDIUM, color: '#F5A623' },
+                    { label: 'UNVERIFIED', count: sev.UNVERIFIED, color: '#64748B' },
+                  ];
+                  let offset = 0;
+                  const arcs = [];
+                  const circum = 238.76;
+                  for (const item of items) {
+                    const len = (item.count / total) * circum;
+                    if (len > 0) {
+                      arcs.push({ ...item, len, offset, label: item.label });
+                    }
+                    offset += len;
+                  }
+                  return arcs.map((a) =>
+                    a.len >= 1 ? (
+                      <circle
+                        key={a.label}
+                        cx="50" cy="50" r="38"
+                        fill="none"
+                        stroke={a.color}
+                        strokeWidth="18"
+                        strokeDasharray={`${a.len} ${circum - a.len}`}
+                        strokeDashoffset={`-${a.offset}`}
+                      />
+                    ) : null
+                  );
+                })()}
               </svg>
-              <div className="flex justify-between text-[10px] text-[#8A94A6] mt-2">
-                <span>2026-01-18 00:00</span>
-                <span>2026-01-20 00:00</span>
-                <span>2026-01-22 00:00</span>
-                <span>2026-01-24 00:00</span>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-[20px] font-bold text-[#1A1C21]">{stats.events_total}</span>
               </div>
             </div>
 
-            {/* Legend */}
-            <div className="w-20 text-[11px] space-y-1 text-[#5A626F] shrink-0 border-l border-[#EBEFF5] pl-3">
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#BD271E]"></span><span>12+</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#D97706]"></span><span>8-11</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#F5A623]"></span><span>5-7</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[#00A389]"></span><span>3-4</span></div>
+            <div className="text-[11px] space-y-1.5 text-[#5A626F]">
+              {[
+                { label: 'CRITICAL', count: stats.severity.CRITICAL, color: '#BD271E' },
+                { label: 'HIGH', count: stats.severity.HIGH, color: '#D97706' },
+                { label: 'MEDIUM', count: stats.severity.MEDIUM, color: '#F5A623' },
+                { label: 'UNVERIFIED', count: stats.severity.UNVERIFIED, color: '#64748B' },
+              ].map((s) =>
+                s.count > 0 ? (
+                  <div key={s.label} className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                    <span>{s.label}</span>
+                    <span className="font-semibold">{s.count}</span>
+                  </div>
+                ) : null
+              )}
             </div>
           </div>
         </div>
@@ -335,17 +389,17 @@ export function SecurityEventsDashboard({
                 <th className="py-2.5 px-3">Time ↓</th>
                 <th className="py-2.5 px-3">Agent</th>
                 <th className="py-2.5 px-3">Agent name</th>
-                <th className="py-2.5 px-3">Technique(s)</th>
-                <th className="py-2.5 px-3">Tactic(s)</th>
+                <th className="py-2.5 px-3">Hash (VT)</th>
                 <th className="py-2.5 px-3">Description</th>
                 <th className="py-2.5 px-3 text-center">Level</th>
                 <th className="py-2.5 px-3 text-right">Rule ID</th>
+                <th className="py-2.5 px-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EBEFF5]">
               {!visibleAlerts.length && (
                 <tr>
-                  <td colSpan={9} className="py-6 text-center text-[#8A94A6]">
+                  <td colSpan={10} className="py-6 text-center text-[#8A94A6]">
                     {query
                       ? `tidak ada event cocok "${query}"`
                       : 'belum ada event — drop EICAR di folder yang diawasi agent'}
@@ -381,14 +435,21 @@ export function SecurityEventsDashboard({
                       <td className="py-2 px-3 text-[#1A1C21] font-medium whitespace-nowrap">
                         {row.agentName}
                       </td>
-                      <td className="py-2 px-3 text-[#006BB4] font-mono">
-                        {row.techniques !== '-' ? (
-                          <span className="hover:underline cursor-pointer">{row.techniques}</span>
+                      <td className="py-2 px-3 text-[#006BB4] font-mono text-[12px]">
+                        {row.hash ? (
+                          <a
+                            href={`https://www.virustotal.com/gui/file/${row.hash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline"
+                            title={row.hash}
+                          >
+                            {row.hash.slice(0, 16)}...
+                          </a>
                         ) : (
                           '-'
                         )}
                       </td>
-                      <td className="py-2 px-3 text-[#5A626F] whitespace-nowrap">{row.tactics}</td>
                       <td className="py-2 px-3 text-[#1A1C21] max-w-md truncate">{row.description}</td>
                       <td className="py-2 px-3 text-center">
                         <span
@@ -408,12 +469,42 @@ export function SecurityEventsDashboard({
                           {row.ruleId}
                         </span>
                       </td>
+                      <td className="py-2 px-3 text-right whitespace-nowrap">
+                        {(() => {
+                          const st = arState[row.id];
+                          if (st) return <span className="text-[11px] text-[#5A626F]">{st}</span>;
+                          const dom = row.rawUrl ? domainOf(row.rawUrl) : '';
+                          return (
+                            <span className="inline-flex gap-1.5">
+                              {row.rawPath && (
+                                <button
+                                  onClick={() => queueCommand(row.id, row.agentId, 'quarantine', row.rawPath)}
+                                  title={`Karantina ${row.rawPath} di agent ${row.agentId}`}
+                                  className="text-[11px] font-medium text-[#BD271E] border border-[#F5C2C0] bg-[#FDF3F2] hover:bg-[#FDE8E8] px-1.5 py-0.5 rounded"
+                                >
+                                  Karantina
+                                </button>
+                              )}
+                              {dom && (
+                                <button
+                                  onClick={() => queueCommand(row.id, row.agentId, 'sinkhole', dom)}
+                                  title={`Sinkhole ${dom} di agent ${row.agentId}`}
+                                  className="text-[11px] font-medium text-[#B25E09] border border-[#F5D9A8] bg-[#FEF6E8] hover:bg-[#FDEFD4] px-1.5 py-0.5 rounded"
+                                >
+                                  Blokir
+                                </button>
+                              )}
+                              {!row.rawPath && !dom && <span className="text-[#8A94A6]">-</span>}
+                            </span>
+                          );
+                        })()}
+                      </td>
                     </tr>
 
                     {/* Expandable row with JSON details */}
                     {isExpanded && (
                       <tr className="bg-[#F8FAFC]">
-                        <td colSpan={9} className="p-4">
+                        <td colSpan={10} className="p-4">
                           <div className="bg-white border border-[#D3DAE6] rounded p-3 text-[11px] font-mono text-[#1A1C21] space-y-1">
                             <div className="text-[12px] font-bold text-[#006BB4] mb-2 font-sans">
                               Alert Details: {row.ruleId}
