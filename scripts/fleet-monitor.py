@@ -26,7 +26,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 # Load .env jika ada (untuk jalan di host tanpa docker env_file)
@@ -66,6 +66,18 @@ HEARTBEAT_TTL = (
 # Ring buffer event (max 200): alert file dari agent / n8n webhook-log
 EVENTS = []
 EVENTS_MAX = 200
+
+# Command queue per agent (aksi dari dashboard, di-poll agent via GET):
+# id -> [{action: quarantine|sinkhole, target, ts, by}]
+# ponytail: tanpa DB/antrean persisten; perintah hilang saat fleet-monitor
+# restart. Upgrade path: persist ke sqlite/redis kalau butuh durability.
+COMMANDS = {}
+COMMANDS_MAX = 20
+
+# History metrics per agent untuk grafik (ring buffer, 60 titik @60s = 1 jam).
+# ponytail: in-memory saja; hilang saat restart. Upgrade: TSDB kalau perlu.
+METRICS = {}
+METRICS_MAX = 60
 
 # Cache Wazuh agents
 WAZUH_CACHE = {"data": [], "fetched_at": 0}
@@ -194,6 +206,8 @@ def build_fleet(cfg):
             "binary": "5.3 MB",
             "ram": "5.2 MB",
             "age_sec": int(age),
+            "cpu_pct": hb.get("cpu_pct", 0),
+            "ram_gb": hb.get("ram_gb", {}),
         }
         if existing:
             # ganti entry Wazuh dengan Rust jika heartbeat lebih fresh
@@ -695,6 +709,30 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
+        elif parsed.path == "/api/metrics":
+            # History resource per agent untuk grafik: ?agent_id=003
+            qs = parse_qs(parsed.query)
+            aid = (qs.get("agent_id", [""])[0] or "").strip()
+            body = json.dumps(
+                {"agent_id": aid, "points": METRICS.get(aid, [])}
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        elif parsed.path == "/api/commands":
+            # Agent poll perintah pending (keluar-saja, aman NAT): ?agent_id=003
+            # Ambil + kosongkan antrean (sekali ambil = sekali eksekusi).
+            qs = parse_qs(parsed.query)
+            aid = (qs.get("agent_id", [""])[0] or "").strip()
+            cmds = COMMANDS.pop(aid, []) if aid else []
+            body = json.dumps({"commands": cmds}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
         elif parsed.path == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -730,7 +768,27 @@ class Handler(BaseHTTPRequestHandler):
                     "os": j.get("os", "unknown"),
                     "last_hash": j.get("last_hash", ""),
                     "last_seen": time.time(),
+                    # Resource metrics dari agent (sysinfo, opsional; 0/absen = tak dilaporkan)
+                    "cpu_pct": j.get("cpu_pct", 0),
+                    "ram_gb": j.get("ram_gb", {}),
                 }
+                # Simpan titik metrics untuk grafik (hanya kalau agent melapor)
+                try:
+                    cpu = float(j.get("cpu_pct", 0) or 0)
+                except (TypeError, ValueError):
+                    cpu = 0
+                ram = j.get("ram_gb") or {}
+                if cpu > 0 or (isinstance(ram, dict) and ram.get("total")):
+                    hist = METRICS.setdefault(hid, [])
+                    hist.append(
+                        {
+                            "ts": datetime.now(WITA).isoformat(),
+                            "cpu_pct": round(cpu, 2),
+                            "ram_used": round(float(ram.get("used", 0) or 0), 2),
+                            "ram_total": round(float(ram.get("total", 0) or 0), 2),
+                        }
+                    )
+                    del hist[:-METRICS_MAX]
                 # Event file dari agent (kalau dikirim bersama heartbeat)
                 if j.get("last_hash") and j.get("last_path"):
                     EVENTS.append(
@@ -769,6 +827,8 @@ class Handler(BaseHTTPRequestHandler):
                     "severity": j.get("severity", "INFO"),
                     "status": j.get("status", "alerted"),
                     "ai": j.get("ai", ""),
+                    "url": j.get("url", ""),
+                    "verdict": j.get("verdict", ""),
                 }
                 EVENTS.append(ev)
                 del EVENTS[:-EVENTS_MAX]
@@ -779,6 +839,57 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(b'{"status":"ok"}')
             except Exception as e:
                 self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+        elif parsed.path == "/api/commands":
+            # Dashboard antrekan perintah untuk agent (agent poll via GET).
+            # Aksi valid: quarantine (target = path file absolut),
+            # sinkhole (target = domain). Validasi ketat biar tidak jadi RCE.
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                j = json.loads(body)
+                aid = str(j.get("agent_id", "")).strip()
+                action = str(j.get("action", "")).strip()
+                target = str(j.get("target", "")).strip()
+                if not aid:
+                    raise ValueError("need agent_id")
+                if action == "quarantine":
+                    # path absolut saja, tolak traversal ke luar home? izinkan
+                    # absolut umum tapi tolak pola berbahaya
+                    if not target.startswith(("/", "C:\\", "C:/")) or ".." in target:
+                        raise ValueError(
+                            "target quarantine harus path absolut tanpa .."
+                        )
+                elif action == "sinkhole":
+                    if not target or any(c in target for c in " /\\;|&$`'\""):
+                        raise ValueError("target sinkhole harus satu domain valid")
+                    if "." not in target:
+                        raise ValueError("target sinkhole harus domain")
+                else:
+                    raise ValueError("action harus quarantine|sinkhole")
+                q = COMMANDS.setdefault(aid, [])
+                q.append(
+                    {
+                        "action": action,
+                        "target": target,
+                        "ts": datetime.now(WITA).isoformat(),
+                        "by": str(j.get("by", "dashboard")),
+                    }
+                )
+                del q[:-COMMANDS_MAX]
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(
+                    json.dumps(
+                        {"status": "queued", "agent_id": aid, "action": action}
+                    ).encode()
+                )
+            except Exception as e:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
         else:

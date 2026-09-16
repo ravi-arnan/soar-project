@@ -342,6 +342,22 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetA
                         <Eye className="w-3.5 h-3.5" />
                       </button>
                       <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const user = agent.os?.toLowerCase().includes('windows') ? 'Administrator' : 'ravi';
+                          const cmd = `ssh ${user}@${agent.ip}`;
+                          if (window.confirm(`Buka terminal lokal:\n${cmd}`)) {
+                            try {
+                              navigator.clipboard?.writeText(cmd);
+                            } catch {}
+                          }
+                        }}
+                        title={`SSH ke agent ini (${agent.ip})`}
+                        className="hover:text-[#00A389]"
+                      >
+                        <span className="font-mono text-[10px] font-bold">&gt;_</span>
+                      </button>
+                      <button
                         onClick={(e) => e.stopPropagation()}
                         title="Link"
                         className="hover:text-[#005593]"

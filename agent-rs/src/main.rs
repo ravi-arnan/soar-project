@@ -5,12 +5,12 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read};
-#[cfg(unix)]
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+#[cfg(target_os = "linux")]
+use sysinfo::{System};
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -379,9 +379,9 @@ async fn main() -> Result<()> {
             Ok(c) => c,
             Err(_) => return,
         };
+        #[cfg(target_os = "linux")]
+        let mut sys = System::new_all();
         loop {
-            // ponytail: os ringkas "linux"|"windows"|"macos" (cfg compile-time,
-            // tanpa dependensi baru). Dipakai dashboard buat ikon OS.
             let os = if cfg!(target_os = "windows") {
                 "windows"
             } else if cfg!(target_os = "macos") {
@@ -389,22 +389,92 @@ async fn main() -> Result<()> {
             } else {
                 "linux"
             };
-            // ponytail: jangan hardcoded "127.0.0.1" (bug lama: semua agent
-            // nampilin 127.0.0.1 di kolom IP). Kosongin -> server fallback ke
-            // self.client_address[0] = IP asli pengirim (lihat fleet-monitor.py
-            // do_POST /api/heartbeat). Ini bikin kolom IP akurat tanpa agent
-            // butuh lib deteksi-interface.
+
+            #[cfg(target_os = "linux")]
+            {
+                sys.refresh_cpu();
+                sys.refresh_memory();
+            }
+
+            #[cfg(target_os = "linux")]
+            let cpu_pct = sys.global_cpu_info().cpu_usage();
+            #[cfg(not(target_os = "linux"))]
+            let cpu_pct = 0.0_f32;
+
+            let ram_total_gb = {
+                #[cfg(target_os = "linux")]
+                {
+                    // sysinfo 0.30 total_memory() = bytes -> GB
+                    sys.total_memory() as f64 / 1_073_741_824.0
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    0.0_f64
+                }
+            };
+            let ram_used_gb = {
+                #[cfg(target_os = "linux")]
+                {
+                    sys.used_memory() as f64 / 1_073_741_824.0
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    0.0_f64
+                }
+            };
+
             let payload = serde_json::json!({
                 "id": hb_id,
                 "name": hb_name,
                 "version": env!("CARGO_PKG_VERSION"),
                 "os": os,
                 "ip": "",
+                "cpu_pct": (cpu_pct * 100.0).round() / 100.0,
+                "ram_gb": {
+                    "total": (ram_total_gb * 100.0).round() / 100.0,
+                    "used": (ram_used_gb * 100.0).round() / 100.0,
+                },
             });
             if let Err(e) = client.post(&fleet_url).json(&payload).send().await {
-                warn!(error = %e, fleet_url = %fleet_url, "heartbeat fleet gagal (fleet-monitor belum jalan?)");
+                warn!(error = %e, fleet_url = %fleet_url, "heartbeat fleet gagal");
             } else {
                 info!(fleet_url = %fleet_url, "heartbeat fleet ok");
+            }
+            // ponytail: command queue di-poll bareng heartbeat (keluar-saja,
+            // aman NAT, tanpa port inbound baru). Perintah dari tombol
+            // dashboard dieksekusi lokal di sini.
+            let base = fleet_url
+                .trim_end_matches("/api/heartbeat")
+                .trim_end_matches('/');
+            let commands_url = format!("{}/api/commands?agent_id={}", base, hb_id);
+            match client.get(&commands_url).send().await {
+                Ok(resp) => match resp.json::<serde_json::Value>().await {
+                    Ok(v) => {
+                        if let Some(cmds) = v.get("commands").and_then(|c| c.as_array()) {
+                            for cmd in cmds {
+                                let action = cmd.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                                let target = cmd.get("target").and_then(|t| t.as_str()).unwrap_or("");
+                                if target.is_empty() {
+                                    continue;
+                                }
+                                let res = match action {
+                                    "quarantine" => do_quarantine(target).map(|d| d),
+                                    "sinkhole" => do_sinkhole(target).map(|d| d),
+                                    _ => {
+                                        warn!(action = %action, "aksi queue tak dikenal, lewati");
+                                        continue;
+                                    }
+                                };
+                                match res {
+                                    Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah dashboard OK"),
+                                    Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => warn!(error = %e, "parse commands gagal"),
+                },
+                Err(e) => warn!(error = %e, "poll commands gagal"),
             }
             tokio::time::sleep(Duration::from_secs(hb_interval)).await;
         }
@@ -536,8 +606,40 @@ fn extract_path(req: &str) -> Option<String> {
     v.get("path")?.as_str().map(|s| s.to_string())
 }
 
-fn do_quarantine(path: &str) -> Result<String> {
-    let src = Path::new(path);
+/// Sinkhole domain ke 0.0.0.0 di hosts file (perintah dashboard via queue).
+/// Idempoten: entry ganda tidak ditulis ulang. Butuh privilege tulis hosts.
+fn do_sinkhole(domain: &str) -> Result<String> {
+    // Validasi ketat: satu label domain saja, tanpa spasi/karakter shell.
+    if domain.is_empty()
+        || domain.len() > 253
+        || domain.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
+        || !domain.contains('.')
+    {
+        anyhow::bail!("domain tidak valid: {}", domain);
+    }
+    #[cfg(unix)]
+    let hosts_path = "/etc/hosts";
+    #[cfg(windows)]
+    let hosts_path = "C:\\Windows\\System32\\drivers\\etc\\hosts";
+    let entry = format!("0.0.0.0 {} # soar-sinkhole", domain);
+    let content = std::fs::read_to_string(hosts_path).unwrap_or_default();
+    if content.lines().any(|l| l.trim() == entry) {
+        info!(domain = %domain, "sinkhole sudah ada, lewati");
+        return Ok(entry);
+    }
+    // Backup sekali per hari (murah, tanpa lib tambahan).
+    let backup = format!("{}.soar-bak", hosts_path);
+    if !Path::new(&backup).exists() {
+        let _ = std::fs::copy(hosts_path, &backup);
+    }
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().append(true).open(hosts_path)?;
+    writeln!(f, "{}", entry)?;
+    info!(domain = %domain, "sinkholed via hosts");
+    Ok(entry)
+}
+
+fn do_quarantine(path: &str) -> Result<String> {    let src = Path::new(path);
     if !src.exists() {
         anyhow::bail!("file tidak ada: {}", path);
     }

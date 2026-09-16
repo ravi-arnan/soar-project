@@ -6,9 +6,9 @@ import {
   FileCheck2,
   ShieldCheck,
   Box,
-  Grid,
   Server,
   HeartPulse,
+  Network,
 } from 'lucide-react';
 
 import type { FleetAgent, FleetHealth, FleetStats } from '@/lib/fleet';
@@ -49,11 +49,11 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
       title: 'AUDITING AND POLICY MONITORING',
       modules: [
         {
-          id: 'sca',
-          title: 'Security configuration assessment',
-          description: 'Scan your assets as part of a configuration assessment audit.',
+          id: 'mitre',
+          title: 'MITRE ATT&CK',
+          description:
+            'Pemetaan playbook n8n ke teknik MITRE ATT&CK — 6 playbook, 10 teknik unik, 4 fase.',
           icon: ShieldCheck,
-          soon: true,
         },
       ],
     },
@@ -67,14 +67,7 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
             'Verdict gabungan VirusTotal + OTX atas file mencurigakan via pipeline n8n.',
           icon: Box,
         },
-        {
-          id: 'mitre',
-          title: 'MITRE ATT&CK',
-          description:
-            'Security events from the knowledge base of adversary tactics and techniques based on real-world observations',
-          icon: Grid,
-          soon: true,
-        },
+        
       ],
     },
     {
@@ -91,6 +84,12 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
           title: 'Stack health',
           description: `${stackOk}/3 layanan hidup (n8n, AI, Wazuh API). Lihat status dan endpoint backend.`,
           icon: HeartPulse,
+        },
+        {
+          id: 'network-map',
+          title: 'Network map',
+          description: `Topologi hub-and-spoke ${stats.active}/${stats.total} agent aktif. Klik node untuk detail.`,
+          icon: Network,
         },
       ],
     },
@@ -149,22 +148,19 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               {section.modules.map((mod) => {
                 const Icon = mod.icon;
-                const soon = 'soon' in mod && mod.soon;
                 return (
                   <div
                     key={mod.id}
                     onClick={() => {
-                      if (!soon) onNavigate(mod.id);
+                      onNavigate(mod.id);
                     }}
                     className={`border border-[#D3DAE6] rounded p-3.5 flex items-start gap-3 bg-white transition-all shadow-xs ${
-                      soon
-                        ? 'opacity-70 cursor-default'
-                        : 'hover:border-[#006BB4] hover:bg-[#F8FAFC] cursor-pointer group'
+                      'hover:border-[#006BB4] hover:bg-[#F8FAFC] cursor-pointer group'
                     }`}
                   >
                     <div
                       className={`mt-0.5 p-2 rounded bg-[#F5F7FA] text-[#006BB4] shrink-0 ${
-                        soon ? '' : 'group-hover:bg-[#EBF5FB] group-hover:text-[#005593]'
+                        'group-hover:bg-[#EBF5FB] group-hover:text-[#005593]'
                       } transition-colors`}
                     >
                       <Icon className="w-5 h-5" />
@@ -173,16 +169,11 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
                       <div className="flex items-center gap-2">
                         <div
                           className={`text-[13px] font-semibold text-[#1A1C21] leading-snug ${
-                            soon ? '' : 'group-hover:text-[#006BB4]'
+                            'group-hover:text-[#006BB4]'
                           } transition-colors`}
                         >
                           {mod.title}
                         </div>
-                        {soon && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#F0F4F8] text-[#8A94A6]">
-                            Segera
-                          </span>
-                        )}
                       </div>
                       <div className="text-[11px] text-[#5A626F] mt-1 line-clamp-3 leading-relaxed">
                         {mod.description}

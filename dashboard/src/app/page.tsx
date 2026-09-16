@@ -9,6 +9,8 @@ import { AgentsManagement } from '@/components/wazuh/AgentsManagement';
 import { AgentDetailView } from '@/components/wazuh/AgentDetailView';
 import { FimDashboard } from '@/components/wazuh/FimDashboard';
 import { ThreatIntelView } from '@/components/wazuh/ThreatIntelView';
+import { MitreAttackView } from '@/components/wazuh/MitreAttackView';
+import { NetworkMapView } from '@/components/wazuh/NetworkMapView';
 import { SettingsView } from '@/components/wazuh/SettingsView';
 import { useFleet } from '@/lib/fleet';
 
@@ -47,6 +49,18 @@ export default function Home() {
       return [
         { label: 'Modules', onClick: () => setCurrentView('modules') },
         { label: 'Threat Intel' },
+      ];
+    }
+    if (currentView === 'mitre') {
+      return [
+        { label: 'Modules', onClick: () => setCurrentView('modules') },
+        { label: 'MITRE ATT&CK' },
+      ];
+    }
+    if (currentView === 'network-map') {
+      return [
+        { label: 'Modules', onClick: () => setCurrentView('modules') },
+        { label: 'Network map' },
       ];
     }
     if (currentView === 'agents') {
@@ -109,6 +123,8 @@ export default function Home() {
               else if (modKey === 'security-events') setCurrentView('security-events');
               else if (modKey === 'integrity-monitoring') setCurrentView('integrity-monitoring');
               else if (modKey === 'threat-intel') setCurrentView('threat-intel');
+              else if (modKey === 'mitre') setCurrentView('mitre');
+              else if (modKey === 'network-map') setCurrentView('network-map');
               else if (modKey === 'settings') setCurrentView('settings');
               else setCurrentView('security-events');
             }}
@@ -146,6 +162,12 @@ export default function Home() {
         )}
 
         {currentView === 'integrity-monitoring' && <FimDashboard events={events} />}
+
+        {currentView === 'mitre' && <MitreAttackView />}
+
+        {currentView === 'network-map' && (
+          <NetworkMapView agents={agents} onSelectAgent={handleSelectAgent} />
+        )}
 
         {currentView === 'threat-intel' && <ThreatIntelView events={events} />}
 
