@@ -8,7 +8,7 @@
 ```bash
 cd ~/Projects/soar-project && docker compose start
 cd wazuh-docker/single-node && docker compose start && cd ../..
-ollama run llama3.2:3b "test" >/dev/null
+grep -q ATRIA_API_KEY .env || echo "ISI ATRIA_API_KEY di .env!"   # AI via Atria (Ollama pensiun)
 docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l       # 2 agent Active?
 docker exec single-node-wazuh.manager-1 grep block-domain /var/ossec/etc/shared/ar.conf  # ada?
 ```
@@ -62,7 +62,7 @@ sudo tail -5 /var/ossec/logs/active-responses.log
 ## 🆘 TROUBLESHOOTING CEPAT
 | Gejala | Tindakan |
 |--------|----------|
-| Telegram lama (>1 mnt) | Ollama dingin / VT lambat — wajar, jelaskan |
+| Telegram lama (>1 mnt) | VT lambat — wajar, jelaskan (AI cloud 1-3 dtk) |
 | Notifikasi tak muncul | Cek workflow Active di n8n; `docker logs n8n --tail 20` |
 | Tombol diklik tak ada efek | `docker logs tg-callback-poller --tail 10` (harus "forwarded callback_query") |
 | Agent tak Active | `sudo systemctl restart wazuh-agent` |
@@ -75,4 +75,4 @@ rm -f ~/Downloads/malware-demo.com ~/Downloads/demoreview-*.txt ~/Downloads/foto
 ```
 
 ---
-**Komponen:** Wazuh (SIEM/HIDS+AR) · n8n (orkestrasi) · VirusTotal/GSB/URLScan (intel) · Ollama llama3.2:3b (AI lokal) · Telegram (notif+keputusan) · Tailscale (mesh). **2 agent:** ravi-zorin (Ubuntu) + rocky-server (Rocky 9).
+**Komponen:** Wazuh (SIEM/HIDS+AR) · n8n (orkestrasi) · VirusTotal/GSB/URLScan (intel) · Atria (AI via API) · Telegram (notif+keputusan) · Tailscale (mesh). **2 agent:** ravi-zorin (Ubuntu) + rocky-server (Rocky 9).

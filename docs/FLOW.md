@@ -37,7 +37,7 @@ sequenceDiagram
         Script->>N8N: 10a. POST /webhook/wazuh-alert<br/>JSON kompatibel
     and Jalur B — Agen ringan (hash-only)
         RAgent->>RAgent: 3b. Compute sha256 streaming<br/>+ stat perm_after/size
-        RAgent->>RAgent: 4b. should_ignore? (/tmp, /var/cache)
+        RAgent->>RAgent: 4b. should_ignore? (/tmp, /var/cache)<br/>+ settle stabil + skip kosong + debounce 60s
         RAgent->>N8N: 10b. POST /webhook/wazuh-alert<br/>JSON identik, hash-only 1-2KB<br/>tanpa kirim file utuh
     end
 
@@ -50,9 +50,9 @@ sequenceDiagram
 
     Note over N8N: AR TIDAK otomatis. Severity hanya<br/>menentukan apakah pesan diberi tombol aksi.
 
-    N8N->>N8N: 16. Build Payload<br/>(prompt severity-aware, model gemini-2.0-flash)
-    N8N->>Gemini: 17. POST generateContent<br/>(prompt, GEMINI_API_KEY)
-    Gemini-->>N8N: 18. Response Bahasa Indonesia<br/>(candidates[0].content.parts[0].text)
+    N8N->>N8N: 16. Build Payload<br/>(prompt severity-aware, model Atria-Dawn-Preview)
+    N8N->>Atria: 17. POST chat/completions<br/>(prompt, ATRIA_API_KEY)
+    Atria-->>N8N: 18. Response Bahasa Indonesia<br/>(choices[0].message.content)
     N8N->>N8N: 19. Sanitize markdown chars
 
     alt should_active_response == true (HIGH/CRITICAL)
@@ -326,7 +326,7 @@ sengaja manual demi keamanan.
 
 ### Phase 6: AI Enrichment
 
-**Step 16-18: Ollama analysis**
+**Step 16-18: Atria analysis** (live 16 Sep; dulu Ollama lokal, lalu Gemini)
 
 Build Payload prepare severity-aware prompt:
 
@@ -343,7 +343,7 @@ Konteks: ancaman KRITIS. Berikan rekomendasi immediate response, isolasi sistem,
 Jelaskan tingkat bahaya file ini dan berikan rekomendasi tindakan yang harus diambil.
 ```
 
-Ollama Generate (Code node) call:
+Ollama Generate (Code node) call — HISTORIS (Ollama disabled, ganti Atria 16 Sep):
 ```http
 POST http://172.17.0.1:11434/api/generate
 Content-Type: application/json
@@ -355,6 +355,10 @@ Content-Type: application/json
   "options": {"num_predict": 150}
 }
 ```
+
+Live sekarang: node `AI Generate` (Code) → `POST https://api.atria-asi.ai/v1/chat/completions`
+(model `Atria-Dawn-Preview`, `max_tokens` 1500, key `$env.ATRIA_API_KEY`).
+Lihat `scripts/patch-n8n-ai-generate.py`.
 
 Response cleaning:
 ```javascript
@@ -405,9 +409,9 @@ End-to-end latency dari file drop sampai Telegram delivery (observed):
 | 11-12: Workflow filter + ekstrak | ~30 ms |
 | 13-14: **VirusTotal scan** | **5-15 s** |
 | 15: Severity classifier | ~10 ms |
-| 16-18: **Ollama AI inference** | **15-50 s** (CPU-bound) |
+| 16-18: **Atria AI inference** | **1-3 s** (cloud API; era Ollama 15-50 s CPU-bound) |
 | 19-21: Markdown sanitize + Telegram (+ tombol) | ~1 s |
-| **TOTAL (deteksi → notifikasi)** | **30-60 detik** |
+| **TOTAL (deteksi → notifikasi)** | **≈10-20 detik** (era Ollama 30-60 dtk) |
 
 Active Response (`quarantine-file`) **tidak masuk** latency di atas karena
 dipicu manual oleh analis. Latency klik-tombol → file terisolasi (workflow kedua):
@@ -415,8 +419,8 @@ authenticate ~300 ms + PUT /active-response + eksekusi agent ~500 ms ≈ **<1 s*
 setelah analis menekan tombol.
 
 **Bottleneck utama**:
-1. Ollama inference (CPU-bound LLM, sequential)
-2. VirusTotal API call (network latency)
+1. VirusTotal API call (network latency)
+2. Atria inference (cloud API; dulu Ollama CPU-bound 15-50 s)
 
 ## Failure Scenarios Handled
 
