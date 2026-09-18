@@ -433,9 +433,9 @@ Content-Type: application/json
 | Wazuh Indexer (heap 1g, light 512m) | ~1-1.5 GB | 1 core | `wazuh-docker/single-node/docker-compose.yml: OPENSEARCH_JAVA_OPTS=-Xms1g` (light: `-Xms512m` di `docker-compose.light.yml`) |
 | Wazuh Dashboard | ~1 GB (optional) | 1 core | **Bisa dimatikan** untuk 100 PC — `fleet-monitor :8080` desain Wazuh `#011a2f` jadi pengganti fleet, hemat 1 GB |
 | n8n + task runner | ~700 MB | 1 core |  |
-| Ollama llama3.2:3b **deprecated** | ~4 GB | 2-4 core | **Full Gemini API sekarang** — hemat 4 GB, latensi 1-3s vs 10-60s (`n8n-workflows/deteksi-malware.json: Gemini Generate`, `GEMINI_API_KEY` di `.env.example`) |
+| Ollama llama3.2:3b **deprecated** | ~4 GB | 2-4 core | **Atria API sekarang** (sebelumnya Gemini, sebelumnya Ollama) — hemat 4 GB, latensi 1-3s vs 10-60s (node live `AI Generate`, model `Atria-Dawn-Preview`, `ATRIA_API_KEY` di `.env.example`, patch `scripts/patch-n8n-ai-generate.py`) |
 | **Total full (lama)** | **~11 GB** | 4+ core |  |
-| **Total light (Gemini + Wazuh light)** | **~5-6 GB** | 2-3 core | Tanpa Dashboard + tanpa Ollama, Indexer 512m — muat 100 rust agent hash-only |
+| **Total light (Atria + Wazuh light)** | **~5-6 GB** | 2-3 core | Tanpa Dashboard + tanpa Ollama, Indexer 512m — muat 100 rust agent hash-only |
 
 > **Light profile:** `wazuh-docker/single-node/docker-compose.light.yml` (Dashboard `profiles: ["full"]` = off, Indexer 512m). Jalankan `docker compose -f docker-compose.yml -f docker-compose.light.yml up -d` atau cukup host `fleet-monitor` di `:8080` tanpa Dashboard untuk demo 100 PC.
 
@@ -483,12 +483,12 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 - Webhook trigger native (perfect untuk Wazuh integratord)
 - Self-hostable via Docker
 
-### Kenapa Gemini API (full, bukan Ollama lokal)? — update 2026-09-03
+### Kenapa Atria API (bukan Ollama lokal)? — update 2026-09-16
 
-- **Hemat 4 GB** — `Ollama llama3.2:3b` butuh 4 GB RAM + 2-4 core, latensi 10-60s sekuensial (bottleneck 100 PC). `Gemini 2.0 Flash` API 1-3s, scale cloud.
+- **Hemat 4 GB** — `Ollama llama3.2:3b` butuh 4 GB RAM + 2-4 core, latensi 10-60s sekuensial (bottleneck 100 PC). API cloud 1-3s, scale cloud. Riwayat: Ollama lokal → Gemini (3 Sep) → Experiential/deepseek-v4-flash → **Atria/Atria-Dawn-Preview** (16 Sep, kredit Experiential habis; `max_tokens` 300 → 1500).
 - **Kualitas** lebih baik untuk 2-3 kalimat Bahasa Indonesia formal.
-- Trade-off: **data keluar infra** (hash, path, hostname ke Google), butuh `GEMINI_API_KEY` + internet, quota 60 req/menit. Untuk TA, Wazuh + hash-only tetap lokal, hanya AI yang cloud — kompromi 100 PC.
-- **Dulu Ollama:** data sovereignty, no cost, privacy — cocok kalau resource cukup atau butuh offline. Sekarang deprecated, tapi bisa fallback kalau `GEMINI_API_KEY` kosong.
+- Trade-off: **data keluar infra** (hash, path, hostname ke Atria), butuh `ATRIA_API_KEY` + internet. Untuk TA, Wazuh + hash-only tetap lokal, hanya AI yang cloud — kompromi 100 PC.
+- **Dulu Ollama:** data sovereignty, no cost, privacy — cocok kalau resource cukup atau butuh offline. Sekarang deprecated, tapi bisa fallback kalau `ATRIA_API_KEY` kosong.
 
 ### Kenapa severity classifier di Rangkum Hasil (bukan Build Payload)?
 

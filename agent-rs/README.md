@@ -59,6 +59,17 @@ Saran dospem (deteksi malware dipindah dari flashdisk): scan `/run/media/<user>`
 
 File yang di-skip (tidak di-hash, tidak di-POST, hemat kuota VT + anti spam Telegram): prefix `/tmp/`, `/var/cache|log|tmp`, `/tmp/.vscode-`, `/tmp/org.chromium|com.brave|mozilla-`, dsb; pola bebas di mana saja `/dosdevices/` (mirror Wine!), `/.git/`, `/node_modules/`, `/__pycache__/`, `/cache/`; ekstensi `.iso .dmg .db-wal .db-shm .db-journal .tmp .log .swp .ds_store .thumbs.db` + akhiran `~`. Mirror ke lapis-2: kondisi `cond-not-noise` (op `notRegex`) di node Filter workflow Deteksi Malware. Test: `cargo test ignore_fp_noise_14sep`.
 
+## Settle + skip kosong + debounce (18 Sep, FP download bertahap)
+
+Browser/Telegram menulis file bertahap (chunk per detik): tanpa settle, tiap
+chunk jadi 1 POST (hash parsial beda-beda, duplikat 4-5x per file). Sekarang:
+tunggu ukuran stabil 2x poll 500ms (`wait_settled`, maks ~8 dtk, lewat itu
+skip dan event modify berikutnya retrigger); file 0-byte di-skip (hash-nya
+selalu `e3b0c44...`, VT tak bisa menilai); download parsial
+`.part .crdownload .download .opdownload .filepart .partial` di-ignore
+(rename ke nama final = event Create baru, tetap lolos); debounce per path
+2 dtk → 60 dtk (`DEBOUNCE_SECS`). Test: `cargo test ignore_partial_download_18sep wait_settled_stabil_dan_hilang`.
+
 ## Heartbeat Fleet Monitor
 
 Agent kirim heartbeat tiap `--heartbeat-secs` (default 60) ke Fleet Monitor (`scripts/fleet-monitor.py`, port 8080) supaya muncul hijau di dashboard 100 PC. Best-effort, tidak crash kalau fleet down.

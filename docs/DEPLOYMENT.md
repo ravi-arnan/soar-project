@@ -482,6 +482,10 @@ docker cp scripts/custom-n8n.py single-node-wazuh.manager-1:/var/ossec/integrati
 docker exec single-node-wazuh.manager-1 /var/ossec/bin/wazuh-control restart
 ```
 
+Lapis keempat (18 Sep, FP download bertahap di agent): `wait_settled()` 2x500ms
++ skip file 0-byte + ignore `.part/.crdownload/.download` + debounce 60 dtk
+(`agent-rs/README.md §Settle`). Test: `cargo test ignore_partial_download_18sep wait_settled_stabil_dan_hilang`.
+
 Gotcha n8n (14 Sep, exec 719/720/721/723): nilai kondisi di JSON workflow HARUS
 berprefix `=` agar dievaluasi (`={{ ... }}`, bukan `{{ ... }}` — tanpa itu
 dianggap string literal). Node IF tidak support regex literal/`.test`/`.includes`

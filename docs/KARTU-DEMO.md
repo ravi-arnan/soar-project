@@ -17,8 +17,8 @@ cd wazuh-docker/single-node && docker compose up -d && cd ../..
 # 2. Pastikan 2 agent Active
 docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l
 
-# 3. WAJIB: hangatkan Ollama (kalau dingin, inferensi pertama lambat)
-ollama run llama3.2:3b "test" >/dev/null
+# 3. WAJIB: pastikan AI key ada (Ollama sudah pensiun, AI via Atria cloud)
+grep -q ATRIA_API_KEY .env || echo "ISI ATRIA_API_KEY di .env!"
 
 # 4. Tes 1x sebelum tampil (pastikan Telegram nyampe)
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > ~/Downloads/eicar-cek.com
@@ -53,7 +53,7 @@ Artefak sementara (temp browser `.org.chromium.*`, unduhan separuh `.crdownload`
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > ~/Downloads/malware-demo.com
 ```
 
-**Yang terjadi (±15–30 dtk):** Wazuh FIM deteksi → VirusTotal **≈59 dari 70+ antivirus malicious** (≥ 20) → severity KRITIS → AI lokal analisis → **file otomatis dikarantina** → Telegram: **"OTOMATIS DIISOLASI"** (tanpa tombol).
+**Yang terjadi (±15–30 dtk):** Wazuh FIM deteksi → VirusTotal **≈59 dari 70+ antivirus malicious** (≥ 20) → severity KRITIS → AI (Atria) analisis → **file otomatis dikarantina** → Telegram: **"OTOMATIS DIISOLASI"** (tanpa tombol).
 
 **Buktikan:**
 ```bash
@@ -105,7 +105,7 @@ echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
 | **Wazuh** | SIEM + HIDS: File Integrity Monitoring, korelasi aturan, eksekusi Active Response |
 | **n8n** | Mesin orkestrasi (otak SOAR): playbook deteksi → pengayaan → keputusan |
 | **VirusTotal** | Threat intelligence: reputasi hash/URL terhadap 60+ antivirus |
-| **Ollama (llama3.2:3b)** | Analisis AI **lokal** → kedaulatan data, tanpa biaya API |
+| **Atria (Atria-Dawn-Preview)** | Analisis AI via API (dulu Ollama lokal; pensiun 16 Sep) |
 | **Telegram Bot** | Kanal notifikasi + antarmuka keputusan dua arah |
 | **tg-callback-poller** | Meneruskan klik tombol ke n8n (aman di balik NAT, long-poll) |
 | **Tailscale** | Mesh VPN: agent tetap terhubung walau beda jaringan |
@@ -118,7 +118,7 @@ echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
 1. **SOAR penuh dari open-source** — kapabilitas yang biasanya hanya di Cortex XSOAR / Splunk (mahal).
 2. **Respons berjenjang (confidence-based):** auto untuk keyakinan tinggi, human-in-the-loop untuk ambigu.
 3. **Deteksi berbasis intelijen, bukan kebisingan FIM** → keputusan diikat ke konsensus VirusTotal (60+ engine), sehingga **false positive ditekan** dan tidak ada alert fatigue.
-4. **AI lokal** → data sensitif tidak keluar infrastruktur.
+4. **AI via API** (Atria; dulu Ollama lokal → data sensitif hash/path keluar ke cloud, kompromi 100 PC).
 5. **Lintas distribusi + resilient** (Tailscale).
 
 ---
@@ -126,7 +126,7 @@ echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
 ## 6. TROUBLESHOOTING CEPAT
 | Gejala | Tindakan |
 |--------|----------|
-| Telegram lama (>1 mnt) | Wajar bila Ollama dingin / VT lambat — jelaskan; sudah dihangatkan saat pre-flight |
+| Telegram lama (>1 mnt) | Wajar bila VT lambat — jelaskan; AI cloud 1-3 dtk (era Ollama dingin 15-50 dtk) |
 | Notifikasi tidak muncul | Cek workflow Active di n8n; cek `docker logs n8n --tail 20` |
 | Banyak alert serentak error | Sudah dimitigasi (timeout 300s) — picu **1 alert per kali** |
 | Agent tidak Active | `sudo systemctl restart wazuh-agent` di endpoint |
