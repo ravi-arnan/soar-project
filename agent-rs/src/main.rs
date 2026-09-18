@@ -9,8 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-#[cfg(target_os = "linux")]
-use sysinfo::{System};
+use sysinfo::System;
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -505,7 +504,6 @@ async fn main() -> Result<()> {
             Ok(c) => c,
             Err(_) => return,
         };
-        #[cfg(target_os = "linux")]
         let mut sys = System::new_all();
         loop {
             let os = if cfg!(target_os = "windows") {
@@ -516,38 +514,17 @@ async fn main() -> Result<()> {
                 "linux"
             };
 
-            #[cfg(target_os = "linux")]
-            {
-                sys.refresh_cpu();
-                sys.refresh_memory();
-            }
+            // ponytail: sysinfo 0.30 cross-platform (Linux + Windows).
+            // refresh tiap heartbeat 60 dtk; cpu_usage butuh 2x refresh
+            // berurutan jadi tick pertama 0 (server skip 0, tick berikut nyata).
+            sys.refresh_cpu();
+            sys.refresh_memory();
 
-            #[cfg(target_os = "linux")]
             let cpu_pct = sys.global_cpu_info().cpu_usage();
-            #[cfg(not(target_os = "linux"))]
-            let cpu_pct = 0.0_f32;
 
-            let ram_total_gb = {
-                #[cfg(target_os = "linux")]
-                {
-                    // sysinfo 0.30 total_memory() = bytes -> GB
-                    sys.total_memory() as f64 / 1_073_741_824.0
-                }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    0.0_f64
-                }
-            };
-            let ram_used_gb = {
-                #[cfg(target_os = "linux")]
-                {
-                    sys.used_memory() as f64 / 1_073_741_824.0
-                }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    0.0_f64
-                }
-            };
+            // sysinfo 0.30 total_memory() = bytes -> GB
+            let ram_total_gb = sys.total_memory() as f64 / 1_073_741_824.0;
+            let ram_used_gb = sys.used_memory() as f64 / 1_073_741_824.0;
 
             let payload = serde_json::json!({
                 "id": hb_id,
