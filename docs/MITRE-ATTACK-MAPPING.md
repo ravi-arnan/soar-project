@@ -14,6 +14,7 @@ Bertujuan untuk membuktikan cakupan deteksi & respons secara terstruktur (bukan 
 | **Deteksi Malware** (FIM + VT) | TA0002 Execution, TA0005 Defense Evasion, TA0001 Initial Access | T1204.002, T1059, T1027, T1036 | ✅ Aktif |
 | **Deteksi Phishing** (URL + GSB/URLScan) | TA0001 Initial Access | T1566.002, T1189 | ✅ Aktif |
 | **Proaktif Phishing** (URLhaus feed) | TA0001 Initial Access (preventif) | T1566.002 | ✅ Aktif |
+| **Deteksi LOLBin Chain** (Sysmon ProcessCreate) | TA0002 Execution, TA0005 Defense Evasion | T1059.001, T1059.006, T1218.010, T1218.011, T1036 | ✅ Aktif (baru) |
 | **Active Response — Quarantine** | TA0005 Defense Evasion → TA0040 Impact | T1070.004 (remedi), AR manual | ✅ Aktif |
 | **Active Response — Block Domain** | TA0001 Initial Access → TA0040 Impact | T1189 (remedi), AR manual | ✅ Aktif |
 | **Health Monitor** | TA0040 Impact (availability) | T1499 (availability monitoring) | ✅ Aktif |
@@ -61,7 +62,20 @@ URL alert (Wazuh) → Filter URL → Ekstrak → Cek cache URL
                URLScan Submit ────┘
 ```
 
-### 2.3 Proaktif Phishing (`proaktif-phishing.json`)
+### 2.3 Deteksi LOLBin Chain (`process-chain-rules.xml` + Sysmon)
+
+| Komponen | Teknik MITRE | Keterangan |
+|----------|-------------|------------|
+| **Sysmon Event ID 1 (ProcessCreate)** | **T1059.001** — PowerShell | Wazuh agent baca eventchannel Sysmon → decoder native Wazuh → rules 110001-110004 |
+| **cmd -> PowerShell Hidden** | **T1059.001** — PowerShell | Rule 110002: cmd.exe spawn powershell dengan WindowStyle Hidden (detonasi batch file) |
+| **Full Chain: cmd -> ps hidden -> python** | **T1059.006** — Python, **T1059.001** — PowerShell | Rule 110003: chain 3 tingkat dari %TEMP% (seperti video Any.Run) |
+| **Script Interpreter dari Temp** | **T1059** — Command and Scripting Interpreter | Rule 110004: python/mshta/cscript/wscript dari folder user-writable |
+| **Masquerading LOLBin** | **T1036.005** — Match Legitimate Name or Location | Rule 110005: svchost.exe/lsass.exe dari lokasi tidak wajar |
+| **Office App Spawn Shell** | **T1566.001** — Spearphishing Attachment, **T1204.002** — Malicious File | Rule 110006: winword/excel/powerpnt spawn cmd/powershell (malicious document) |
+| **Regsvr32/Rundll32 URL Abuse** | **T1218.010** — Regsvr32, **T1218.011** — Rundll32 | Rule 110007: Squiblydoo — regsvr32/rundll32 muat dari URL/temp |
+| **Script Dropper dari Temp** | **T1059** — Command and Scripting Interpreter | Rule 110008: .bat/.cmd/.vbs/.ps1 dari user-temp |
+
+### 2.4 Proaktif Phishing (`proaktif-phishing.json`)
 
 | Komponen | Teknik MITRE | Keterangan |
 |----------|-------------|------------|
@@ -80,10 +94,14 @@ INITIAL ACCESS          EXECUTION               DEFENSE EVASION        IMPACT
 ─────────────           ─────────               ───────────────        ──────
 T1566.002 ●●●           T1204.002 ●●            T1027 ●                T1499 ●
 (Phishing Link)         (Malicious File)        (Obfuscation)          (DoS - health)
-T1189 ●●                T1059 ●                 T1036 ●●               T1484 ●●●
-(Drive-by)              (Scripting)             (Masquerading)          (Domain Policy)
-                         T1005 ●                 T1070.004 ●
-                         (Local Data)            (File Deletion→remed)
+T1566.001 ●             T1059 ●●●               T1036 ●●●              T1484 ●●●
+(Attachment)            (Scripting)             (Masquerading)          (Domain Policy)
+T1189 ●●                T1059.001 ●●            T1070.004 ●
+(Drive-by)              (PowerShell)            (File Deletion→remed)
+                        T1059.006 ●
+                        (Python)
+                        T1218.010 ● / T1218.011 ●
+                        (Regsvr32 / Rundll32)   
 ```
 
 **Legend:** ● = 1 playbook, ●● = 2 playbook, ●●● = 3+ playbook
@@ -97,13 +115,12 @@ Teknik ATT&CK yang **belum** ditangani oleh sistem ini (bukan kelemahan desain �
 | Teknik | Fase | Alasan belum dicakup |
 |--------|------|---------------------|
 | T1566.001 (Spearphishing Attachment) | Initial Access | Belum ada deteksi email proxy/log mail (G3) |
-| T1059.001 (PowerShell) | Execution | Hanya FIM, belum ada monitoring proses runtime (G4: auditd) |
 | T1053 (Scheduled Task) | Persistence | Tidak ada monitoring scheduled task |
 | T1071 (Application Layer Protocol) | Command & Control | Tidak ada network traffic analysis |
 | T1486 (Data Encrypted for Impact) | Impact | Tidak ada behavioral detection enkripsi massal (ransomware) |
 | T1490 (Inhibit System Recovery) | Impact | Tidak ada backup monitoring |
 
-**Catatan:** Gap di atas masuk kategori **G4 (Deteksi perilaku ringan/auditd)** dalam roadmap, yang merupakan perluasan cakupan pasca-TA.
+**Catatan:** Gap di atas masuk kategori **pasca-TA**, kecuali G3 (email) yang sudah di-roadmap. Teknik T1059.001 (PowerShell) dan T1059.006 (Python) sudah dicakup oleh deteksi LOLBin Chain via Sysmon.
 
 ---
 

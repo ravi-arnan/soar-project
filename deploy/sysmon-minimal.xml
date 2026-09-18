@@ -1,0 +1,36 @@
+<!--
+  Sysmon minimal config untuk SOAR — fokus deteksi detonasi malware multi-stage
+  (LOLBin chain: cmd -> powershell hidden -> python dari TEMP).
+
+  Hanya menangkap Event ID yang dipakai rules SOAR (110001-110011):
+    1  = ProcessCreate (ParentImage, CommandLine, Image) — utama
+    11  = FileCreate (dropper dari TEMP/APP_DATA)
+    13  = RegistryEvent (persistence)
+
+  Apply di endpoint Windows:
+    Sysmon64.exe -accepteula -i deploy/sysmon-minimal.xml
+
+  Referensi kategori: https://github.com/SwiftOnSecurity/sysmon-config
+-->
+<Sysmon schemaversion="4.90">
+  <EventFiltering>
+
+    <!-- Event ID 1: ProcessCreate — inti deteksi chain -->
+    <ProcessCreate onmatch="exclude">
+      <!-- Filter noise: proses sistem/antivirus yang sah -->
+      <CommandLine condition="contains">System32\wbem\WmiPrvSE</CommandLine>
+      <CommandLine condition="contains">Microsoft\EdgeWebView</CommandLine>
+      <Image condition="is">C:\Windows\System32\svchost.exe</Image>
+    </ProcessCreate>
+
+    <!-- Event ID 11: FileCreate — dropper di TEMP/AppData -->
+    <FileCreateTime onmatch="exclude">
+      <!-- Filter build tools yang sah menulis ke temp -->
+      <TargetFilename condition="begin with">C:\Users\*\AppData\Local\Temp\pip-</TargetFilename>
+    </FileCreateTime>
+
+    <!-- Event ID 13: RegistryEvent — persistence (run keys) -->
+    <RegistryEvent onmatch="exclude" />
+
+  </EventFiltering>
+</Sysmon>

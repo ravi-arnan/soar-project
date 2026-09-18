@@ -163,9 +163,17 @@ fn build_phishing_payload(args: &Args, path: &Path, url: &str) -> serde_json::Va
 }
 
 /// Retry 3x backoff dipakai jalur malware maupun phishing.
-async fn post_with_retry(webhook: &str, payload: &serde_json::Value, path: &Path) -> bool {
+/// ponytail: client dipakai ulang (satu connection pool). Dulu tiap POST
+/// bikin Client baru (rebuild TLS config + pool) = CPU + alokasi sia-sia,
+/// apalagi saat event storm.
+async fn post_with_retry(
+    client: &reqwest::Client,
+    webhook: &str,
+    payload: &serde_json::Value,
+    path: &Path,
+) -> bool {
     for attempt in 1..=3 {
-        match post_to_n8n(webhook, payload).await {
+        match post_to_n8n(client, webhook, payload).await {
             Ok(_) => return true,
             Err(e) => {
                 warn!(attempt, error = %e, "POST gagal, retry");
@@ -177,10 +185,11 @@ async fn post_with_retry(webhook: &str, payload: &serde_json::Value, path: &Path
     false
 }
 
-async fn post_to_n8n(webhook: &str, payload: &serde_json::Value) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()?;
+async fn post_to_n8n(
+    client: &reqwest::Client,
+    webhook: &str,
+    payload: &serde_json::Value,
+) -> Result<()> {
     let resp = client
         .post(webhook)
         .json(payload)
@@ -214,6 +223,16 @@ fn should_ignore(path: &Path) -> bool {
         ".tmp",
         ".log",
         ".swp",
+        // ponytail: download parsial browser (FP 18 Sep: *.zip.part masuk
+        // Security Events 4x). File belum lengkap -> hash tak bermakna.
+        // Rename .part -> nama final memicu event Create baru (beda path)
+        // jadi file lengkap tetap lolos.
+        ".part",
+        ".crdownload",
+        ".download",
+        ".opdownload",
+        ".filepart",
+        ".partial",
     ];
     if NOISY_EXT.iter().any(|e| lower.ends_with(e)) {
         return true;
@@ -256,6 +275,83 @@ fn should_ignore(path: &Path) -> bool {
         }
 }
 
+/// File dianggap selesai ditulis kalau ukurannya stabil 2x poll berurutan.
+/// Tunggu maksimal ~8 detik; lewat itu skip (event modify berikutnya retrigger).
+///
+/// ponytail: FP 18 Sep — browser/Telegram tulis file bertahap (chunk per
+/// detik); sleep 300ms bikin tiap chunk di-hash + POST (duplikat, hash
+/// parsial, bahkan hash file kosong e3b0c44...). Tunggu stabil dulu.
+/// Upgrade path: coalescing event per-path kalau volume tinggi.
+const SETTLE_POLL_MS: u64 = 500;
+const SETTLE_STABLE_NEEDED: u32 = 2;
+const SETTLE_MAX_POLLS: u32 = 16;
+
+/// Debounce per path: chunk duplikat dalam 60 detik = satu file yang sama.
+/// Rename (.part -> final) beda path jadi tetap lolos.
+const DEBOUNCE_SECS: u64 = 60;
+
+async fn wait_settled(path: &Path) -> bool {
+    let mut last_len: Option<u64> = None;
+    let mut stable = 0u32;
+    for _ in 0..SETTLE_MAX_POLLS {
+        let len = match std::fs::metadata(path) {
+            Ok(m) => m.len(),
+            Err(_) => return false, // hilang di tengah tulis (rename/unlink)
+        };
+        if Some(len) == last_len {
+            stable += 1;
+            if stable >= SETTLE_STABLE_NEEDED {
+                return true;
+            }
+        } else {
+            stable = 0;
+            last_len = Some(len);
+        }
+        tokio::time::sleep(Duration::from_millis(SETTLE_POLL_MS)).await;
+    }
+    false
+}
+
+/// Hitung jumlah direktori di bawah root TANPA mengikuti symlink, berhenti
+/// setelah `limit` (hemat: cuma butuh tahu "kegedean atau tidak").
+///
+/// ponytail: gotcha 16 Sep 2026 — notify RecursiveMode::Recursive masuk ke
+/// symlink Wine (dosdevices/z: -> /) di disk /run/media, bikin 515 ribu
+/// inotify watch + RSS 490MB + CPU 95%. Walk ini pakai symlink_metadata
+/// (tidak follow) supaya symlink tidak dihitung dan tidak dimasuki.
+/// Upgrade path: allowlist mount removable kalau batas kasar ini kepentok.
+fn count_dirs_bounded(root: &Path, limit: usize) -> usize {
+    let mut count = 0;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            // symlink_metadata: symlink tidak di-follow, jadi dosdevices/z:
+            // terhitung sebagai 1 file dan TIDAK dimasuki.
+            let meta = match std::fs::symlink_metadata(&p) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if meta.file_type().is_dir() {
+                count += 1;
+                if count >= limit {
+                    return count;
+                }
+                stack.push(p);
+            }
+        }
+    }
+    count
+}
+
+/// Batas direktori per watch root. Flashdisk asli isinya ratusan direktori;
+/// disk game/Wine (GamesRavi) ratusan ribu -> tolak dengan warn, bukan hang.
+const MAX_WATCH_DIRS: usize = 5000;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -293,6 +389,8 @@ async fn main() -> Result<()> {
     info!(?watch_paths, webhook = %args.webhook, agent = %args.agent_name, "soar-agent Rust start");
 
     // Debounce: jangan kirim dua kali untuk file yang sama dalam 2 detik (FIM delete loop)
+    // ponytail: HashMap ini tidak pernah di-evict; saat event storm (watch
+    // nyasar ke seluruh /) dia ikut membengkak. Cap 10k, penuh = reset.
     let mut last_sent: HashMap<PathBuf, std::time::Instant> = HashMap::new();
 
     let (tx, rx) = channel();
@@ -317,26 +415,50 @@ async fn main() -> Result<()> {
     let user = std::env::var("USER").unwrap_or_else(|_| "ravi".to_string());
     let usb_root = PathBuf::from(format!("/run/media/{}", user));
     let watched_mounts: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+    // Mount yang ditolak karena kegedean: ingat supaya tidak di-scan ulang
+    // (dan tidak spam log) tiap poll 2 detik. Dibersihkan saat dicabut.
+    let rejected_mounts: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
     {
         let watcher = watcher.clone();
         let watched_mounts = watched_mounts.clone();
+        let rejected_mounts = rejected_mounts.clone();
         let usb_root = usb_root.clone();
         tokio::spawn(async move {
             loop {
                 if let Ok(entries) = std::fs::read_dir(&usb_root) {
                     for entry in entries.flatten() {
                         let p = entry.path();
-                        if p.is_dir() && !watched_mounts.lock().unwrap().contains(&p) {
-                            match watcher.lock().unwrap().watch(&p, RecursiveMode::Recursive) {
-                                Ok(_) => {
-                                    watched_mounts.lock().unwrap().push(p.clone());
-                                    info!(path = %p.display(), "USB mounted, watching (recursive)");
-                                }
-                                Err(e) => warn!(path = %p.display(), error = %e, "gagal watch USB mount"),
+                        // symlink_metadata dulu: mount entry berupa symlink
+                        // jangan di-watch (is_dir() mem-follow symlink).
+                        let is_real_dir = std::fs::symlink_metadata(&p)
+                            .map(|m| m.file_type().is_dir())
+                            .unwrap_or(false);
+                        if !is_real_dir
+                            || watched_mounts.lock().unwrap().contains(&p)
+                            || rejected_mounts.lock().unwrap().contains(&p)
+                        {
+                            continue;
+                        }
+                        // Tolak mount raksasa SEBELUM watch: disk game/Wine
+                        // isinya ratusan ribu direktori (notify men-follow
+                        // symlink dosdevices/z: -> /). Cek murah (<1 detik
+                        // untuk flashdisk normal, berhenti di limit).
+                        let n_dirs = count_dirs_bounded(&p, MAX_WATCH_DIRS + 1);
+                        if n_dirs > MAX_WATCH_DIRS {
+                            warn!(path = %p.display(), n_dirs, "mount terlalu besar, skip watch (bukan flashdisk?)");
+                            rejected_mounts.lock().unwrap().push(p.clone());
+                            continue;
+                        }
+                        match watcher.lock().unwrap().watch(&p, RecursiveMode::Recursive) {
+                            Ok(_) => {
+                                watched_mounts.lock().unwrap().push(p.clone());
+                                info!(path = %p.display(), n_dirs, "USB mounted, watching (recursive)");
                             }
+                            Err(e) => warn!(path = %p.display(), error = %e, "gagal watch USB mount"),
                         }
                     }
-                    // Bersihkan mount yang sudah dicabut (unwatch supaya tidak leak)
+                    // Bersihkan mount yang sudah dicabut (unwatch beneran:
+                    // retain saja tidak melepas kernel watch = leak).
                     let mounted: Vec<PathBuf> = std::fs::read_dir(&usb_root)
                         .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
                         .unwrap_or_default();
@@ -346,9 +468,13 @@ async fn main() -> Result<()> {
                             true
                         } else {
                             info!(path = %p.display(), "USB dicabut, unwatch");
+                            let _ = watcher.lock().unwrap().unwatch(p);
                             false
                         }
                     });
+                    // Bersihkan juga daftar tolak untuk mount yang sudah pergi
+                    // (nama mount dipakai ulang oleh media lain).
+                    rejected_mounts.lock().unwrap().retain(|p| mounted.contains(p));
                 }
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
@@ -480,6 +606,11 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Satu HTTP client untuk semua POST jalur file (lihat post_with_retry).
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?;
+
     loop {
         let event = match rx.recv() {
             Ok(e) => e,
@@ -496,19 +627,33 @@ async fn main() -> Result<()> {
             if path.is_dir() || should_ignore(&path) {
                 continue;
             }
-            // Tunggu file selesai ditulis (simple debounce 300ms)
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            // Tunggu tulis selesai (stabil) sebelum hash: download bertahap
+            // memicu event per chunk; tanpa ini tiap chunk jadi 1 POST FP.
+            if !wait_settled(&path).await {
+                continue;
+            }
 
             if !path.exists() {
                 continue;
             }
 
-            // Debounce 2 detik
+            // File kosong tidak di-hash: hash-nya selalu e3b0c44... (FP 18 Sep)
+            // dan VT tidak bisa menilai apa-apa. Event modify saat isi datang
+            // akan retrigger jalur ini lagi.
+            if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) == 0 {
+                info!(path = %path.display(), "file kosong, skip (tunggu isi)");
+                continue;
+            }
+
+            // Debounce 60 detik per path (chunk duplikat = satu file yang sama)
             let now = std::time::Instant::now();
             if let Some(last) = last_sent.get(&path) {
-                if now.duration_since(*last) < Duration::from_secs(2) {
+                if now.duration_since(*last) < Duration::from_secs(DEBOUNCE_SECS) {
                     continue;
                 }
+            }
+            if last_sent.len() > 10_000 {
+                last_sent.clear();
             }
             last_sent.insert(path.clone(), now);
 
@@ -526,7 +671,7 @@ async fn main() -> Result<()> {
                 for url in extract_urls(&path) {
                     info!(url = %url, path = %path.display(), "URL -> webhook phishing");
                     let payload = build_phishing_payload(&args, &path, &url);
-                    post_with_retry(&args.phishing_webhook, &payload, &path).await;
+                    post_with_retry(&http, &args.phishing_webhook, &payload, &path).await;
                 }
                 if is_url_file {
                     continue;
@@ -545,7 +690,7 @@ async fn main() -> Result<()> {
 
             let payload = build_payload(&args, &path, &hash);
             info!(hash = %hash, path = %path.display(), "POST ke n8n");
-            post_with_retry(&args.webhook, &payload, &path).await;
+            post_with_retry(&http, &args.webhook, &payload, &path).await;
         }
     }
 
@@ -716,6 +861,56 @@ mod tests {
         ] {
             assert!(!should_ignore(Path::new(p)), "jangan diabaikan: {p}");
         }
+    }
+
+    #[test]
+    fn ignore_partial_download_18sep() {
+        // FP 18 Sep: download belum lengkap (hash parsial/duplikat di Events).
+        for p in [
+            "C:\\Users\\Toshiba L735\\Downloads\\qHzgjWFa.zip.part",
+            "/home/ravi/Downloads/file.crdownload",
+            "/home/ravi/Downloads/video.download",
+            "/home/ravi/Downloads/a.opdownload",
+            "/home/ravi/Downloads/b.filepart",
+        ] {
+            assert!(should_ignore(Path::new(p)), "harus diabaikan: {p}");
+        }
+        // File final (hasil rename) tetap lolos.
+        for p in [
+            "C:\\Users\\Toshiba L735\\Downloads\\qHzgjWFa.zip",
+            "/home/ravi/Downloads/garuda.jpg",
+            "/home/ravi/Downloads/laporan.xlsx",
+        ] {
+            assert!(!should_ignore(Path::new(p)), "jangan diabaikan: {p}");
+        }
+    }
+
+    #[tokio::test]
+    async fn wait_settled_stabil_dan_hilang() {
+        let dir = std::env::temp_dir().join("soar-test-settled");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("lengkap.bin");
+        std::fs::write(&f, vec![7u8; 1024]).unwrap();
+        assert!(wait_settled(&f).await); // stabil -> true (~1 detik)
+        assert!(!wait_settled(&dir.join("tidak-ada.bin")).await); // hilang -> false
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn count_dirs_tidak_follow_symlink_dan_berhenti_di_limit() {
+        let dir = std::env::temp_dir().join("soar-test-countdirs");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("a/b")).unwrap();
+        std::fs::create_dir_all(dir.join("c")).unwrap();
+        // Symlink ke / (tiruan dosdevices/z:): tidak boleh dimasuki.
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/", dir.join("z")).ok();
+        assert_eq!(count_dirs_bounded(&dir, 100), 3); // a, a/b, c (z bukan dir)
+        assert_eq!(count_dirs_bounded(&dir, 2), 2); // berhenti di limit
+        // Root tidak ada = 0, bukan panic.
+        assert_eq!(count_dirs_bounded(Path::new("/tidak-ada-xyz"), 100), 0);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

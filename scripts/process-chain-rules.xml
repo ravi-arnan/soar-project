@@ -1,0 +1,114 @@
+<!--
+  Wazuh rules — deteksi detonasi malware multi-stage via LOLBin chain.
+  Rule ID range: 110000 - 110099 (custom SOAR, tidak tabrakan dengan
+  default Wazuh rules / custom phishing 100002).
+
+  TERGANTUNG decoder Sysmon bawaan Wazuh (eventchannel -> group sysmon_event1)
+  yang men-decode field: sysmon.image, sysmon.parentImage, sysmon.commandLine,
+  sysmon.originalFileName. TIDAK perlu decoder custom.
+
+  Cara apply: salin ke /var/ossec/etc/rules/ di Wazuh MANAGER,
+  lalu restart wazuh-manager.
+-->
+<group name="process_chain,lolbin,soar,">
+
+  <!-- ============================================================
+       LEVEL 8: Windows — powershell hidden window
+       -WindowStyle Hidden / -W Hidden / -WindowStyle 0x0 / -EncodedCommand
+       adalah indikator kuat proses anomali.
+       ============================================================ -->
+  <rule id="110001" level="8">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="osmatch">(?i)\\powershell(_ise)?\.exe$</field>
+    <match type="osmatch">(?i)-windowstyle\s+(hidden|0x0)|-w\s+hidden|-enc\b|-encodedcommand</match>
+    <options>no_full_log</options>
+    <description>SOAR: PowerShell -WindowStyle Hidden / EncodedCommand (indikator LOLBin chain)</description>
+    <group>process_chain,lolbin,powershell,attack_execution,attack_T1059.001,</group>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 10: PowerShell hidden + parent adalah cmd.exe
+       (cmd -> powershell -WindowStyle Hidden = pola klasik
+       loader/detonator dari batch file).
+       ============================================================ -->
+  <rule id="110002" level="10">
+    <if_sid>110001</if_sid>
+    <field name="sysmon.parentImage" type="osmatch">(?i)\\cmd\.exe$</field>
+    <description>SOAR: cmd.exe spawn PowerShell hidden (detonasi batch file -> PowerShell)</description>
+    <group>process_chain,lolbin,attack_execution,attack_T1059.001,</group>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 12: cmd -> powershell -> python dari TEMP/APPDATA
+       Chain lengkap 3 tingkat seperti di video:
+         .bat -> cmd -> powershell -WindowStyle Hidden -> python %TEMP%\...
+       Kalau parent ps juga di-spawn oleh cmd, pasti malware multi-stage.
+       ============================================================ -->
+  <rule id="110003" level="12">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.parentImage" type="osmatch">(?i)\\powershell\.exe$</field>
+    <field name="sysmon.image" type="osmatch">(?i)\\(Temp|AppData|Roaming|Users|Downloads|Desktop)\\.*\\(python|python3)(\.exe)?$</field>
+    <description>SOAR: DETEKSI FULL CHAIN — PowerShell hidden -> python/script dari user-temp (malware stage-2)</description>
+    <group>process_chain,lolbin,attack_execution,attack_T1059.001,attack_T1059.006,</group>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 7: Script interpreter (python/mshta/cscript/wscript/
+       regsvr32/rundll32) dijalankan dari folder user-writable
+       (TEMP, APPDATA, Downloads). Ini eksekusi payload stage-2.
+       ============================================================ -->
+  <rule id="110004" level="7">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="osmatch">(?i)\\(Temp|AppData|Roaming|Downloads|Desktop)\\.*\\(python|python3|mshta\.exe|cscript\.exe|wscript\.exe|regsvr32\.exe|rundll32\.exe)(\.exe)?$</field>
+    <description>SOAR: Script interpreter dari folder user (potensi malware stage-2 / LOLBin)</description>
+    <group>process_chain,lolbin,attack_execution,attack_T1059,attack_T1218,</group>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 6: System binary dari lokasi tidak wajar (masquerading)
+       "Microsoft application from an unusual location": contoh dari video:
+         C:\Users\Public\svchost.exe, C:\Temp\rundll32.exe
+       ============================================================ -->
+  <rule id="110005" level="6">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="osmatch">(?i)\\(Users\\(Public|Default)|Temp|AppData|Desktop|Downloads)\\.*\\(svchost\.exe|rundll32\.exe|regsvr32\.exe|spoolsv\.exe|lsass\.exe|smss\.exe|csrss\.exe|winlogon\.exe|services\.exe|taskhostw\.exe|conhost\.exe)$</field>
+    <description>SOAR: System binary (LOLBin) dari lokasi tidak standar (masquerading)</description>
+    <group>process_chain,lolbin,masquerading,attack_T1036,</group>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 8: Office app (winword/excel/powerpnt/outlook) spawn
+       shell/script interpreter = malicious document / phishing.
+       ============================================================ -->
+  <rule id="110006" level="8">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.parentImage" type="osmatch">(?i)\\(winword\.exe|excel\.exe|powerpnt\.exe|outlook\.exe)$</field>
+    <field name="sysmon.image" type="osmatch">(?i)\\(cmd\.exe|powershell(\.exe|_ise\.exe)?|wscript\.exe|cscript\.exe|mshta\.exe|python(\.exe)?|regsvr32\.exe|rundll32\.exe|wmic\.exe)$</field>
+    <description>SOAR: Office app spawn shell/script interpreter (malware document / phishing attachment)</description>
+    <group>process_chain,lolbin,phishing,attack_T1566,attack_T1204,</group>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 10: regsvr32/rundll32 dengan URL atau file dari TEMP
+       (Squiblydoo / regsvr32.exe abuse memuat dari remote)
+       ============================================================ -->
+  <rule id="110007" level="10">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="osmatch">(?i)\\(regsvr32|rundll32)\.exe$</field>
+    <match type="osmatch">(?i)(https?://|\\appdata\\|\\temp\\|\.dll.*\s*-)</match>
+    <description>SOAR: regsvr32/rundll32 memuat dari URL/temp (LOLBin abuse)</description>
+    <group>process_chain,lolbin,attack_T1218.010,attack_T1218.011,</group>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 5: Script extension (.bat/.cmd/.vbs/.ps1/.js) dari
+       user-temp — initial dropper.
+       ============================================================ -->
+  <rule id="110008" level="5">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="osmatch">(?i)\\(Temp|AppData|Downloads|Desktop)\\.*\\.(bat|cmd|vbs|ps1|js)$</field>
+    <description>SOAR: Script (.bat/.vbs/.ps1) dijalankan dari user-temp (potensi initial dropper)</description>
+    <group>process_chain,lolbin,attack_initial_access,attack_T1059,</group>
+  </rule>
+
+</group>
