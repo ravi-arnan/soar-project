@@ -91,6 +91,38 @@ def extract_path(alert):
     return syscheck.get("path") or data.get("path") or ""
 
 
+def extract_process_fields(alert):
+    """Extract process chain fields dari Sysmon/4688 event.
+
+    Field Sysmon hasil decoding Wazuh umumnya di `alert.data.sysmon.*`.
+    Nilai fallback tambahan menangani variasi penempatan (data.data.* /
+    data.win.*) supaya tetap forward walau lokasi field beda antar layer OS.
+    """
+    data = alert.get("data", {}) or {}
+    nested = data.get("data", {}) or {}
+    sysmon = data.get("sysmon", {}) or {}
+    win = data.get("win", {}) or {}
+
+    def _get(*names):
+        for src in (sysmon, nested, win, data):
+            if not isinstance(src, dict):
+                continue
+            for n in names:
+                v = src.get(n)
+                if v:
+                    return str(v)
+        return ""
+
+    return {
+        "proc_image": _get("image", "Image", "proc_image"),
+        "proc_parent_image": _get("parentImage", "ParentImage", "proc_parent_image"),
+        "proc_cmdline": _get("commandLine", "CommandLine", "proc_cmdline"),
+        "parent_name": _get("parentImage", "ParentImage").split("\\")[-1]
+        if _get("parentImage", "ParentImage")
+        else "",
+    }
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(1)
@@ -124,6 +156,7 @@ def main():
     agent_name = agent.get("name", "unknown")
     srcip = (alert.get("data", {}) or {}).get("srcip", "0.0.0.0")
     timestamp = alert.get("timestamp", "")
+    proc = extract_process_fields(alert)
 
     payload = {
         "rule": {
@@ -131,10 +164,7 @@ def main():
             "level": rule_level,
             "description": rule.get("description", ""),
         },
-        "agent": {
-            "id": agent_id,
-            "name": agent_name,
-        },
+        "agent": {"id": agent_id, "name": agent_name},
         "timestamp": timestamp,
         "model": "llama3.2:3b",
     }
@@ -143,7 +173,15 @@ def main():
     hash_value = extract_hash(alert)
     file_path = extract_path(alert)
 
-    if url_value:
+    # Process chain event (rule 1100xx): LOLBin detection via Sysmon
+    if rule_id.startswith("1100") and rule_id.isdigit():
+        payload["data"] = {
+            "event_type": "process_chain",
+            "proc_image": proc["proc_image"],
+            "proc_parent_image": proc["proc_parent_image"],
+            "proc_cmdline": proc["proc_cmdline"],
+        }
+    elif url_value:
         # Phishing: URL-based event (tidak ada noise filter karena URL events jarang)
         payload["data"] = {"url": url_value, "srcip": srcip}
     elif hash_value or file_path:

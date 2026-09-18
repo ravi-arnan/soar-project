@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Patch AI Generate (Experiential/deepseek-v4-flash) ke workflow live
+"""Patch AI Generate (Atria/Atria-Dawn-Preview) ke workflow live
 'Deteksi Malware' di n8n (via public API).
 
 Latar: node Preload Model + Ollama Generate dalam keadaan disabled dan service
 Ollama mati sehingga "Analisis AI" di Telegram selalu kosong. Patch ini
-menyisipkan jalur LLM eksternal (Anthropic-compatible):
+menyisipkan jalur LLM eksternal (OpenAI-compatible):
 
   Build Payload -> AI Generate -> Send Telegram Alert
 
-AI Generate memanggil Experiential API (model deepseek-v4-flash, gratis),
-membaca key dari $env.EXPERIENTIAL_API_KEY (env container n8n). Output field
+AI Generate memanggil Atria API (model Atria-Dawn-Preview),
+membaca key dari $env.ATRIA_API_KEY (env container n8n). Output field
 `ai_response`; template Telegram diperbarui dari `ollama_response`.
 
 Cara pakai (jalankan DI ravi-debian):
@@ -34,40 +34,36 @@ WORKFLOW_ID_DEFAULT = "1MVcpL7ZKfBhR2tc"
 AI_NAME = "AI Generate"
 TG_NAME = "Send Telegram Alert"
 
-AI_JSCODE = """const apiKey = $env.EXPERIENTIAL_API_KEY;
-if (!apiKey) throw new Error('EXPERIENTIAL_API_KEY belum di-set di n8n env');
+AI_JSCODE = """const apiKey = $env.ATRIA_API_KEY;
+if (!apiKey) throw new Error('ATRIA_API_KEY belum di-set di n8n env');
 
 const body = {
-  model: 'deepseek-v4-flash',
-  max_tokens: 300,
+  model: 'Atria-Dawn-Preview',
+  max_tokens: 1500,
+  temperature: 0.3,
   messages: [{ role: 'user', content: $json.prompt }],
 };
 
 const resp = await this.helpers.httpRequest({
   method: 'POST',
-  url: 'https://api.experientiallabs.ai/v1/messages',
+  url: 'https://api.atria-asi.ai/v1/chat/completions',
   headers: {
     'Content-Type': 'application/json',
-    'x-api-key': apiKey,
-    'anthropic-version': '2023-06-01',
+    'Authorization': 'Bearer ' + apiKey,
   },
   body: JSON.stringify(body),
   timeout: 60000,
 });
 
-let text = '';
-const parts = resp?.content || [];
-for (const p of parts) {
-  if (p && p.type === 'text' && p.text) text += p.text;
-}
-if (!text) text = JSON.stringify(resp).slice(0, 500);
+let text = resp?.choices?.[0]?.message?.content || '';
+if (!text) text = 'Analisis AI tidak tersedia saat ini.';
 const clean = text
   .replace(/<think>[\\s\\S]*?<\\/think>/g, '')
   .replace(/[*_`\\[\\]()]/g, '')
   .replace(/\\n\\n+/g, '\\n')
   .trim();
 
-return [{ json: { ...$json, ai_response: clean, llm_model: 'deepseek-v4-flash' } }];"""
+return [{ json: { ...$json, ai_response: clean, llm_model: 'Atria-Dawn-Preview' } }];"""
 
 AI_NODE = {
     "name": AI_NAME,

@@ -248,3 +248,80 @@ MD yang diupdate: `agent-rs/README.md` (Noise filter + catatan toolchain),
 Resume besok (satu-satunya sisa): ps1 reinstall di 005/006
 (exe baru sudah di `http://100.73.91.17:8000/soar-agent.exe`, byte 7928320).
 Lalu: screenshot dashboard + Telegram untuk laporan (TODO lama).
+
+# Handoff SOAR - 2026-09-16/17 (nixbox, Atria + auto-karantina)
+
+## 1. AI Generate pindah Experiential -> Atria (kredit habis)
+
+- Key Atria (`atr_...`, 36 char) di `~/.config/opencode/secrets/atria.key`.
+  API OpenAI-compatible `https://api.atria-asi.ai/v1`, model `Atria-Dawn-Preview`
+  (text-only, reasoning; `/v1/models` terverifikasi hidup).
+- Repo: `scripts/patch-n8n-ai-generate.py` (jsCode Atria + Bearer),
+  `docker-compose.yml` (`ATRIA_API_KEY`), `.env.example`.
+- Server: `.env` + compose diupdate via ssh, `docker compose up -d n8n`
+  (env kebaca: `docker exec n8n env` ada ATRIA_API_KEY).
+- n8n API key lama 401 -> pulihkan dari sqlite manager
+  (`docker cp n8n:.../database.sqlite`, tabel `user_api_keys` label
+  soar-project). Patch live OK, read-back: active, ada atria, tanpa experiential.
+- Gotcha: max_tokens 300 habis di reasoning -> `content: null`
+  (test EICAR-1 ai_response = dump JSON). Fix: max_tokens 1500 +
+  temperature 0.3 + fallback statis. Test EICAR-2: AI Indonesia benar
+  ("66 dari 68 AV...", CRITICAL).
+
+## 2. Auto-karantina ternyata tidak pernah jalan -> diperbaiki
+
+- Akar: alert dari agen Rust (003) diformat mirip Wazuh; Trigger AR panggil
+  Wazuh API untuk 003, manager cuma kenal 000 -> 1701 Agent does not exist.
+- Fix: node baru **Fleet Quarantine**
+  (Trigger AR -> Fleet Quarantine -> Build Payload, onError continue).
+  Kalau AR != isolated, POST `http://host.docker.internal:8080/api/commands`
+  `{agent_id, quarantine, target}`; agen eksekusi lokal via do_quarantine
+  (pindah + chmod 000, latensi <= heartbeat 60 dtk).
+  Script: `scripts/patch-n8n-fleet-quarantine.py` (idempoten + backup).
+- Test EICAR-3 (exec 949): `fleet_quarantine: queued` -> file hilang dari
+  Downloads -> `/var/ossec/quarantine` (dibuat agent, root-owned).
+  Template Telegram live netral ("MALWARE TERDETEKSI", tanpa klaim isolasi).
+
+## File berubah (belum commit)
+
+M: `.env.example`, `docker-compose.yml`,
+`scripts/patch-n8n-ai-generate.py`, `scripts/patch-n8n-fleet-quarantine.py` (baru),
+`HANDOFF.md`. WIP lama tak tersentuh: process-chain rules/decoder,
+`agent-rs/src/main.rs`, `custom-n8n.py`, MITRE doc.
+
+## Sisa / next
+
+- Screenshot dashboard + Telegram untuk laporan (TODO lama).
+- WIP process-chain (LOLBin/Sysmon) belum selesai: 1 error XML di
+  `scripts/process-chain-rules.xml:69` belum dibetulkan.
+- Token sementara sudah di-shred kedua sisi; backup patch di `backups/`.
+
+# Handoff SOAR - 2026-09-18 (nixbox, fix FP Security Events)
+
+## 1. Akar FP (data 005: puluhan MEDIUM — png, xlsx, zip, e3b0c44...)
+
+- Agent hash tiap chunk download (settle 300ms + debounce 2 dtk) → 1 file
+  jadi 4-5 event, hash parsial beda-beda (`.zip.part` 4x, xlsx 5 hash beda
+  dalam 1 detik).
+- File kosong ikut di-hash → `e3b0c442...` (hash file kosong) muncul 6x.
+- File parsial browser (`*.zip.part`) ikut dipindai.
+
+## 2. Fix di `agent-rs/src/main.rs` (cargo test 5 passed)
+
+- `wait_settled()`: hash hanya kalau size stabil 2x poll 500ms (maks ~8 dtk).
+- File 0-byte di-skip (event modify saat isi datang retrigger).
+- `NOISY_EXT` + `.part/.crdownload/.download/.opdownload/.filepart/.partial`
+  (rename ke nama final = event Create baru, tetap lolos).
+- Debounce per path 2 dtk → 60 dtk (`DEBOUNCE_SECS`).
+- Test baru: `ignore_partial_download_18sep`, `wait_settled_stabil_dan_hilang`.
+
+## 3. Build/deploy (TERHALANG jaringan, butuh Ravi)
+
+- ✅ `soar-agent.exe` baru dibuild di nixbox: 7.990.272 bytes, PE32+ x86-64,
+  ada di `deploy/bundle/soar-agent.exe` (belum commit, biar Ravi cek dulu).
+- 🔴 Server tak terjangkau (nixbox di WiFi 192.168.131.x, 192.168.1.47
+  timeout; Tailscale nixbox logged out). Belum: antar exe ke `~/public`,
+  rebuild gnu + restart 003, nixos-rebuild 002 (butuh sudo).
+- Langkah Ravi tertulis di board #19. Koordinasi lanjut via
+  ai-board-azure.vercel.app (#18 + #19).
+- Sampai binary baru terpasang, FP masih muncul (binary lama masih jalan).
