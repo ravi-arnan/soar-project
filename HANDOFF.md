@@ -325,3 +325,60 @@ M: `.env.example`, `docker-compose.yml`,
 - Langkah Ravi tertulis di board #19. Koordinasi lanjut via
   ai-board-azure.vercel.app (#18 + #19).
 - Sampai binary baru terpasang, FP masih muncul (binary lama masih jalan).
+
+# Handoff SOAR - 2026-09-18/19 malam (nixbox, tutup #18 + 007 + metrics)
+
+## 1. Deploy fix FP selesai di semua device (board #18-#25)
+
+- Nixbox balik ke LAN 192.168.1.26, server reachable lagi (hambatan #19 hilang).
+- 003: `main.rs` baru di-scp, `cargo build --release` + `cargo test` 5 passed
+  DI server, install + restart via sudo (password sekali via stdin, tak disimpan).
+  Backup: `/tmp/main.rs.bak-18sep`, `/tmp/soar-agent.bak-18sep`.
+- Exe 7990272 (sha 47701718) live di `~/public` + `:8000` (200).
+- 005/006 reinstall OK (v0.2.0). 002 sudah OK sebelumnya.
+- Post #22 + tutup #25. `events_total` stagnan 28 = FP berhenti.
+- Gotcha: `pgrep -f cargo build` match string ssh-nya sendiri (false BUILDING);
+  cek log/target binary langsung. `strings|grep` tak temukan literal
+  NOISY_EXT di binary Linux (artefak codegen), tapi `.partial` ada di binary
+  baru + `cargo test ignore_partial_download_18sep` lolos = fix live.
+  Jangan verifikasi binary via grep literal.
+
+## 2. Onboarding 007 bali-handmade (board #26-#31)
+
+- Panduan dipost #26 (ID 007, Windows ps1 + timpa exe :8000 / Linux 1-baris).
+- 007 DONE #27 (ASUS Win10 Home, tanpa Tailscale, SERVER=LAN).
+  Catatan: exe GitHub release v0.2.0 = 7954432 bytes PRE-FIX, jangan dipakai;
+  selalu timpa dari `:8000`.
+- Tailscale 007 dipost #29, DONE #30 (100.126.10.58 via winget). Tutup #31.
+- Fleet 6/6 active. EICAR tak dijalankan di 007 (diblokir Defender = wajar).
+
+## 3. Tailscale nixbox (bukan logout biasa)
+
+- `tailscaled`: tiap boot sejak >=14 Sep `nodeKeyExpired=false,
+  machineAuthorized=false` -> NeedsLogin. Key valid, mesin tak terotorisasi
+  di tailnet (kemungkinan terhapus/belum approve di admin).
+- Ravi login ulang OK, nixbox = 100.75.103.60. Dicatat board #32.
+
+## 4. Fix metrics Windows (Resource usage kosong)
+
+- Akar: `cpu_pct`/`ram_gb` di `main.rs` dikunci `#[cfg(target_os = "linux")]`
+  -> exe kirim 0 -> server tak simpan titik. 002/003 selalu normal (60 titik).
+- Fix: gate cfg dicabut (sysinfo 0.30 cross-platform), `cargo test` 5 passed,
+  exe baru 9888768 bytes (sha a956e46b, sysinfo Windows ikut ke-link)
+  live di `:8000`. Post #33, DONE 005/006/007 (#35/#37/#39, sha match),
+  metrics mengalir. 002/003 tak perlu update.
+- SSH Windows (#34): 007 klaim DONE tapi port 22 timeout dari nixbox;
+  005/006 handshake OK tapi pubkey ditolak walau key cocok (curiga username
+  bukan akun lokal / ACL authorized_keys). Detail cek per device di #40.
+- Batasan sensor (diskusi): ping/ICMP tak memicu apa pun (sensor file-based).
+  Sengaja bukan alert (noise); kalau mau visibilitas, log INFO + alert hanya
+  pola lanjutan (scan/bruteforce) = butuh NIDS, di luar scope. Tulis eksplisit
+  di dokumen keterbatasan.
+
+## Sisa
+
+- Lapis-2 dedup n8n (JANJI #18, BELUM): struktur live dipetakan
+  (Ekstrak Alert -> Scan VT titik sisip terbaik), API key di
+  `/tmp/n8n_api_key.txt` (bukan di repo). Lanjut: tulis
+  `scripts/patch-n8n-dedup.py` pola patch-*.py + uji double-POST.
+- Commit ini: `main.rs` (metrics) + exe 9888768. `.opencode/` tetap tak ikut.
