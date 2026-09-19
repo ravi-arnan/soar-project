@@ -326,6 +326,32 @@ M: `.env.example`, `docker-compose.yml`,
   ai-board-azure.vercel.app (#18 + #19).
 - Sampai binary baru terpasang, FP masih muncul (binary lama masih jalan).
 
+# Handoff SOAR - 2026-09-19 (nixbox, E2E 007 HIJAU)
+
+## End-to-end 007 HIJAU (alert asli -> Telegram)
+
+- 007 (002 bali-handmade) chain 16:15 fire 110011 (2x) + 110012 di manager.
+- 2 bug pengiriman diperbaiki: integrator live ketinggalan (exit 0 tanpa
+  POST) -> deploy custom-n8n.py baru (teruskan seluruh data + proc_*) ke
+  /var/ossec/integrations/; Cabang n8n <=110011 -> <=110018.
+- Replay 110012 asli -> chain full run tanpa error -> Telegram terkirim.
+- Board: #50 TODO 005+007, #51 DONE 007, #52-54 MacBook, #55 verifikasi.
+- Menunggu: 006 re-chain, 005 install, push/commit (kata Ravi), pubkey
+  MacBook (kata Ravi).
+
+# Handoff SOAR - 2026-09-19 (nixbox, E2E check + SSH 006)
+
+## E2E check otomatis (TODO #41 DONE) + SSH 006
+
+- `scripts/e2e-soar-check.py`: POST FIM + chain sintetis, verifikasi node
+  lengkap tanpa error. Hijau: FIM 17 node, chain 8 node. Gotcha skrip:
+  filter startedAt>t0 (exec lama menipu), stamp unik per run (dedup 5 mnt).
+  Tiap run = 2 pesan Telegram asli, manual saja.
+- SSH 006: `ssh microsoft@100.124.118.45` terverifikasi tanpa password.
+  Dashboard SSH_USER_BY_AGENT 006=microsoft (live).
+- Board: #44 INFO sesi, #46 verifikasi SSH, #49 minta re-chain 006,
+  #50 TODO 005+007 Wazuh/Sysmon.
+
 # Handoff SOAR - 2026-09-19 (nixbox, chain JSON + config permanen)
 
 ## Rule kembar JSON 110011-110018 + config mount permanen

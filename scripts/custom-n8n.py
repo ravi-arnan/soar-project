@@ -173,14 +173,16 @@ def main():
     hash_value = extract_hash(alert)
     file_path = extract_path(alert)
 
-    # Process chain event (rule 1100xx): LOLBin detection via Sysmon
+    # Process chain event (rule 1100xx): LOLBin detection via Sysmon.
+    # Teruskan SELURUH data asli (win.eventdata.* / sysmon.*) supaya
+    # Ekstrak Chain di n8n bisa baca field aslinya, plus ringkasan proc_*.
     if rule_id.startswith("1100") and rule_id.isdigit():
-        payload["data"] = {
-            "event_type": "process_chain",
-            "proc_image": proc["proc_image"],
-            "proc_parent_image": proc["proc_parent_image"],
-            "proc_cmdline": proc["proc_cmdline"],
-        }
+        raw = alert.get("data", {}) or {}
+        payload["data"] = dict(raw) if isinstance(raw, dict) else {}
+        payload["data"]["event_type"] = "process_chain"
+        payload["data"]["proc_image"] = proc["proc_image"]
+        payload["data"]["proc_parent_image"] = proc["proc_parent_image"]
+        payload["data"]["proc_cmdline"] = proc["proc_cmdline"]
     elif url_value:
         # Phishing: URL-based event (tidak ada noise filter karena URL events jarang)
         payload["data"] = {"url": url_value, "srcip": srcip}
