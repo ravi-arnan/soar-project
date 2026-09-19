@@ -76,7 +76,7 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
         osType: osType(a.os),
         clusterNode: '-',
         version: a.version || '-',
-        regDate: '-',
+        regDate: a.regDate && a.regDate !== '-' ? formatWazuhTime(a.regDate) : '-',
         lastKeepAlive: formatWazuhTime(a.lastKeepAlive),
         status: agentStatus(a.status),
       })),

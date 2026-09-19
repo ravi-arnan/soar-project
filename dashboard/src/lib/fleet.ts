@@ -28,6 +28,7 @@ export interface FleetAgent {
   age_sec?: number;
   cpu_pct?: number;
   ram_gb?: { total?: number; used?: number };
+  regDate?: string;
 }
 
 export interface FleetEvent {

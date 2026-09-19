@@ -127,10 +127,22 @@ def _fetch_wazuh_once(base_url, cfg):
     ) as r:
         token = json.load(r)["data"]["token"]
     with _get(
-        f"{base_url}/agents?select=id,name,status,ip,version,dateAdd,lastKeepAlive&limit=500",
+        f"{base_url}/agents?select=id,name,status,ip,version,dateAdd,lastKeepAlive,os.name,os.version,os.platform&limit=500",
         headers={"Authorization": f"Bearer {token}"},
     ) as r:
         return json.load(r)["data"]["affected_items"]
+
+
+def _short_os(a):
+    """Ringkas objek os Wazuh API jadi 'windows 10 ...' / 'linux ...'."""
+    osv = a.get("os") or {}
+    if isinstance(osv, dict):
+        plat = osv.get("platform", "") or ""
+        name = osv.get("name", "") or ""
+        ver = osv.get("version", "") or ""
+        s = " ".join(x for x in (plat, name, ver) if x).strip()
+        return s or "unknown"
+    return str(osv) if osv else "unknown"
 
 
 def fetch_wazuh_agents(cfg):
@@ -185,7 +197,8 @@ def build_fleet(cfg):
                 "ip": a.get("ip", "-"),
                 "version": a.get("version", "-"),
                 "lastKeepAlive": a.get("lastKeepAlive", "-"),
-                "os": a.get("os", "unknown"),
+                "regDate": a.get("dateAdd", "-"),
+                "os": _short_os(a),
                 "binary": "50 MB",
                 "ram": "~50 MB",
             }
