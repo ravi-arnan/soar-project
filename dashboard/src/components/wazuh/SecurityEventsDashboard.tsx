@@ -16,6 +16,8 @@ import type { FleetEvent, FleetStats } from '@/lib/fleet';
 
 interface SecurityEventsDashboardProps {
   onSelectAgent?: (agentId: string) => void;
+  /** Buka view Agents (opsional; tombol Explore agent disembunyikan bila tak ada). */
+  onOpenAgents?: () => void;
   /** Event live dari /api/events (heartbeat agent + webhook n8n). */
   events: FleetEvent[];
   /** Ringkasan severity dari /api/fleet. */
@@ -31,6 +33,7 @@ const DONUT_CIRCUMFERENCE = 240;
 
 export function SecurityEventsDashboard({
   onSelectAgent,
+  onOpenAgents,
   events,
   stats,
   onRefresh,
@@ -39,6 +42,8 @@ export function SecurityEventsDashboard({
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  /** Rentang waktu event dalam jam (null = semua). */
+  const [rangeHours, setRangeHours] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   /** Status antrean AR per baris: queued | gagal | mengirim. */
@@ -49,6 +54,39 @@ export function SecurityEventsDashboard({
     setQuery(q);
     setActiveFilters(filters);
     setPage(0);
+  };
+
+  const handleRange = (h: number | null) => {
+    setRangeHours(h);
+    setPage(0);
+  };
+
+  // Event dalam rentang waktu terpilih (berlaku untuk tabel + grafik).
+  const rangedEvents = useMemo(() => {
+    if (rangeHours === null) return events;
+    const cutoff = Date.now() - rangeHours * 3600 * 1000;
+    return events.filter((e) => {
+      const t = new Date(e.ts).getTime();
+      return !Number.isNaN(t) && t >= cutoff;
+    });
+  }, [events, rangeHours]);
+
+  /** Unduh event yang tampil (filter + rentang aktif) sebagai CSV. */
+  const exportCsv = () => {
+    const cell = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = visibleAlerts.map((r) =>
+      [r.time, r.agentId, r.agentName, r.hash, r.description, r.level, r.ruleId].map(cell).join(',')
+    );
+    const blob = new Blob(
+      [[['time', 'agent_id', 'agent_name', 'hash', 'description', 'level', 'rule'].join(','), ...lines].join('\n')],
+      { type: 'text/csv' }
+    );
+    const url = URL.createObjectURL(blob);
+    const el = document.createElement('a');
+    el.href = url;
+    el.download = 'security-events.csv';
+    el.click();
+    URL.revokeObjectURL(url);
   };
 
   /** Extract domain dari URL event phishing (untuk sinkhole). */
@@ -83,7 +121,7 @@ export function SecurityEventsDashboard({
   // (CRITICAL=12, HIGH=8, MEDIUM=5, UNVERIFIED=4, INFO=3).
   const alertsData = useMemo(
     () =>
-      events.map((e, i) => ({
+      rangedEvents.map((e, i) => ({
         id: i + 1,
         time: formatWazuhTime(e.ts),
         agentId: e.agent_id || '-',
@@ -97,7 +135,7 @@ export function SecurityEventsDashboard({
         level: severityLevel(e.severity),
         ruleId: (e.severity || 'INFO').toUpperCase(),
       })),
-    [events]
+    [rangedEvents]
   );
 
   // Filter search + chip dari WazuhFilterBar: tiap token harus cocok (AND)
@@ -118,15 +156,44 @@ export function SecurityEventsDashboard({
   const safePage = Math.min(page, pageCount - 1);
   const pagedAlerts = visibleAlerts.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
 
-  // Top 5 agent menurut jumlah event.
+  // Top 5 agent menurut jumlah event (dalam rentang aktif).
   const topAgents = useMemo(() => {
     const counts = new Map<string, number>();
-    events.forEach((e) => {
+    rangedEvents.forEach((e) => {
       const key = e.agent || '-';
       counts.set(key, (counts.get(key) || 0) + 1);
     });
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [events]);
+  }, [rangedEvents]);
+
+  // Top 5 path menurut jumlah event (dalam rentang aktif).
+  const topPaths = useMemo(() => {
+    const counts = new Map<string, number>();
+    rangedEvents.forEach((e) => {
+      if (e.path && e.path !== '-') counts.set(e.path, (counts.get(e.path) || 0) + 1);
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [rangedEvents]);
+  const topPathTotal = topPaths.reduce((sum, [, n]) => sum + n, 0) || 1;
+  const topPathArcs = topPaths.map(([, n]) => Math.round((n / topPathTotal) * DONUT_CIRCUMFERENCE));
+
+  // Histogram event per hari, 14 hari terakhir (dalam rentang aktif).
+  const dailyHits = useMemo(() => {
+    const days: { label: string; count: number }[] = [];
+    const now = new Date();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      days.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, count: 0 });
+    }
+    rangedEvents.forEach((e) => {
+      const t = new Date(e.ts).getTime();
+      if (Number.isNaN(t)) return;
+      const idx = 13 - Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(new Date(t).getFullYear(), new Date(t).getMonth(), new Date(t).getDate()).getTime()) / 86400000);
+      if (idx >= 0 && idx < 14) days[idx].count += 1;
+    });
+    return days;
+  }, [rangedEvents]);
+  const dailyMax = Math.max(1, ...dailyHits.map((d) => d.count));
 
   const topTotal = topAgents.reduce((sum, [, n]) => sum + n, 0) || 1;
   const topArcs = topAgents.map(([, n]) => Math.round((n / topTotal) * DONUT_CIRCUMFERENCE));
@@ -159,11 +226,20 @@ export function SecurityEventsDashboard({
         </div>
 
         <div className="flex items-center gap-4 text-[12px]">
-          <button className="flex items-center gap-1.5 text-[#006BB4] hover:underline font-medium">
-            <Radio className="w-3.5 h-3.5" />
-            <span>Explore agent</span>
-          </button>
-          <button className="flex items-center gap-1.5 text-[#006BB4] hover:underline font-medium">
+          {onOpenAgents && (
+            <button
+              onClick={onOpenAgents}
+              className="flex items-center gap-1.5 text-[#006BB4] hover:underline font-medium"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>Explore agent</span>
+            </button>
+          )}
+          <button
+            onClick={exportCsv}
+            title="Unduh event yang tampil sebagai CSV"
+            className="flex items-center gap-1.5 text-[#006BB4] hover:underline font-medium"
+          >
             <FileText className="w-3.5 h-3.5" />
             <span>Generate report</span>
           </button>
@@ -171,8 +247,15 @@ export function SecurityEventsDashboard({
       </div>
 
       {/* Filter and Search Bar */}
-      <WazuhFilterBar onRefresh={onRefresh} onSearch={handleSearch} />
+      <WazuhFilterBar
+        onRefresh={onRefresh}
+        onSearch={handleSearch}
+        dateRange={rangeHours}
+        onDateRange={handleRange}
+      />
 
+      {activeTab === 'dashboard' && (
+      <>
       {/* Top 4 Metric KPI Counters — angka live dari /api/fleet.
           Bucket severity fleet dipetakan ke 4 tile Wazuh (CRITICAL / HIGH / MEDIUM). */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 bg-white border border-[#D3DAE6] rounded p-4 text-center">
@@ -269,27 +352,50 @@ export function SecurityEventsDashboard({
           </div>
         </ExpandableCard>
 
-        {/* Card 2: Top MITRE ATT&CKS */}
-        <ExpandableCard title="Top MITRE ATT&CKS">
+        {/* Card 2: Top paths (live dari event) */}
+        <ExpandableCard title="Top paths">
 
           <div className="flex items-center justify-center gap-6 h-56">
             <div className="relative w-40 h-40 flex items-center justify-center">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                 <circle cx="50" cy="50" r="38" fill="none" stroke="#EBEFF5" strokeWidth="18" />
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#D9381E" strokeWidth="18" strokeDasharray="60 180" strokeDashoffset="0" />
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#00A389" strokeWidth="18" strokeDasharray="50 190" strokeDashoffset="-60" />
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#006BB4" strokeWidth="18" strokeDasharray="40 200" strokeDashoffset="-110" />
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#9B51E0" strokeWidth="18" strokeDasharray="30 210" strokeDashoffset="-150" />
+                {topPathArcs.map((len, i) => {
+                  const offset = topPathArcs.slice(0, i).reduce((a, b) => a + b, 0);
+                  return len > 0 ? (
+                    <circle
+                      key={i}
+                      cx="50"
+                      cy="50"
+                      r="38"
+                      fill="none"
+                      stroke={TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length]}
+                      strokeWidth="18"
+                      strokeDasharray={`${len} ${DONUT_CIRCUMFERENCE - len}`}
+                      strokeDashoffset={`-${offset}`}
+                    />
+                  ) : null;
+                })}
               </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-[20px] font-bold text-[#1A1C21]">{topPaths.reduce((s, [, n]) => s + n, 0)}</span>
+              </div>
             </div>
 
             <div className="text-[11px] space-y-1 text-[#5A626F] overflow-y-auto max-h-48 pr-2">
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#D9381E]"></span><span>Brute Force</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#00A389]"></span><span>Remove Services</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#006BB4]"></span><span>Email Collection</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#9B51E0]"></span><span>Valid Accounts</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#E2B93B]"></span><span>Sudo</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#27AE60]"></span><span>Endpoint Denial of Service</span></div>
+              {topPaths.length ? (
+                topPaths.map(([path, n], i) => (
+                  <div key={path} className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length] }}
+                    ></span>
+                    <span className="truncate max-w-[160px] font-mono" title={path}>{path.split('/').pop()}</span>
+                    <span className="font-semibold">{n}</span>
+                  </div>
+                ))
+              ) : (
+                <span className="text-[#8A94A6]">belum ada event</span>
+              )}
             </div>
           </div>
         </ExpandableCard>
@@ -339,26 +445,25 @@ export function SecurityEventsDashboard({
           </div>
         </ExpandableCard>
 
-        {/* Card 4: Alerts evolution - Top 5 agents */}
-        <ExpandableCard title="Alerts evolution - Top 5 agents">
+        {/* Card 4: Alerts evolution (histogram per hari dari ts event asli) */}
+        <ExpandableCard title="Alerts evolution - 14 hari">
 
           <div className="flex items-center justify-between gap-4 h-56">
             <div className="flex-1 h-full flex flex-col justify-end">
-              {/* Stacked bar visualization */}
               <div className="h-44 flex items-end justify-between gap-1 border-b border-[#D3DAE6] pb-1">
-                {Array.from({ length: 24 }).map((_, i) => (
-                  <div key={i} className="flex-1 flex flex-col justify-end h-full">
-                    <div style={{ height: `${20 + (i % 5) * 12}%` }} className="bg-[#9B51E0] w-full"></div>
-                    <div style={{ height: `${15 + (i % 3) * 8}%` }} className="bg-[#00A389] w-full"></div>
-                    <div style={{ height: `${25 + (i % 4) * 10}%` }} className="bg-[#006BB4] w-full"></div>
-                    <div style={{ height: `${10 + (i % 6) * 5}%` }} className="bg-[#D9381E] w-full"></div>
+                {dailyHits.map((d) => (
+                  <div key={d.label} className="flex-1 flex flex-col justify-end items-center h-full" title={`${d.label}: ${d.count} event`}>
+                    <div
+                      style={{ height: `${Math.round((d.count / dailyMax) * 100)}%`, minHeight: d.count > 0 ? 4 : 0 }}
+                      className="bg-[#006BB4] w-full"
+                    ></div>
                   </div>
                 ))}
               </div>
               <div className="flex justify-between text-[10px] text-[#8A94A6] mt-2">
-                <span>2026-01-18 00:00</span>
-                <span>2026-01-21 00:00</span>
-                <span>2026-01-24 00:00</span>
+                <span>{dailyHits[0]?.label}</span>
+                <span>{dailyHits[6]?.label}</span>
+                <span>{dailyHits[13]?.label}</span>
               </div>
             </div>
 
@@ -376,6 +481,8 @@ export function SecurityEventsDashboard({
           </div>
         </ExpandableCard>
       </div>
+      </>
+      )}
 
       {/* Security Alerts Data Table Card */}
       <ExpandableCard title="Security Alerts">
