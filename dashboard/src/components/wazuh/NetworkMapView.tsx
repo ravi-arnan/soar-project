@@ -9,14 +9,49 @@ interface NetworkMapViewProps {
   onSelectAgent?: (agentId: string) => void;
 }
 
-/** Peta jaringan hub-and-spoke (SVG native): server di tengah, agent di sekeliling.
- *  Garis hijau = active, merah = disconnected. Klik node = detail agent. */
+/** Heuristik laptop-vs-PC dari nama (fleet dikenal kecil; fallback = PC).
+ *  ponytail: kalau fleet membesar / nama tak konsisten, ganti dengan field
+ *  form_factor dari agent. */
+function isLaptop(name: string): boolean {
+  return /laptop|notebook|toshiba|asus|ideapc|bapak|handmade|book/i.test(name || '');
+}
+
+/** Ikon PC desktop (monitor + tower), terpusat di (0,0). */
+function PcIcon({ dim }: { dim: boolean }) {
+  return (
+    <g opacity={dim ? 0.45 : 1} transform="translate(-2,-16)">
+      <rect x={12} y={0} width="13" height="32" rx="1.5" fill="#D3DAE6" stroke="#5A626F" strokeWidth="1.5" />
+      <rect x={14.5} y={4} width="8" height="3" fill="#00A389" />
+      <rect x={-20} y={0} width="30" height="24" rx="2" fill="#E8EEF4" stroke="#5A626F" strokeWidth="1.5" />
+      <rect x={-17} y={3} width="24" height="18" fill="#BDD7EE" />
+      <line x1={-5} y1={24} x2={-5} y2={30} stroke="#5A626F" strokeWidth="2" />
+      <line x1={-12} y1={30} x2={2} y2={30} stroke="#5A626F" strokeWidth="2" />
+    </g>
+  );
+}
+
+/** Ikon laptop (layar + base), terpusat di (0,0). */
+function LaptopIcon({ dim }: { dim: boolean }) {
+  return (
+    <g opacity={dim ? 0.45 : 1} transform="translate(1,-13)">
+      <rect x={-16} y={0} width="30" height="21" rx="2" fill="#E8EEF4" stroke="#5A626F" strokeWidth="1.5" />
+      <rect x={-13} y={3} width="24" height="15" fill="#BDD7EE" />
+      <polygon points="-20,21 18,21 22,27 -24,27" fill="#D3DAE6" stroke="#5A626F" strokeWidth="1.5" />
+    </g>
+  );
+}
+
+/** Peta jaringan hub-and-spoke ala kartu Wazuh: server di tengah, agent di
+ *  sekeliling sebagai ikon PC/laptop (bukan lingkaran). Garis hijau = active,
+ *  merah = disconnected. Klik node = detail agent. */
 export function NetworkMapView({ agents, onSelectAgent }: NetworkMapViewProps) {
   const W = 640;
   const H = 400;
   const cx = W / 2;
   const cy = H / 2;
 
+  // fetchSnapshot() sudah menyaring 000 wazuh.manager (server itu sendiri),
+  // jadi di sini semua agents = endpoint spoke.
   const nodes = useMemo(() => {
     const n = agents.length || 1;
     const rx = W / 2 - 90;
@@ -72,11 +107,11 @@ export function NetworkMapView({ agents, onSelectAgent }: NetworkMapViewProps) {
           ))}
           {/* Server hub */}
           <g>
-            <rect x={cx - 70} y={cy - 22} width="140" height="44" rx="8" fill="#011a2f" />
-            <text x={cx} y={cy - 2} textAnchor="middle" fill="#fff" fontSize="12" fontWeight="bold">
+            <rect x={cx - 70} y={cy - 22} width="140" height="44" rx="8" fill="#fff" stroke="#006BB4" strokeWidth="1.5" />
+            <text x={cx} y={cy - 2} textAnchor="middle" fill="#1A1C21" fontSize="12" fontWeight="bold">
               SOAR server
             </text>
-            <text x={cx} y={cy + 14} textAnchor="middle" fill="#00a9e0" fontSize="10" fontFamily="monospace">
+            <text x={cx} y={cy + 14} textAnchor="middle" fill="#5A626F" fontSize="10" fontFamily="monospace">
               n8n + fleet + wazuh
             </text>
           </g>
@@ -84,22 +119,24 @@ export function NetworkMapView({ agents, onSelectAgent }: NetworkMapViewProps) {
           {nodes.map(({ agent, x, y, active }) => (
             <g
               key={agent.id}
+              transform={`translate(${x},${y})`}
               onClick={() => onSelectAgent?.(agent.id)}
               style={{ cursor: onSelectAgent ? 'pointer' : 'default' }}
             >
+              <title>{`${agent.name} (${agent.ip}) — ${agent.status || 'unknown'}${agent.os && agent.os !== 'unknown' ? ` — ${agent.os}` : ''}`}</title>
+              <circle r="24" fill={active ? '#EBF7F3' : '#FDECEA'} opacity="0.6" />
               <circle
-                cx={x}
-                cy={y}
-                r="20"
-                fill={active ? '#EBF7F3' : '#FDECEA'}
+                r="24"
+                fill="none"
                 stroke={active ? '#00A389' : '#BD271E'}
-                strokeWidth="2"
+                strokeWidth="1.5"
+                strokeDasharray={active ? undefined : '4 3'}
               />
-              <circle cx={x} cy={y} r="5" fill={active ? '#00A389' : '#BD271E'} />
-              <text x={x} y={y + 34} textAnchor="middle" fontSize="11" fontWeight="600" fill="#1A1C21">
+              {isLaptop(agent.name) ? <LaptopIcon dim={!active} /> : <PcIcon dim={!active} />}
+              <text y={38} textAnchor="middle" fontSize="11" fontWeight="600" fill="#1A1C21">
                 {agent.name}
               </text>
-              <text x={x} y={y + 47} textAnchor="middle" fontSize="9" fill="#5A626F" fontFamily="monospace">
+              <text y={51} textAnchor="middle" fontSize="9" fill="#5A626F" fontFamily="monospace">
                 {agent.ip}
               </text>
             </g>

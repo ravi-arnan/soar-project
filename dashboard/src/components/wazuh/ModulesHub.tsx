@@ -76,7 +76,7 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
         {
           id: 'agents',
           title: 'Fleet inventory',
-          description: `${stats.active}/${stats.total} aktif — Linux ${linux}, Windows ${windows}, ${stats.rust} Rust + ${stats.wazuh} Wazuh.`,
+          description: `${stats.active}/${stats.total} aktif — Linux ${linux}, Windows ${windows}, ${stats.rust} endpoint.`,
           icon: Server,
         },
         {

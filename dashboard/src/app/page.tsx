@@ -23,10 +23,15 @@ export default function Home() {
   const { snapshot, events, online, error, refresh } = useFleet();
 
   const { stats, agents, health } = snapshot;
+  // Fallback ke agent pertama bila id terpilih tak ada (misal default awal).
   const selectedAgent = useMemo(
-    () => agents.find((a) => a.id === selectedAgentId),
+    () =>
+      agents.find((a) => a.id === selectedAgentId) ||
+      agents.find((a) => a.id === selectedAgentId.replace(/^0+/, '')) ||
+      agents[0],
     [agents, selectedAgentId]
   );
+  const effectiveAgentId = selectedAgent?.id || selectedAgentId;
 
   // Breadcrumbs construction
   const getBreadcrumbs = () => {
@@ -145,12 +150,13 @@ export default function Home() {
             agents={agents}
             onSelectAgent={handleSelectAgent}
             onOpenSettings={() => setCurrentView('settings')}
+            onRefresh={refresh}
           />
         )}
 
         {currentView === 'agent-detail' && (
           <AgentDetailView
-            agentId={selectedAgentId}
+            agentId={effectiveAgentId}
             agent={selectedAgent}
             events={events}
             onNavigateTab={(tab) => {

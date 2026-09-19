@@ -26,8 +26,15 @@ interface FimDashboardProps {
 }
 
 export function FimDashboard({ events = [] }: FimDashboardProps) {
+  const [activeSubtab, setActiveSubtab] = useState<'inventory' | 'dashboard' | 'events'>('inventory');
   const [selectedPath, setSelectedPath] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+
+  /** Reset pilihan file + pencarian (tombol X di header detail). */
+  const resetSelection = () => {
+    setSelectedPath('');
+    setSearchTerm('');
+  };
 
   // Satu baris per path unik, hash & waktu diambil dari event terakhir path itu.
   const files = useMemo(() => {
@@ -48,21 +55,131 @@ export function FimDashboard({ events = [] }: FimDashboardProps) {
     f.path.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Ringkasan untuk subtab Dashboard: hitung dari event live.
+  const totalHits = events.length;
+  const topFiles = useMemo(() => {
+    const counts = new Map<string, number>();
+    events.forEach((e) => {
+      if (e.path) counts.set(e.path, (counts.get(e.path) || 0) + 1);
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [events]);
+  const topMax = topFiles.length ? topFiles[0][1] : 1;
+
+  const subtabCls = (active: boolean) =>
+    `font-medium pb-2.5 -mb-2 transition-colors ${
+      active
+        ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
+        : 'text-[#5A626F] hover:text-[#1A1C21]'
+    }`;
+
   return (
     <div className="space-y-4">
       {/* Sub-tabs */}
       <div className="flex items-center gap-6 border-b border-[#D3DAE6] pb-2 text-[13px]">
-        <button className="font-medium pb-2.5 -mb-2 border-b-2 border-[#006BB4] text-[#006BB4]">
+        <button onClick={() => setActiveSubtab('inventory')} className={subtabCls(activeSubtab === 'inventory')}>
           Inventory
         </button>
-        <button className="font-medium pb-2.5 -mb-2 text-[#5A626F] hover:text-[#1A1C21]">
+        <button onClick={() => setActiveSubtab('dashboard')} className={subtabCls(activeSubtab === 'dashboard')}>
           Dashboard
         </button>
-        <button className="font-medium pb-2.5 -mb-2 text-[#5A626F] hover:text-[#1A1C21]">
+        <button onClick={() => setActiveSubtab('events')} className={subtabCls(activeSubtab === 'events')}>
           Events
         </button>
       </div>
 
+      {activeSubtab === 'dashboard' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 bg-white border border-[#D3DAE6] rounded p-4 text-center">
+            <div>
+              <div className="text-[12px] text-[#5A626F] font-medium">File termonitor</div>
+              <div className="text-[32px] font-semibold text-[#006BB4] leading-tight mt-1">{files.length}</div>
+            </div>
+            <div>
+              <div className="text-[12px] text-[#5A626F] font-medium">Total hits</div>
+              <div className="text-[32px] font-semibold text-[#00A389] leading-tight mt-1">{totalHits}</div>
+            </div>
+            <div>
+              <div className="text-[12px] text-[#5A626F] font-medium">File dengan hits terbanyak</div>
+              <div className="text-[13px] font-mono text-[#1A1C21] mt-2 truncate" title={topFiles[0]?.[0] || '-'}>
+                {topFiles[0]?.[0] || '-'}
+              </div>
+            </div>
+          </div>
+          <div className="bg-white border border-[#D3DAE6] rounded p-4">
+            <h2 className="text-[14px] font-semibold mb-3">Top 5 file per hits</h2>
+            {topFiles.length ? (
+              <div className="space-y-2">
+                {topFiles.map(([path, n]) => (
+                  <button
+                    key={path}
+                    onClick={() => {
+                      setSelectedPath(path);
+                      setActiveSubtab('inventory');
+                    }}
+                    className="w-full text-left"
+                    title={`${path} — ${n} hits (klik untuk detail)`}
+                  >
+                    <div className="flex items-center justify-between text-[12px] mb-1">
+                      <span className="font-mono text-[#006BB4] hover:underline truncate max-w-[70%]">{path}</span>
+                      <span className="font-semibold text-[#5A626F]">{n}</span>
+                    </div>
+                    <div className="h-2 bg-[#F0F4F8] rounded">
+                      <div className="h-2 bg-[#006BB4] rounded" style={{ width: `${Math.round((n / topMax) * 100)}%` }} />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[13px] text-[#8A94A6]">belum ada event — drop EICAR di folder yang diawasi agent</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeSubtab === 'events' && (
+        <div className="bg-white border border-[#D3DAE6] rounded p-4 space-y-3">
+          <div className="text-[14px] font-semibold">Semua event integrity ({events.length})</div>
+          <div className="overflow-x-auto text-[12px]">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-[#D3DAE6] text-[#5A626F] font-semibold bg-[#F8FAFC]">
+                  <th className="py-2 px-3">Time ↓</th>
+                  <th className="py-2 px-3">Path</th>
+                  <th className="py-2 px-3">Action</th>
+                  <th className="py-2 px-3">Agent</th>
+                  <th className="py-2 px-3 text-center">Level</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EBEFF5]">
+                {[...events].reverse().map((e, i) => {
+                  const level = severityLevel(e.severity);
+                  return (
+                    <tr key={`${e.ts}-${i}`} className="hover:bg-[#F8FAFC]">
+                      <td className="py-2 px-3 text-[#5A626F] whitespace-nowrap">{formatWazuhTime(e.ts)}</td>
+                      <td className="py-2 px-3 font-mono text-[#006BB4] truncate max-w-[280px]" title={e.path}>{e.path || '-'}</td>
+                      <td className="py-2 px-3 font-medium text-[#1A1C21]">{e.status || '-'}</td>
+                      <td className="py-2 px-3 text-[#1A1C21]">{e.agent || '-'}</td>
+                      <td className={`py-2 px-3 text-center font-semibold ${level >= 7 ? 'text-[#BD271E]' : 'text-[#006BB4]'}`}>
+                        {level}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!events.length && (
+                  <tr>
+                    <td colSpan={5} className="py-4 text-center text-[#8A94A6]">
+                      belum ada event untuk file ini
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeSubtab === 'inventory' && (
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
         {/* Left Files List Sidebar */}
         <div className="bg-white border border-[#D3DAE6] rounded p-3 space-y-3">
@@ -113,7 +230,7 @@ export function FimDashboard({ events = [] }: FimDashboardProps) {
           <div className="bg-white border border-[#D3DAE6] rounded p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-[#EBEFF5] pb-3">
               <div className="text-[16px] font-semibold text-[#1A1C21] font-mono">{currentPath}</div>
-              <button className="text-[#8A94A6] hover:text-[#1A1C21]">
+              <button onClick={resetSelection} title="Reset pilihan file + pencarian" className="text-[#8A94A6] hover:text-[#1A1C21]">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -235,7 +352,13 @@ export function FimDashboard({ events = [] }: FimDashboardProps) {
               <div className="flex items-center gap-2 text-[13px] font-semibold text-[#1A1C21]">
                 <ChevronDown className="w-4 h-4" />
                 <span>Recent events</span>
-                <ExternalLink className="w-3.5 h-3.5 text-[#006BB4]" />
+                <button
+                  onClick={() => setActiveSubtab('events')}
+                  title="Lihat semua event di subtab Events"
+                  className="text-[#006BB4] hover:text-[#005593]"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
               </div>
               <div className="text-[12px] text-[#5A626F]">{fileEvents.length} hits</div>
             </div>
@@ -285,6 +408,7 @@ export function FimDashboard({ events = [] }: FimDashboardProps) {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

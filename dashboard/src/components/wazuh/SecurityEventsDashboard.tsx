@@ -4,13 +4,13 @@ import React, { useMemo, useState } from 'react';
 import {
   Radio,
   FileText,
-  Maximize2,
   ChevronRight,
   ChevronDown,
   Info,
   List,
 } from 'lucide-react';
 import { WazuhFilterBar } from './WazuhFilterBar';
+import { ExpandableCard } from './ExpandableCard';
 import { formatWazuhTime, severityLevel } from '@/lib/fleet';
 import type { FleetEvent, FleetStats } from '@/lib/fleet';
 
@@ -38,8 +38,18 @@ export function SecurityEventsDashboard({
   const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>('dashboard');
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [query, setQuery] = useState('');
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
   /** Status antrean AR per baris: queued | gagal | mengirim. */
   const [arState, setArState] = useState<Record<number, string>>({});
+
+  /** Terima search + chip filter dari WazuhFilterBar, reset ke halaman 1. */
+  const handleSearch = (q: string, filters: string[]) => {
+    setQuery(q);
+    setActiveFilters(filters);
+    setPage(0);
+  };
 
   /** Extract domain dari URL event phishing (untuk sinkhole). */
   function domainOf(url: string): string {
@@ -90,14 +100,23 @@ export function SecurityEventsDashboard({
     [events]
   );
 
-  // Filter search dari WazuhFilterBar: cocokkan ke deskripsi / agent / rule.
+  // Filter search + chip dari WazuhFilterBar: tiap token harus cocok (AND)
+  // ke deskripsi / agent / rule.
   const visibleAlerts = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return alertsData;
-    return alertsData.filter((r) =>
-      `${r.description} ${r.agentName} ${r.agentId} ${r.ruleId}`.toLowerCase().includes(q)
-    );
-  }, [alertsData, query]);
+    const tokens = [query, ...activeFilters]
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+    if (!tokens.length) return alertsData;
+    return alertsData.filter((r) => {
+      const hay = `${r.description} ${r.agentName} ${r.agentId} ${r.ruleId}`.toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    });
+  }, [alertsData, query, activeFilters]);
+
+  // Pagination: potong hasil filter per halaman.
+  const pageCount = Math.max(1, Math.ceil(visibleAlerts.length / rowsPerPage));
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedAlerts = visibleAlerts.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
 
   // Top 5 agent menurut jumlah event.
   const topAgents = useMemo(() => {
@@ -152,7 +171,7 @@ export function SecurityEventsDashboard({
       </div>
 
       {/* Filter and Search Bar */}
-      <WazuhFilterBar onRefresh={onRefresh} onSearch={setQuery} />
+      <WazuhFilterBar onRefresh={onRefresh} onSearch={handleSearch} />
 
       {/* Top 4 Metric KPI Counters — angka live dari /api/fleet.
           Bucket severity fleet dipetakan ke 4 tile Wazuh (CRITICAL / HIGH / MEDIUM). */}
@@ -186,11 +205,7 @@ export function SecurityEventsDashboard({
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Card 1: Severity breakdown donut */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 relative">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">Severity breakdown</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6] cursor-pointer hover:text-[#1A1C21]" />
-          </div>
+        <ExpandableCard title="Severity breakdown">
 
           <div className="flex items-center justify-center gap-6 h-56">
             <div className="relative w-40 h-40 flex items-center justify-center">
@@ -252,14 +267,10 @@ export function SecurityEventsDashboard({
               )}
             </div>
           </div>
-        </div>
+        </ExpandableCard>
 
         {/* Card 2: Top MITRE ATT&CKS */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 relative">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">Top MITRE ATT&CKS</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6] cursor-pointer hover:text-[#1A1C21]" />
-          </div>
+        <ExpandableCard title="Top MITRE ATT&CKS">
 
           <div className="flex items-center justify-center gap-6 h-56">
             <div className="relative w-40 h-40 flex items-center justify-center">
@@ -281,14 +292,10 @@ export function SecurityEventsDashboard({
               <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#27AE60]"></span><span>Endpoint Denial of Service</span></div>
             </div>
           </div>
-        </div>
+        </ExpandableCard>
 
         {/* Card 3: Top 5 Agents */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 relative">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">Top 5 agents</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6] cursor-pointer hover:text-[#1A1C21]" />
-          </div>
+        <ExpandableCard title="Top 5 agents">
 
           <div className="flex items-center justify-center gap-6 h-56">
             <div className="relative w-40 h-40 flex items-center justify-center">
@@ -330,14 +337,10 @@ export function SecurityEventsDashboard({
               )}
             </div>
           </div>
-        </div>
+        </ExpandableCard>
 
         {/* Card 4: Alerts evolution - Top 5 agents */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 relative">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">Alerts evolution - Top 5 agents</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6] cursor-pointer hover:text-[#1A1C21]" />
-          </div>
+        <ExpandableCard title="Alerts evolution - Top 5 agents">
 
           <div className="flex items-center justify-between gap-4 h-56">
             <div className="flex-1 h-full flex flex-col justify-end">
@@ -371,15 +374,11 @@ export function SecurityEventsDashboard({
               ))}
             </div>
           </div>
-        </div>
+        </ExpandableCard>
       </div>
 
       {/* Security Alerts Data Table Card */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-[13px] font-semibold text-[#1A1C21]">Security Alerts</div>
-          <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6] cursor-pointer hover:text-[#1A1C21]" />
-        </div>
+      <ExpandableCard title="Security Alerts">
 
         <div className="overflow-x-auto border border-[#EBEFF5] rounded">
           <table className="w-full text-left border-collapse text-[12px]">
@@ -400,13 +399,13 @@ export function SecurityEventsDashboard({
               {!visibleAlerts.length && (
                 <tr>
                   <td colSpan={10} className="py-6 text-center text-[#8A94A6]">
-                    {query
-                      ? `tidak ada event cocok "${query}"`
+                    {query || activeFilters.length
+                      ? `tidak ada event cocok "${[query, ...activeFilters].filter(Boolean).join(' + ')}"`
                       : 'belum ada event — drop EICAR di folder yang diawasi agent'}
                   </td>
                 </tr>
               )}
-              {visibleAlerts.map((row) => {
+              {pagedAlerts.map((row) => {
                 const isExpanded = expandedRow === row.id;
                 return (
                   <React.Fragment key={row.id}>
@@ -464,10 +463,8 @@ export function SecurityEventsDashboard({
                           {row.level}
                         </span>
                       </td>
-                      <td className="py-2 px-3 text-right font-medium">
-                        <span className="text-[#006BB4] hover:underline cursor-pointer">
-                          {row.ruleId}
-                        </span>
+                      <td className="py-2 px-3 text-right font-medium text-[#5A626F]">
+                        {row.ruleId}
                       </td>
                       <td className="py-2 px-3 text-right whitespace-nowrap">
                         {(() => {
@@ -532,26 +529,49 @@ export function SecurityEventsDashboard({
         <div className="flex items-center justify-between mt-3 text-[12px] text-[#5A626F]">
           <div className="flex items-center gap-2">
             <span>Rows per page:</span>
-            <select className="border border-[#D3DAE6] rounded px-1.5 py-0.5 bg-white text-[#1A1C21] outline-none">
-              <option>10</option>
-              <option>25</option>
-              <option>50</option>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => {
+                setRowsPerPage(Number(e.target.value));
+                setPage(0);
+              }}
+              className="border border-[#D3DAE6] rounded px-1.5 py-0.5 bg-white text-[#1A1C21] outline-none"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
             </select>
+            <span>
+              {visibleAlerts.length === 0
+                ? '0'
+                : `${safePage * rowsPerPage + 1}-${Math.min(safePage * rowsPerPage + rowsPerPage, visibleAlerts.length)}`}{' '}
+              dari {visibleAlerts.length}
+            </span>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <button className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] text-[#8A94A6]">‹</button>
-            <span className="font-semibold text-[#006BB4] px-1">1</span>
-            <button className="px-1 hover:text-[#1A1C21]">2</button>
-            <button className="px-1 hover:text-[#1A1C21]">3</button>
-            <button className="px-1 hover:text-[#1A1C21]">4</button>
-            <button className="px-1 hover:text-[#1A1C21]">5</button>
-            <span>...</span>
-            <button className="px-1 hover:text-[#1A1C21]">1000</button>
-            <button className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] text-[#1A1C21]">›</button>
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent"
+              aria-label="Halaman sebelumnya"
+            >
+              ‹
+            </button>
+            <span className="font-semibold text-[#006BB4] px-1">
+              {safePage + 1} / {pageCount}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              disabled={safePage >= pageCount - 1}
+              className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent"
+              aria-label="Halaman berikut"
+            >
+              ›
+            </button>
           </div>
         </div>
-      </div>
+      </ExpandableCard>
     </div>
   );
 }

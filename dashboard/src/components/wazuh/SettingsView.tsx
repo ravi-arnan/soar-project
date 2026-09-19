@@ -61,7 +61,7 @@ export function SettingsView({ health, stats, generatedAt, online }: SettingsVie
           <StatusRow
             ok={stats.active > 0}
             label="Agent aktif"
-            detail={`${stats.active}/${stats.total} agent (${stats.rust} Rust, ${stats.wazuh} Wazuh)`}
+            detail={`${stats.active}/${stats.total} endpoint (${stats.rust} Rust agent)`}
           />
           <StatusRow ok={true} label="Event tercatat" detail={`${stats.events_total} event`} />
           <div className="pt-2 text-[12px] text-[#5A626F]">

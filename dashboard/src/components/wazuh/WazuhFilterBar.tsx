@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Search, Calendar, RefreshCw, Plus, ChevronDown, Database, Filter } from 'lucide-react';
 
 interface WazuhFilterBarProps {
-  onSearch?: (query: string) => void;
+  onSearch?: (query: string, filters: string[]) => void;
   onRefresh?: () => void;
   initialFilters?: string[];
 }
@@ -12,7 +12,7 @@ interface WazuhFilterBarProps {
 export function WazuhFilterBar({
   onSearch,
   onRefresh,
-  initialFilters = ['cluster.name: wazuh'],
+  initialFilters = [],
 }: WazuhFilterBarProps) {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<string[]>(initialFilters);
@@ -22,6 +22,30 @@ export function WazuhFilterBar({
     setIsRefreshing(true);
     if (onRefresh) onRefresh();
     setTimeout(() => setIsRefreshing(false), 600);
+  };
+
+  /** Kirim query + chip aktif ke parent tiap berubah. */
+  const emit = (q: string, f: string[]) => onSearch?.(q, f);
+
+  const updateQuery = (q: string) => {
+    setQuery(q);
+    emit(q, filters);
+  };
+
+  const removeFilter = (index: number) => {
+    const next = filters.filter((_, i) => i !== index);
+    setFilters(next);
+    emit(query, next);
+  };
+
+  /** Jadikan teks search saat ini sebagai chip filter (AND dengan search). */
+  const addFilter = () => {
+    const t = query.trim();
+    if (!t || filters.includes(t)) return;
+    const next = [...filters, t];
+    setFilters(next);
+    setQuery('');
+    emit('', next);
   };
 
   return (
@@ -39,9 +63,9 @@ export function WazuhFilterBar({
               type="text"
               placeholder="Search"
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                onSearch?.(e.target.value);
+              onChange={(e) => updateQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addFilter();
               }}
               className="w-full pl-2.5 pr-12 text-[13px] bg-transparent text-[#1A1C21] outline-none placeholder-[#8A94A6]"
             />
@@ -82,14 +106,18 @@ export function WazuhFilterBar({
           >
             <span className="font-medium">{filter}</span>
             <button
-              onClick={() => setFilters(filters.filter((_, i) => i !== index))}
+              onClick={() => removeFilter(index)}
               className="text-[#8A94A6] hover:text-[#BD271E] font-bold ml-1"
             >
               ×
             </button>
           </div>
         ))}
-        <button className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium px-2 py-1">
+        <button
+          onClick={addFilter}
+          title="Jadikan teks search sebagai chip filter (atau Enter)"
+          className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium px-2 py-1"
+        >
           <Plus className="w-3.5 h-3.5" />
           <span>Add filter</span>
         </button>
