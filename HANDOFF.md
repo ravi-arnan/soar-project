@@ -326,6 +326,22 @@ M: `.env.example`, `docker-compose.yml`,
   ai-board-azure.vercel.app (#18 + #19).
 - Sampai binary baru terpasang, FP masih muncul (binary lama masih jalan).
 
+# Handoff SOAR - 2026-09-20 (tutup sesi nixbox 19-20 Sep, fleet clear tanpa dobel)
+
+## Status akhir sesi
+
+- Fleet tanpa dobel: Wazuh 000/001/002/003 + Rust 005-010; merge per host
+  (001 ideapc, 002 bali, 003 toshiba) setelah samakan ID Rust ke ID Wazuh.
+  008 macbook (Rust, macOS), 009 nixbox, 010 ravi-debian.
+- Pipeline FIM + chain LOLBin end-to-end HIJAU sampai Telegram di ketiga
+  Windows (005/006/007). E2E check `scripts/e2e-soar-check.py` hijau.
+- Gotcha n8n 2.40: output FALSE IF via API tidak eksekusi downstream
+  (pakai TRUE/fan-out saja). Gotcha manager: edit ossec.conf langsung
+  hilang tiap restart (edit file mount); <name> integration harus unik;
+  select API `os` tidak valid (pakai os.name/version/platform).
+- SSH: 006 user microsoft, 008 user macbook (peta di dashboard).
+- Board terakhir #83. Sisa: commit laporan + screenshot (Ravi).
+
 # Handoff SOAR - 2026-09-19 (nixbox, E2E 007 HIJAU)
 
 ## End-to-end 007 HIJAU (alert asli -> Telegram)

@@ -101,7 +101,7 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
   /** User SSH per agent (konfirmasi board #47; fallback = tebak dari OS).
    *  ponytail: peta kecil ini cukup untuk fleet belasan; kalau membesar,
    *  pindahkan ke field agent (fleet-monitor) supaya jadi data, bukan kode. */
-  const SSH_USER_BY_AGENT: Record<string, string> = { '006': 'microsoft' };
+  const SSH_USER_BY_AGENT: Record<string, string> = { '006': 'microsoft', '008': 'macbook' };
   const sshUser = (a: { id: string; os?: string }) =>
     SSH_USER_BY_AGENT[a.id] ||
     (a.os?.toLowerCase().includes('windows') ? 'Administrator' : 'ravi');
