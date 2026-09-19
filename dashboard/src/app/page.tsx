@@ -141,6 +141,7 @@ export default function Home() {
             events={events}
             stats={stats}
             onSelectAgent={handleSelectAgent}
+            onOpenAgents={() => setCurrentView('agents')}
             onRefresh={refresh}
           />
         )}

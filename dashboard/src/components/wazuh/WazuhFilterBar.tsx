@@ -1,18 +1,30 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Calendar, RefreshCw, Plus, ChevronDown, Database, Filter } from 'lucide-react';
+import { RefreshCw, Plus } from 'lucide-react';
 
 interface WazuhFilterBarProps {
   onSearch?: (query: string, filters: string[]) => void;
   onRefresh?: () => void;
   initialFilters?: string[];
+  /** Rentang waktu dalam jam (null = semua). */
+  dateRange?: number | null;
+  onDateRange?: (hours: number | null) => void;
 }
+
+const RANGE_OPTIONS: Array<{ label: string; hours: number | null }> = [
+  { label: 'Semua waktu', hours: null },
+  { label: '24 jam terakhir', hours: 24 },
+  { label: '7 hari terakhir', hours: 7 * 24 },
+  { label: '30 hari terakhir', hours: 30 * 24 },
+];
 
 export function WazuhFilterBar({
   onSearch,
   onRefresh,
   initialFilters = [],
+  dateRange = null,
+  onDateRange,
 }: WazuhFilterBarProps) {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<string[]>(initialFilters);
@@ -54,10 +66,6 @@ export function WazuhFilterBar({
       <div className="flex flex-wrap items-center gap-2">
         {/* Search input group */}
         <div className="flex-1 min-w-[280px] flex items-center bg-white border border-[#D3DAE6] rounded h-9 focus-within:border-[#006BB4] focus-within:ring-1 focus-within:ring-[#006BB4] transition-all">
-          <button className="px-2.5 text-[#5A626F] hover:text-[#1A1C21] flex items-center gap-1 border-r border-[#EBEFF5]">
-            <Database className="w-3.5 h-3.5 text-[#006BB4]" />
-            <ChevronDown className="w-3 h-3" />
-          </button>
           <div className="relative flex-1 flex items-center">
             <input
               type="text"
@@ -75,17 +83,19 @@ export function WazuhFilterBar({
           </div>
         </div>
 
-        {/* Date range picker button */}
-        <div className="flex items-center bg-white border border-[#D3DAE6] rounded h-9 text-[13px] text-[#1A1C21]">
-          <button className="flex items-center gap-2 px-3 hover:bg-[#F5F7FA] h-full transition-colors border-r border-[#EBEFF5]">
-            <Calendar className="w-3.5 h-3.5 text-[#5A626F]" />
-            <span>Last 7 days</span>
-            <ChevronDown className="w-3 h-3 text-[#5A626F]" />
-          </button>
-          <button className="px-2.5 text-[12px] text-[#006BB4] hover:underline h-full">
-            Show dates
-          </button>
-        </div>
+        {/* Date range picker */}
+        <select
+          value={dateRange === null ? '' : String(dateRange)}
+          onChange={(e) => onDateRange?.(e.target.value === '' ? null : Number(e.target.value))}
+          title="Rentang waktu event"
+          className="h-9 bg-white border border-[#D3DAE6] rounded px-2 text-[13px] text-[#1A1C21] outline-none cursor-pointer"
+        >
+          {RANGE_OPTIONS.map((o) => (
+            <option key={o.label} value={o.hours === null ? '' : String(o.hours)}>
+              {o.label}
+            </option>
+          ))}
+        </select>
 
         {/* Refresh button */}
         <button
