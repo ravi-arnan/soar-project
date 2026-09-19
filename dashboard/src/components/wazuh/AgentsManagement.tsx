@@ -98,6 +98,14 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
   const arcNever = arc(neverCount);
   const arcActive = arc(activeCount);
   const arcDisconnected = arc(disconnectedCount);
+  /** User SSH per agent (konfirmasi board #47; fallback = tebak dari OS).
+   *  ponytail: peta kecil ini cukup untuk fleet belasan; kalau membesar,
+   *  pindahkan ke field agent (fleet-monitor) supaya jadi data, bukan kode. */
+  const SSH_USER_BY_AGENT: Record<string, string> = { '006': 'microsoft' };
+  const sshUser = (a: { id: string; os?: string }) =>
+    SSH_USER_BY_AGENT[a.id] ||
+    (a.os?.toLowerCase().includes('windows') ? 'Administrator' : 'ravi');
+
   const lastRegistered = agents.length ? agents[agents.length - 1] : null;
   const mostActive = agents.find((a) => a.status === 'active') || null;
 
@@ -382,8 +390,7 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          const user = agent.os?.toLowerCase().includes('windows') ? 'Administrator' : 'ravi';
-                          const cmd = `ssh ${user}@${agent.ip}`;
+                          const cmd = `ssh ${sshUser(agent)}@${agent.ip}`;
                           if (window.confirm(`Salin perintah SSH ke clipboard:\n${cmd}`)) {
                             try {
                               navigator.clipboard?.writeText(cmd);

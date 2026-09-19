@@ -52,7 +52,7 @@ CABANG_PARAMS = {
         "conditions": [
             {
                 "id": "cond-is-chain",
-                "leftValue": "={{ (() => { const id = Number((($json.body ?? $json).rule?.id) || ($json.body ?? $json).rule_id || 0); return id >= 110001 && id <= 110011; })() }}",
+                "leftValue": "={{ (() => { const id = Number((($json.body ?? $json).rule?.id) || ($json.body ?? $json).rule_id || 0); return id >= 110001 && id <= 110018; })() }}",
                 "rightValue": True,
                 "operator": {"type": "boolean", "operation": "equals"},
             }
