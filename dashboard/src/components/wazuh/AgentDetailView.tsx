@@ -103,7 +103,43 @@ export function AgentDetailView({
   const [activeTab, setActiveTab] = useState<string | null>(null);
 
   const status = agentStatus(agent?.status || 'active');
-  const agentEvents = events.filter((e) => e.agent_id === agentId).slice(0, 4);
+  const allAgentEvents = events.filter((e) => e.agent_id === agentId);
+  const agentEvents = allAgentEvents.slice(0, 4);
+
+  // Severity breakdown agent ini (live dari event).
+  const sevCounts = [
+    { label: 'CRITICAL', count: 0, color: '#BD271E' },
+    { label: 'HIGH', count: 0, color: '#D97706' },
+    { label: 'MEDIUM', count: 0, color: '#F5A623' },
+    { label: 'UNVERIFIED', count: 0, color: '#64748B' },
+    { label: 'INFO', count: 0, color: '#006BB4' },
+  ];
+  allAgentEvents.forEach((e) => {
+    const s = (e.severity || 'INFO').toUpperCase();
+    const row = sevCounts.find((c) => c.label === s) || sevCounts[4];
+    row.count += 1;
+  });
+  const sevMax = Math.max(1, ...sevCounts.map((c) => c.count));
+
+  // Histogram event agent ini per hari, 14 hari terakhir (live dari ts).
+  const agentDaily = (() => {
+    const days: { label: string; count: number }[] = [];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(today - i * 86400000);
+      days.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, count: 0 });
+    }
+    allAgentEvents.forEach((e) => {
+      const t = new Date(e.ts).getTime();
+      if (Number.isNaN(t)) return;
+      const day = new Date(new Date(t).getFullYear(), new Date(t).getMonth(), new Date(t).getDate()).getTime();
+      const idx = 13 - Math.round((today - day) / 86400000);
+      if (idx >= 0 && idx < 14) days[idx].count += 1;
+    });
+    return days;
+  })();
+  const agentDailyMax = Math.max(1, ...agentDaily.map((d) => d.count));
 
   const tabs = [
     agent?.name || 'Ubuntu',
@@ -243,68 +279,34 @@ export function AgentDetailView({
         </button>
       </div>
 
-      {/* 3 Columns Top Row: MITRE, Compliance, FIM */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Card 1: MITRE Top Tactics */}
-        <ExpandableCard title="MITRE">
+      {/* Top Row: Severity + FIM (live dari event agent ini) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Card 1: Severity breakdown */}
+        <ExpandableCard title="Severity">
 
-          <div className="text-[12px] font-semibold text-[#5A626F] mb-2">Top Tactics</div>
+          <div className="text-[12px] font-semibold text-[#5A626F] mb-2">
+            {allAgentEvents.length} event agent ini
+          </div>
           <div className="space-y-2.5 text-[12px]">
-            <div className="flex items-center justify-between">
-              <span className="text-[#1A1C21]">Lateral Movement</span>
-              <span className="font-semibold bg-[#F0F4F8] px-2 py-0.5 rounded text-[#5A626F]">207</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#1A1C21]">Credential Access</span>
-              <span className="font-semibold bg-[#F0F4F8] px-2 py-0.5 rounded text-[#5A626F]">84</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#1A1C21]">Collection</span>
-              <span className="font-semibold bg-[#F0F4F8] px-2 py-0.5 rounded text-[#5A626F]">57</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#1A1C21]">Impact</span>
-              <span className="font-semibold bg-[#F0F4F8] px-2 py-0.5 rounded text-[#5A626F]">57</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#1A1C21]">Initial Access</span>
-              <span className="font-semibold bg-[#F0F4F8] px-2 py-0.5 rounded text-[#5A626F]">32</span>
-            </div>
+            {sevCounts.map((s) => (
+              <div key={s.label}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="flex items-center gap-2 text-[#1A1C21]">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }}></span>
+                    {s.label}
+                  </span>
+                  <span className="font-semibold bg-[#F0F4F8] px-2 py-0.5 rounded text-[#5A626F]">{s.count}</span>
+                </div>
+                <div className="h-1.5 bg-[#F0F4F8] rounded">
+                  <div
+                    className="h-1.5 rounded"
+                    style={{ width: `${Math.round((s.count / sevMax) * 100)}%`, backgroundColor: s.color }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </ExpandableCard>
-
-        {/* Card 2: Compliance Donut */}
-        <ExpandableCard
-          title="Compliance"
-          actions={
-            <div className="flex items-center gap-1 text-[12px] text-[#5A626F]">
-              <span>PCI DSS</span>
-              <ChevronDown className="w-3 h-3" />
-            </div>
-          }
-        >
-
-          <div className="flex items-center justify-center gap-4 h-48">
-            <div className="relative w-32 h-32 flex items-center justify-center">
-              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#00A389" strokeWidth="16" strokeDasharray="90 150" strokeDashoffset="0" />
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#006BB4" strokeWidth="16" strokeDasharray="60 180" strokeDashoffset="-90" />
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#E2557B" strokeWidth="16" strokeDasharray="40 200" strokeDashoffset="-150" />
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#8E44AD" strokeWidth="16" strokeDasharray="30 210" strokeDashoffset="-190" />
-              </svg>
-            </div>
-
-            <div className="text-[11px] space-y-1.5 text-[#5A626F]">
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#00A389]"></span><span>11.4 (542)</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#006BB4]"></span><span>2.2 (405)</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#E2557B]"></span><span>10.2.4 (320)</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#8E44AD]"></span><span>10.2.5 (216)</span></div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#E67E22]"></span><span>6.5 (207)</span></div>
-            </div>
-          </div>
-        </ExpandableCard>
-
-        {/* Card 3: FIM: Recent events */}
         <ExpandableCard title="FIM: Recent events">
 
           <div className="overflow-x-auto text-[11px]">
@@ -361,65 +363,24 @@ export function AgentDetailView({
           <ResourceChart agentId={agentId} />
         </ExpandableCard>
 
-        {/* Card 4: Events Count Evolution */}
+        {/* Card: Events evolution (histogram per hari dari ts asli) */}
         <ExpandableCard title="Events count evolution">
 
           <div className="h-44 flex flex-col justify-end">
-            <svg viewBox="0 0 400 120" className="w-full h-full overflow-visible">
-              <path
-                d="M0,90 L30,85 L60,88 L90,95 L120,85 L150,90 L180,88 L210,92 L240,85 L270,88 L300,90 L330,85 L360,20 L380,110 L400,90"
-                fill="none"
-                stroke="#00A389"
-                strokeWidth="2.5"
-              />
-              <line x1="0" y1="110" x2="400" y2="110" stroke="#D3DAE6" strokeWidth="1" />
-            </svg>
+            <div className="flex-1 flex items-end justify-between gap-1 border-b border-[#D3DAE6] pb-1">
+              {agentDaily.map((d) => (
+                <div key={d.label} className="flex-1 flex flex-col justify-end items-center h-full" title={`${d.label}: ${d.count} event`}>
+                  <div
+                    style={{ height: `${Math.round((d.count / agentDailyMax) * 100)}%`, minHeight: d.count > 0 ? 4 : 0 }}
+                    className="bg-[#00A389] w-full"
+                  ></div>
+                </div>
+              ))}
+            </div>
             <div className="flex justify-between text-[10px] text-[#8A94A6] mt-2">
-              <span>2026-01-18 00:00</span>
-              <span>2026-01-20 00:00</span>
-              <span>2026-01-22 00:00</span>
-              <span>2026-01-24 00:00</span>
-            </div>
-          </div>
-        </ExpandableCard>
-
-        {/* Card 5: SCA Last scan */}
-        <ExpandableCard title="SCA: Last scan">
-
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-semibold text-[#006BB4]">CIS benchmark for Ubuntu Linux 18.04 LTS</span>
-              <span className="bg-[#00A389] text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                cis_ubuntu18-04
-              </span>
-            </div>
-
-            <p className="text-[11px] text-[#5A626F] leading-relaxed">
-              This document provides prescriptive guidance for establishing a secure configuration posture for Ubuntu Linux 18.04 LTS.
-            </p>
-
-            <div className="grid grid-cols-4 gap-2 text-center py-2 bg-[#F8FAFC] border border-[#EBEFF5] rounded">
-              <div>
-                <div className="text-[11px] text-[#5A626F]">Pass</div>
-                <div className="text-[20px] font-semibold text-[#00A389]">34</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-[#5A626F]">Fail</div>
-                <div className="text-[20px] font-semibold text-[#BD271E]">82</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-[#5A626F]">Total checks</div>
-                <div className="text-[20px] font-semibold text-[#1A1C21]">198</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-[#5A626F]">Score</div>
-                <div className="text-[20px] font-semibold text-[#1A1C21]">29%</div>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center text-[11px] text-[#8A94A6]">
-              <span>Start time: Jan 24, 2026 @ 08:47:02.000</span>
-              <span>Duration: &lt; 1s</span>
+              <span>{agentDaily[0]?.label}</span>
+              <span>{agentDaily[6]?.label}</span>
+              <span>{agentDaily[13]?.label}</span>
             </div>
           </div>
         </ExpandableCard>
