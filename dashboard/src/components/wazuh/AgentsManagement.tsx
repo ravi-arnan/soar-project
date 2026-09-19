@@ -87,6 +87,11 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
   const activeCount = agents.filter((a) => a.status === 'active').length;
   const disconnectedCount = agents.filter((a) => a.status === 'disconnected').length;
   const neverCount = agents.filter((a) => a.status === 'never_connected').length;
+  // Distribusi OS live (ganti grafik Evolution palsu warisan clone).
+  const linuxCount = agents.filter((a) => a.osType === 'linux').length;
+  const windowsCount = agents.filter((a) => a.osType === 'windows').length;
+  const macCount = agents.filter((a) => a.osType === 'mac').length;
+  const osMax = Math.max(1, linuxCount, windowsCount, macCount);
   const coverage = total ? ((activeCount / total) * 100).toFixed(2) : '0.00';
   const arc = (n: number) =>
     total ? Math.round((n / total) * DONUT_CIRCUMFERENCE) : 0;
@@ -226,35 +231,31 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
           </div>
         </div>
 
-        {/* Evolution Line Chart */}
+        {/* OS Distribution (live dari data agent) */}
         <div className="bg-white border border-[#D3DAE6] rounded p-4 relative pt-6">
           <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-[#D3DAE6] px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider text-[#1A1C21] uppercase">
-            EVOLUTION
+            OS DISTRIBUTION
           </div>
 
-          <div className="h-36 flex flex-col justify-between">
-            <svg viewBox="0 0 300 100" className="w-full h-24 overflow-visible">
-              <line x1="0" y1="20" x2="300" y2="20" stroke="#7B61FF" strokeWidth="2" />
-              <circle cx="50" cy="20" r="3" fill="#7B61FF" />
-              <circle cx="150" cy="20" r="3" fill="#7B61FF" />
-              <circle cx="250" cy="20" r="3" fill="#7B61FF" />
-
-              <line x1="0" y1="65" x2="300" y2="65" stroke="#006BB4" strokeWidth="2" />
-              <circle cx="50" cy="65" r="3" fill="#006BB4" />
-              <circle cx="150" cy="65" r="3" fill="#006BB4" />
-              <circle cx="250" cy="65" r="3" fill="#006BB4" />
-
-              <line x1="0" y1="85" x2="300" y2="85" stroke="#00A389" strokeWidth="2" />
-              <circle cx="50" cy="85" r="3" fill="#00A389" />
-              <circle cx="150" cy="85" r="3" fill="#00A389" />
-              <circle cx="250" cy="85" r="3" fill="#00A389" />
-            </svg>
-
-            <div className="flex justify-between text-[10px] text-[#8A94A6]">
-              <span>2026-01-19 00:00</span>
-              <span>2026-01-21 00:00</span>
-              <span>2026-01-23 00:00</span>
-            </div>
+          <div className="h-36 flex flex-col justify-center gap-3 px-2">
+            {[
+              { label: 'Linux', count: linuxCount, color: '#00A389' },
+              { label: 'Windows', count: windowsCount, color: '#006BB4' },
+              { label: 'macOS', count: macCount, color: '#9B51E0' },
+            ].map((o) => (
+              <div key={o.label}>
+                <div className="flex items-center justify-between text-[11px] mb-1">
+                  <span className="text-[#1A1C21] font-medium">{o.label}</span>
+                  <span className="font-semibold text-[#5A626F]">{o.count}</span>
+                </div>
+                <div className="h-2.5 bg-[#F0F4F8] rounded">
+                  <div
+                    className="h-2.5 rounded"
+                    style={{ width: `${Math.round((o.count / osMax) * 100)}%`, backgroundColor: o.color }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
