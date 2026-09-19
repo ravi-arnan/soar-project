@@ -326,6 +326,33 @@ M: `.env.example`, `docker-compose.yml`,
   ai-board-azure.vercel.app (#18 + #19).
 - Sampai binary baru terpasang, FP masih muncul (binary lama masih jalan).
 
+# Handoff SOAR - 2026-09-19 (nixbox, dedup lapis-2 n8n DONE)
+
+## Lapis-2 dedup n8n SELESAI (janji #18 lunas)
+
+- Rencana awal (staticData workflow, window 5 mnt) GAGAL: uji 3x POST
+  identik lolos semua (exec 1017/1018/1019 full run), `staticData: null`
+  setelah eksekusi sukses = tidak persist di versi n8n ini. Bukan race
+  (POST ketiga setelah jeda tetap lolos).
+- Pivot ke claim-check atomik di server: `POST /api/seen`
+  (`scripts/fleet-monitor.py`, store in-memory `SEEN`, check-and-set
+  atomik karena HTTPServer single-threaded; validasi key<=512,
+  window clamp 10-3600 dtk, default 300).
+- Deploy: scp + `docker restart fleet-monitor` (volume mount, tanpa rebuild).
+  Uji endpoint: hit-1 `{"duplicate": false}`, hit-2 `{"duplicate": true}`.
+- Node `Dedup Alert` (Ekstrak Alert -> Dedup -> Scan VT) panggil /api/seen
+  via httpRequest helper, fail-open (fleet down/error = item diteruskan,
+  deteksi tidak mati). Script: `scripts/patch-n8n-dedup.py` (idempoten).
+- Uji double-POST (jeda 2 dtk): exec 1020 full run sampai Telegram,
+  exec 1021 berhenti di Dedup (tanpa Scan VT / Telegram ganda). HIJAU.
+
+## Sisa
+
+- Screenshot dashboard + Telegram untuk laporan (TODO lama).
+- WIP process-chain (LOLBin/Sysmon): 1 error XML di
+  `scripts/process-chain-rules.xml:69` belum dibetulkan.
+- `.opencode/` tetap tak ikut commit.
+
 # Handoff SOAR - 2026-09-18/19 malam (nixbox, tutup #18 + 007 + metrics)
 
 ## 1. Deploy fix FP selesai di semua device (board #18-#25)

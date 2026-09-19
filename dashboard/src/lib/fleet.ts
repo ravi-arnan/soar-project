@@ -163,6 +163,20 @@ export async function fetchSnapshot(): Promise<{
     getJson<FleetSnapshot>('/api/fleet'),
     getJson<{ events: FleetEvent[] }>('/api/events'),
   ]);
+  // 000 wazuh.manager adalah server itu sendiri (self-loopback), bukan agent:
+  // keluarkan dari daftar + hitung ulang stats supaya dashboard hanya bicara
+  // soal endpoint. Status manager tetap terpantau via health (Stack health).
+  const agents = (snapshot.agents || []).filter((a) => a.id !== '000');
+  const active = agents.filter((a) => (a.status || '').toLowerCase() === 'active').length;
+  snapshot.agents = agents;
+  snapshot.stats = {
+    ...snapshot.stats,
+    total: agents.length,
+    active,
+    disconnected: agents.length - active,
+    rust: agents.filter((a) => a.type === 'rust').length,
+    wazuh: agents.filter((a) => a.type === 'wazuh').length,
+  };
   return { snapshot, events: eventsRes.events || [] };
 }
 

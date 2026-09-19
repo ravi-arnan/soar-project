@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Maximize2,
   Calendar,
   ChevronDown,
   Database,
@@ -14,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { agentStatus, formatWazuhTime, formatClock, severityLevel } from '@/lib/fleet';
+import { ExpandableCard } from './ExpandableCard';
 import type { FleetAgent, FleetEvent } from '@/lib/fleet';
 
 interface AgentDetailViewProps {
@@ -246,11 +246,7 @@ export function AgentDetailView({
       {/* 3 Columns Top Row: MITRE, Compliance, FIM */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Card 1: MITRE Top Tactics */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
-          <div className="flex items-center justify-between mb-3 border-b border-[#EBEFF5] pb-2">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">MITRE</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6]" />
-          </div>
+        <ExpandableCard title="MITRE">
 
           <div className="text-[12px] font-semibold text-[#5A626F] mb-2">Top Tactics</div>
           <div className="space-y-2.5 text-[12px]">
@@ -275,17 +271,18 @@ export function AgentDetailView({
               <span className="font-semibold bg-[#F0F4F8] px-2 py-0.5 rounded text-[#5A626F]">32</span>
             </div>
           </div>
-        </div>
+        </ExpandableCard>
 
         {/* Card 2: Compliance Donut */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
-          <div className="flex items-center justify-between mb-3 border-b border-[#EBEFF5] pb-2">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">Compliance</div>
+        <ExpandableCard
+          title="Compliance"
+          actions={
             <div className="flex items-center gap-1 text-[12px] text-[#5A626F]">
               <span>PCI DSS</span>
               <ChevronDown className="w-3 h-3" />
             </div>
-          </div>
+          }
+        >
 
           <div className="flex items-center justify-center gap-4 h-48">
             <div className="relative w-32 h-32 flex items-center justify-center">
@@ -305,14 +302,10 @@ export function AgentDetailView({
               <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-[#E67E22]"></span><span>6.5 (207)</span></div>
             </div>
           </div>
-        </div>
+        </ExpandableCard>
 
         {/* Card 3: FIM: Recent events */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
-          <div className="flex items-center justify-between mb-3 border-b border-[#EBEFF5] pb-2">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">FIM: Recent events</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6]" />
-          </div>
+        <ExpandableCard title="FIM: Recent events">
 
           <div className="overflow-x-auto text-[11px]">
             <table className="w-full text-left">
@@ -358,26 +351,18 @@ export function AgentDetailView({
               </tbody>
             </table>
           </div>
-        </div>
+        </ExpandableCard>
       </div>
 
       {/* Bottom Row: Resource usage & Events Count Evolution */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Card: Resource usage (live dari heartbeat agent) */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
-          <div className="flex items-center justify-between mb-3 border-b border-[#EBEFF5] pb-2">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">Resource usage</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6]" />
-          </div>
+        <ExpandableCard title="Resource usage">
           <ResourceChart agentId={agentId} />
-        </div>
+        </ExpandableCard>
 
         {/* Card 4: Events Count Evolution */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
-          <div className="flex items-center justify-between mb-3 border-b border-[#EBEFF5] pb-2">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">Events count evolution</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6]" />
-          </div>
+        <ExpandableCard title="Events count evolution">
 
           <div className="h-44 flex flex-col justify-end">
             <svg viewBox="0 0 400 120" className="w-full h-full overflow-visible">
@@ -396,14 +381,10 @@ export function AgentDetailView({
               <span>2026-01-24 00:00</span>
             </div>
           </div>
-        </div>
+        </ExpandableCard>
 
         {/* Card 5: SCA Last scan */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
-          <div className="flex items-center justify-between mb-3 border-b border-[#EBEFF5] pb-2">
-            <div className="text-[13px] font-semibold text-[#1A1C21]">SCA: Last scan</div>
-            <Maximize2 className="w-3.5 h-3.5 text-[#8A94A6]" />
-          </div>
+        <ExpandableCard title="SCA: Last scan">
 
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -441,7 +422,7 @@ export function AgentDetailView({
               <span>Duration: &lt; 1s</span>
             </div>
           </div>
-        </div>
+        </ExpandableCard>
       </div>
     </div>
   );

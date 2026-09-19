@@ -6,7 +6,6 @@ import {
   Download,
   Settings,
   Eye,
-  Link2,
   RefreshCw,
   Search,
   Maximize2,
@@ -21,13 +20,29 @@ interface AgentsManagementProps {
   agents: FleetAgent[];
   /** Buka view Settings (opsional; tombol gear disembunyikan bila tak ada). */
   onOpenSettings?: () => void;
+  /** Muat ulang snapshot fleet (poll /api/fleet + /api/events). */
+  onRefresh?: () => void;
 }
 
 /** Keliling donut status (r=38), disamakan dengan desain Wazuh. */
 const DONUT_CIRCUMFERENCE = 240;
 
-export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetAgents }: AgentsManagementProps) {
+export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, agents: fleetAgents }: AgentsManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(15);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    onRefresh?.();
+    setTimeout(() => setIsRefreshing(false), 600);
+  };
+
+  const handleSearch = (v: string) => {
+    setSearchTerm(v);
+    setPage(0);
+  };
 
   /** Unduh tabel agent sebagai CSV (data live yang tampil). */
   const exportCsv = () => {
@@ -78,8 +93,8 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetA
   const arcNever = arc(neverCount);
   const arcActive = arc(activeCount);
   const arcDisconnected = arc(disconnectedCount);
-  const lastRegistered = agents.length ? agents[agents.length - 1].name : '-';
-  const mostActive = agents.find((a) => a.status === 'active')?.name || '-';
+  const lastRegistered = agents.length ? agents[agents.length - 1] : null;
+  const mostActive = agents.find((a) => a.status === 'active') || null;
 
   const filteredAgents = agents.filter(
     (a) =>
@@ -87,6 +102,11 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetA
       a.id.includes(searchTerm) ||
       a.ip.includes(searchTerm)
   );
+
+  // Pagination: potong hasil filter per halaman.
+  const pageCount = Math.max(1, Math.ceil(filteredAgents.length / rowsPerPage));
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedAgents = filteredAgents.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
 
   return (
     <div className="space-y-4">
@@ -179,15 +199,29 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetA
           <div className="grid grid-cols-2 gap-2 pt-3 text-[12px]">
             <div>
               <div className="text-[#8A94A6] text-[11px]">Last registered agent</div>
-              <div className="font-medium text-[#006BB4] hover:underline cursor-pointer truncate">
-                {lastRegistered}
-              </div>
+              {lastRegistered ? (
+                <button
+                  onClick={() => onSelectAgent(lastRegistered.id)}
+                  className="font-medium text-[#006BB4] hover:underline cursor-pointer truncate"
+                >
+                  {lastRegistered.name}
+                </button>
+              ) : (
+                <div className="font-medium text-[#8A94A6]">-</div>
+              )}
             </div>
             <div>
               <div className="text-[#8A94A6] text-[11px]">Most active agent</div>
-              <div className="font-medium text-[#006BB4] hover:underline cursor-pointer truncate">
-                {mostActive}
-              </div>
+              {mostActive ? (
+                <button
+                  onClick={() => onSelectAgent(mostActive.id)}
+                  className="font-medium text-[#006BB4] hover:underline cursor-pointer truncate"
+                >
+                  {mostActive.name}
+                </button>
+              ) : (
+                <div className="font-medium text-[#8A94A6]">-</div>
+              )}
             </div>
           </div>
         </div>
@@ -232,12 +266,15 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetA
             type="text"
             placeholder="Filter or search agent"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearch(e.target.value)}
             className="w-full text-[13px] bg-transparent outline-none placeholder-[#8A94A6]"
           />
         </div>
-        <button className="h-9 px-4 bg-[#006BB4] hover:bg-[#005593] text-white rounded font-medium text-[13px] flex items-center gap-2 transition-colors cursor-pointer">
-          <RefreshCw className="w-3.5 h-3.5" />
+        <button
+          onClick={handleRefresh}
+          className="h-9 px-4 bg-[#006BB4] hover:bg-[#005593] text-white rounded font-medium text-[13px] flex items-center gap-2 transition-colors cursor-pointer"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
           <span>Refresh</span>
         </button>
       </div>
@@ -289,7 +326,7 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetA
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EBEFF5]">
-              {filteredAgents.map((agent) => (
+              {pagedAgents.map((agent) => (
                 <tr
                   key={agent.id}
                   className="hover:bg-[#F8FAFC] transition-colors cursor-pointer"
@@ -346,23 +383,16 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetA
                           e.stopPropagation();
                           const user = agent.os?.toLowerCase().includes('windows') ? 'Administrator' : 'ravi';
                           const cmd = `ssh ${user}@${agent.ip}`;
-                          if (window.confirm(`Buka terminal lokal:\n${cmd}`)) {
+                          if (window.confirm(`Salin perintah SSH ke clipboard:\n${cmd}`)) {
                             try {
                               navigator.clipboard?.writeText(cmd);
                             } catch {}
                           }
                         }}
-                        title={`SSH ke agent ini (${agent.ip})`}
+                        title={`Salin perintah SSH ke agent ini (${agent.ip})`}
                         className="hover:text-[#00A389]"
                       >
                         <span className="font-mono text-[10px] font-bold">&gt;_</span>
-                      </button>
-                      <button
-                        onClick={(e) => e.stopPropagation()}
-                        title="Link"
-                        className="hover:text-[#005593]"
-                      >
-                        <Link2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>
@@ -375,14 +405,47 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, agents: fleetA
         {/* Pagination footer */}
         <div className="flex items-center justify-between mt-3 text-[12px] text-[#5A626F]">
           <div className="flex items-center gap-2">
-            <span>Rows per page: 15</span>
+            <span>Rows per page:</span>
+            <select
+              value={rowsPerPage}
+              onChange={(e) => {
+                setRowsPerPage(Number(e.target.value));
+                setPage(0);
+              }}
+              className="border border-[#D3DAE6] rounded px-1.5 py-0.5 bg-white text-[#1A1C21] outline-none"
+            >
+              <option value={10}>10</option>
+              <option value={15}>15</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+            </select>
+            <span>
+              {filteredAgents.length === 0
+                ? '0'
+                : `${safePage * rowsPerPage + 1}-${Math.min(safePage * rowsPerPage + rowsPerPage, filteredAgents.length)}`}{' '}
+              dari {filteredAgents.length}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            <span>‹</span>
-            <span className="font-semibold text-[#006BB4]">1</span>
-            <span>2</span>
-            <span>3</span>
-            <span>›</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={safePage === 0}
+              className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent"
+              aria-label="Halaman sebelumnya"
+            >
+              ‹
+            </button>
+            <span className="font-semibold text-[#006BB4] px-1">
+              {safePage + 1} / {pageCount}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+              disabled={safePage >= pageCount - 1}
+              className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent"
+              aria-label="Halaman berikut"
+            >
+              ›
+            </button>
           </div>
         </div>
       </div>
