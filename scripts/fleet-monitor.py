@@ -79,6 +79,12 @@ COMMANDS_MAX = 20
 METRICS = {}
 METRICS_MAX = 60
 
+# Claim-check dedup untuk n8n lapis-2 (node Dedup Alert): key -> ts pertama
+# terlihat. Single-threaded HTTPServer jadi check-and-set atomik alami.
+# ponytail: in-memory saja (restart = lupa, wajar untuk window menit);
+# entri tua dibersihkan tiap hit. Upgrade: redis SETNX kalau multi-replika.
+SEEN = {}
+
 # Cache Wazuh agents
 WAZUH_CACHE = {"data": [], "fetched_at": 0}
 WAZUH_TTL = 30
@@ -839,6 +845,43 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(b'{"status":"ok"}')
             except Exception as e:
                 self.send_response(400)
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+        elif parsed.path == "/api/seen":
+            # Dedup lapis-2 n8n: {"key": "003|<hash>|<path>", "window_secs": 300}
+            # -> {"duplicate": false} (baru, dicatat) atau {"duplicate": true}.
+            # Key tak dikenal formatnya tidak ditolak (fail-open di sisi n8n),
+            # tapi dibatasi panjangnya biar tidak jadi tempat sampah memori.
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                j = json.loads(body)
+                key = str(j.get("key", "")).strip()
+                if not key:
+                    raise ValueError("need key")
+                if len(key) > 512:
+                    raise ValueError("key terlalu panjang")
+                try:
+                    window = int(j.get("window_secs", 300))
+                except (TypeError, ValueError):
+                    window = 300
+                window = max(10, min(window, 3600))
+                now = time.time()
+                for k in [k for k, ts in SEEN.items() if now - ts > window]:
+                    del SEEN[k]
+                if key in SEEN:
+                    dup = True
+                else:
+                    SEEN[key] = now
+                    dup = False
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"duplicate": dup}).encode())
+            except Exception as e:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
         elif parsed.path == "/api/commands":
