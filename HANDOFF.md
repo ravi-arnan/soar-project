@@ -326,6 +326,64 @@ M: `.env.example`, `docker-compose.yml`,
   ai-board-azure.vercel.app (#18 + #19).
 - Sampai binary baru terpasang, FP masih muncul (binary lama masih jalan).
 
+# Handoff SOAR - 2026-09-19 (nixbox, chain JSON + config permanen)
+
+## Rule kembar JSON 110011-110018 + config mount permanen
+
+- Event 006 sampai manager tapi hanya fire rules bawaan: agent Windows
+  modern kirim JSON -> field `win.eventdata.*`, rules 110001-110008 hanya
+  baca `sysmon.*`. Tambah 8 kembar JSON 110011-110018 (pola sama).
+- GOTCHA: edit /var/ossec/etc/ossec.conf langsung HILANG tiap restart
+  (entrypoint salin dari wazuh-docker/.../wazuh_cluster/wazuh_manager.conf).
+  Sumber permanen = file mount itu (hook 172.18.0.1 + blok chain; 2 blok
+  lama ikut dibetulkan). `config/wazuh/wazuh_manager.conf` disamakan identik.
+- Status: -t lolos, restart OK. Menunggu 006 jalankan chain lagi untuk
+  verifikasi 110012 + Telegram (pesan board #49).
+
+# Handoff SOAR - 2026-09-19 (nixbox, cabang chain n8n DONE)
+
+## Cabang process-chain di workflow Deteksi Malware (nomor 1 DONE)
+
+- Alert Sysmon 110001-110011 tak punya hash: mati di Filter + tak cocok
+  Scan VT / karantina file. Cabang baru via `scripts/patch-n8n-chain.py`:
+  Webhook fan-out ke Filter (FIM utuh) + Cabang Chain? (true saja).
+  Ekstrak Chain (dedup inline /api/seen) -> Rangkum Chain (severity dari
+  rule_level, AR=false SELALU: LOLBin = binary sah) -> Build Payload +
+  Log Fleet (dipakai bersama, prompt LOLBin chain-aware). Telegram $json
+  semua + judul dinamis + baris Command kondisional.
+- GOTCHA n8n 2.40: output FALSE IF yang dibuat via API tidak mengeksekusi
+  downstream (reproduksi terisolasi, bukan typeVersion/typeValidation/IIFE).
+  Solusi: desain hanya pakai output TRUE + fan-out. Jangan pakai false-branch
+  untuk node baru sampai diverifikasi di versi lain.
+- Uji: chain sintetis full run (RANTAI PROSES MENCURIGAKAN, HIGH, tanpa
+  error); FIM regresi full run 17 node tanpa error; template Telegram baru
+  terkirim 1 pesan uji (cek Telegram Ravi). Script: patch-n8n-chain.py.
+
+# Handoff SOAR - 2026-09-19 (nixbox, process-chain LIVE di manager)
+
+## Process-chain LOLBin live di manager (110001-110011)
+
+- `scripts/process-chain-rules.xml` → `/var/ossec/etc/rules/` manager + restart.
+  Backup live conf: `/var/ossec/etc/ossec.conf.bak-20260919` (di container).
+- Akar masalah "rule tak pernah fire": `type="osmatch"` tidak mendukung pola
+  regex `(?i) \\ (¦)?$`. Diganti semua (12x) ke `type="pcre2"` mengikuti
+  ruleset bawaan (contoh 0810-sysmon_id_3.xml). Uji logtest: log LOLBin
+  sintetis (cmd -> powershell Hidden) fire **110002 level 10**. Catatan:
+  field match Wazuh case-insensitive, jadi "Hidden" kapital tetap fire.
+- "Error XML baris 69" resmi basi: file valid + `-t` lolos sejak awal.
+- Integration manager->n8n: manager beda docker network dgn n8n
+  (single-node_default vs soar-project_default). 172.20.0.1 tak terjangkau,
+  gateway single-node **172.18.0.1:5678 OK**. Blok integration ketiga
+  terpasang live + `config/wazuh/wazuh_manager.conf` repo dibetulkan.
+- SISA end-to-end (butuh tangan di Windows, tak bisa dari nixbox):
+  1. Install Wazuh agent di salah satu Windows (005/006/007 saat ini
+     soar-agent Rust, bukan Wazuh agent) + enroll ke manager.
+  2. Install Sysmon + apply `deploy/sysmon-minimal.xml`.
+  3. Tambahkan isi `config/wazuh/agent-windows-process-chain.conf`
+     ke ossec.conf agent + restart wazuh-svc.
+  4. Uji: jalankan chain cmd->powershell hidden, alert 110002 masuk
+     n8n -> Telegram + dashboard.
+
 # Handoff SOAR - 2026-09-19 (nixbox, dedup lapis-2 n8n DONE)
 
 ## Lapis-2 dedup n8n SELESAI (janji #18 lunas)

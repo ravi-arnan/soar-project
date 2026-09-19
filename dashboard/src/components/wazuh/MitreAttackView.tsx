@@ -32,6 +32,19 @@ const PLAYBOOK_MAP: Array<{
     techniques: [{ id: 'T1566.002', name: 'Spearphishing Link', count: 3 }],
   },
   {
+    playbook: 'Deteksi LOLBin Chain (Sysmon)',
+    phase: 'Execution, Defense Evasion',
+    techniques: [
+      { id: 'T1059.001', name: 'PowerShell (110001-110003)', count: 3 },
+      { id: 'T1059.006', name: 'Python (110003)', count: 1 },
+      { id: 'T1059', name: 'Script interpreter (110004, 110008)', count: 2 },
+      { id: 'T1218.010', name: 'Regsvr32 (110007)', count: 1 },
+      { id: 'T1218.011', name: 'Rundll32 (110007)', count: 1 },
+      { id: 'T1036', name: 'Masquerading (110005)', count: 1 },
+      { id: 'T1566', name: 'Phishing via dokumen (110006)', count: 1 },
+    ],
+  },
+  {
     playbook: 'Active Response — Quarantine',
     phase: 'Impact',
     techniques: [

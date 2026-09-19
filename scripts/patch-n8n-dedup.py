@@ -53,7 +53,7 @@ try {
     url: 'http://host.docker.internal:8080/api/seen',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      key: [alert.agent_id, alert.hash, alert.filepath].join('|'),
+      key: [alert.agent_id, alert.rule_id, alert.hash, alert.filepath].join('|'),
       window_secs: %d,
     }),
     timeout: 10000,

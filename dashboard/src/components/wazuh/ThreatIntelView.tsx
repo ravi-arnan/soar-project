@@ -67,8 +67,15 @@ export function ThreatIntelView({ events }: ThreatIntelViewProps) {
             <tbody>
               {intel.recent.map((e, i) => (
                 <tr key={`${e.hash}-${e.ts}-${i}`} className="border-b border-[#EDEEF2] last:border-0">
-                  <td className="px-4 py-2 font-mono text-[12px]" title={e.hash}>
-                    {e.hash.slice(0, 16)}...
+                  <td className="px-4 py-2 font-mono text-[12px]" title={`${e.hash} (klik untuk buka di VirusTotal)`}>
+                    <a
+                      href={`https://www.virustotal.com/gui/file/${e.hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#006BB4] hover:underline"
+                    >
+                      {e.hash.slice(0, 16)}...
+                    </a>
                   </td>
                   <td className="px-4 py-2">{e.agent}</td>
                   <td className="px-4 py-2">
