@@ -75,6 +75,11 @@ URL alert (Wazuh) → Filter URL → Ekstrak → Cek cache URL
 | **Regsvr32/Rundll32 URL Abuse** | **T1218.010** — Regsvr32, **T1218.011** — Rundll32 | Rule 110007: Squiblydoo — regsvr32/rundll32 muat dari URL/temp |
 | **Script Dropper dari Temp** | **T1059** — Command and Scripting Interpreter | Rule 110008: .bat/.cmd/.vbs/.ps1 dari user-temp |
 
+**Respons chain (n8n, tanpa AR otomatis):** alert 110001-110011 masuk cabang
+khusus workflow Deteksi Malware (skip VT, AI chain-aware, Telegram). AR
+sengaja dimatikan untuk chain karena LOLBin = binary sah (takedown
+powershell.exe = bunuh sistem). Respons = analis via Telegram.
+
 ### 2.4 Proaktif Phishing (`proaktif-phishing.json`)
 
 | Komponen | Teknik MITRE | Keterangan |

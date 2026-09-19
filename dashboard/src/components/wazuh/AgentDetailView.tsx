@@ -1,16 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import {
-  Calendar,
-  ChevronDown,
-  Database,
-  Sliders,
-  Settings,
-  ShieldAlert,
-  Clock,
-  ExternalLink,
-} from 'lucide-react';
 
 import { agentStatus, formatWazuhTime, formatClock, severityLevel } from '@/lib/fleet';
 import { ExpandableCard } from './ExpandableCard';
@@ -141,22 +131,20 @@ export function AgentDetailView({
   })();
   const agentDailyMax = Math.max(1, ...agentDaily.map((d) => d.count));
 
-  const tabs = [
-    agent?.name || 'Ubuntu',
-    'Security events',
-    'Integrity monitoring',
-    'SCA',
-    'System Auditing',
-    'Threat Intel',
-    'MITRE ATT&CK',
-  ];
-  const currentTab = activeTab ?? tabs[0];
+  // Hanya tab yang punya halaman tujuan (navigasi beneran via onNavigateTab).
+  // Tab Wazuh lain (SCA, System Auditing, MITRE ATT&CK) dibuang: tak ada
+  // sumber datanya, dulu cuma ganti underline.
+  const tabs = ['Security events', 'Integrity monitoring', 'Threat Intel'];
+  const currentTab = activeTab ?? '';
 
   return (
     <div className="space-y-4">
       {/* Top Sub-tabs & Actions */}
       <div className="flex flex-wrap items-center justify-between border-b border-[#D3DAE6] pb-1 gap-2">
         <div className="flex items-center gap-5 text-[13px] overflow-x-auto">
+          <span className="pb-2 -mb-1 font-semibold text-[#1A1C21] whitespace-nowrap">
+            {agent?.name || 'Ubuntu'}
+          </span>
           {tabs.map((tab) => (
             <button
               key={tab}
@@ -173,25 +161,6 @@ export function AgentDetailView({
               {tab}
             </button>
           ))}
-          <button className="flex items-center gap-1 text-[#5A626F] hover:text-[#1A1C21] pb-2 -mb-1 text-[13px]">
-            <span>More...</span>
-            <ChevronDown className="w-3 h-3" />
-          </button>
-        </div>
-
-        <div className="flex items-center gap-4 text-[12px] text-[#006BB4]">
-          <button className="flex items-center gap-1 hover:underline font-medium">
-            <Database className="w-3.5 h-3.5" />
-            <span>Inventory data</span>
-          </button>
-          <button className="flex items-center gap-1 hover:underline font-medium">
-            <Sliders className="w-3.5 h-3.5" />
-            <span>Stats</span>
-          </button>
-          <button className="flex items-center gap-1 hover:underline font-medium">
-            <Settings className="w-3.5 h-3.5" />
-            <span>Configuration</span>
-          </button>
         </div>
       </div>
 
@@ -272,11 +241,6 @@ export function AgentDetailView({
               : '-'}
           </div>
         </div>
-
-        <button className="flex items-center gap-1 text-[#006BB4] hover:underline border border-[#D3DAE6] px-2.5 py-1 rounded bg-[#F8FAFC]">
-          <span>Last 7 days</span>
-          <ChevronDown className="w-3 h-3" />
-        </button>
       </div>
 
       {/* Top Row: Severity + FIM (live dari event agent ini) */}
