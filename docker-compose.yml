@@ -91,8 +91,12 @@ services:
       - WAZUH_API_URL=https://127.0.0.1:55000
       - N8N_HEALTH_URL=http://127.0.0.1:5678/healthz
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # Roster heartbeat di-persist supaya agent yang sedang offline tidak
+      # hilang dari daftar saat container/restart (scripts mount read-only).
+      - FLEET_STATE_FILE=/state/fleet-state.json
     volumes:
       - /home/ravi/Projects/soar-project/scripts:/scripts:ro
+      - /home/ravi/Projects/soar-project/state:/state:rw
     command: ["python3", "/scripts/fleet-monitor.py"]
     depends_on:
       - n8n

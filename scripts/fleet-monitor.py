@@ -68,7 +68,7 @@ EVENTS = []
 EVENTS_MAX = 200
 
 # Command queue per agent (aksi dari dashboard, di-poll agent via GET):
-# id -> [{action: quarantine|sinkhole, target, ts, by}]
+# id -> [{action: quarantine|sinkhole|scan, target, ts, by}]
 # ponytail: tanpa DB/antrean persisten; perintah hilang saat fleet-monitor
 # restart. Upgrade path: persist ke sqlite/redis kalau butuh durability.
 COMMANDS = {}
@@ -85,9 +85,147 @@ METRICS_MAX = 60
 # entri tua dibersihkan tiap hit. Upgrade: redis SETNX kalau multi-replika.
 SEEN = {}
 
+# Scan on-demand: agent walk folder pilihan -> hash -> POST /api/scan-result.
+# Laporan RINGKASAN per agent (bukan alert per-file) supaya Telegram & dedup
+# n8n tidak kebanjiran. id -> {path, scanned, new_hashes, known_hashes, files[]}.
+SCAN_RESULTS = {}
+SCAN_HISTORY = []
+SCAN_HISTORY_MAX = 50
+SCAN_FILES_MAX = 2000
+# Cache-first: memori hash yang sudah pernah terlihat (event/scan) -> hitung
+# "baru" vs "sudah dikenal" tanpa re-analisis. In-memory; restart = lupa
+# (pola SEEN/METRICS). Upgrade: persist/sqlite kalau butuh lintas-restart.
+KNOWN_HASHES = {}
+KNOWN_HASHES_MAX = 200000
+
+# Cache verdict VirusTotal (dipakai node n8n "Cek Cache VT" lewat
+# POST /api/vt-cache/lookup). Alasan: kuota VT free 4 req/menit, sedangkan burst
+# 100 PC dengan hash SAMA = 100 panggilan VT kalau tiap alert memanggil sendiri
+# (dedup /api/seen ber-key per-agent, jadi tidak menolong untuk kasus ini).
+# Key = hash (bukan per-agent) -> hash sama cukup 1 panggilan VT.
+# TTL diferensial (ROADMAP B): verdict berubah seiring waktu -> yang bersih /
+# tidak-dikenal kadaluwarsa lebih cepat daripada yang confirmed malicious.
+# ponytail: dict + file JSON (pola STATE_FILE), bukan redis; dipersist karena
+# restart container (deploy) tidak perlu membuang cache yang masih berlaku.
+VT_CACHE = {}
+VT_CACHE_MAX = 20000
+VT_TTL_MALICIOUS = 7 * 86400
+VT_TTL_CLEAN = 86400
+VT_TTL_UNKNOWN = 6 * 3600
+VT_SAVE_MIN_INTERVAL = 30  # detik; hindari menulis 20k entri tiap store
+VT_CACHE_STATS = {"lookups": 0, "hits": 0, "misses": 0, "stores": 0}
+_vt_last_save = 0.0
+
 # Cache Wazuh agents
 WAZUH_CACHE = {"data": [], "fetched_at": 0}
 WAZUH_TTL = 30
+
+# Roster heartbeat di-persist ke disk: tanpa ini, restart fleet-monitor
+# menghapus agent yang sedang OFFLINE dari daftar (padahal cuma disconnect,
+# mesinnya mati sementara) -> "list agent berkurang" tiap habis restart.
+# ponytail: JSON sederhana (bukan DB); cukup untuk roster <= ratusan agent.
+STATE_FILE = os.environ.get(
+    "FLEET_STATE_FILE",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".fleet-state.json"),
+)
+STATE_MAX_AGE = 30 * 86400  # buang entri lebih tua dari 30 hari
+
+# File cache VT mengikuti direktori state (volume ./state di compose), jadi
+# ikut persisten tanpa volume baru.
+VT_CACHE_FILE = os.environ.get(
+    "FLEET_VT_CACHE_FILE",
+    os.path.join(os.path.dirname(STATE_FILE), ".fleet-vt-cache.json"),
+)
+
+
+def _load_state():
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        print(f"state file rusak, abaikan: {e}", flush=True)
+        return
+    cutoff = time.time() - STATE_MAX_AGE
+    hbs = data.get("heartbeats", {})
+    if isinstance(hbs, dict):
+        for k, v in hbs.items():
+            if isinstance(v, dict) and v.get("last_seen", 0) >= cutoff:
+                HEARTBEATS[str(k)] = v
+    print(f"state dimuat: {len(HEARTBEATS)} heartbeat dari {STATE_FILE}", flush=True)
+
+
+def _save_state():
+    try:
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"heartbeats": HEARTBEATS}, f)
+        os.replace(tmp, STATE_FILE)
+    except Exception as e:
+        print(f"gagal simpan state: {e}", flush=True)
+
+
+def _is_hex_hash(h):
+    """Hash VT yang sah: md5/sha1/sha256 (hex 32/40/64). Selain itu ditolak."""
+    return len(h) in (32, 40, 64) and all(c in "0123456789abcdef" for c in h)
+
+
+def _vt_ttl_secs(malicious, known):
+    """TTL diferensial: bersih/tidak-dikenal lebih cepat kadaluwarsa (verdict
+    berubah seiring waktu), confirmed malicious boleh lama."""
+    if malicious >= 1:
+        return VT_TTL_MALICIOUS
+    return VT_TTL_CLEAN if known else VT_TTL_UNKNOWN
+
+
+def _vt_cache_load():
+    try:
+        with open(VT_CACHE_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        print(f"vt-cache rusak, abaikan: {e}", flush=True)
+        return
+    now = time.time()
+    entries = data.get("entries", {})
+    if isinstance(entries, dict):
+        for h, v in entries.items():
+            if isinstance(v, dict) and now - v.get("stored_at", 0) < v.get("ttl", 0):
+                VT_CACHE[str(h)] = v
+    print(
+        f"vt-cache dimuat: {len(VT_CACHE)} entri dari {VT_CACHE_FILE}",
+        flush=True,
+    )
+
+
+def _vt_cache_save():
+    """Persist cache (di-throttle) supaya restart container tidak menghapus
+    verdict yang masih berlaku."""
+    global _vt_last_save
+    now = time.time()
+    if now - _vt_last_save < VT_SAVE_MIN_INTERVAL:
+        return
+    _vt_last_save = now
+    try:
+        tmp = VT_CACHE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"entries": VT_CACHE}, f)
+        os.replace(tmp, VT_CACHE_FILE)
+    except Exception as e:
+        print(f"gagal simpan vt-cache: {e}", flush=True)
+
+
+def _vt_cache_prune(now):
+    for h in [
+        h for h, v in VT_CACHE.items() if now - v.get("stored_at", 0) >= v.get("ttl", 0)
+    ]:
+        del VT_CACHE[h]
+    if len(VT_CACHE) > VT_CACHE_MAX:
+        oldest = sorted(VT_CACHE.items(), key=lambda kv: kv[1].get("stored_at", 0))
+        for h, _ in oldest[: len(VT_CACHE) - VT_CACHE_MAX]:
+            VT_CACHE.pop(h, None)
 
 
 def _cfg():
@@ -705,6 +843,14 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"{self.client_address[0]} {fmt % args}", flush=True)
 
+    def _json(self, code, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         cfg = _cfg()
         parsed = urlparse(self.path)
@@ -740,6 +886,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
+        elif parsed.path == "/api/scan-results":
+            # Hasil scan on-demand. ?agent_id=003 -> 1 agent (termasuk daftar
+            # file), tanpa param -> ringkasan semua agent + history (tanpa file).
+            qs = parse_qs(parsed.query)
+            aid = (qs.get("agent_id", [""])[0] or "").strip()
+            if aid:
+                self._json(200, {"agent_id": aid, "scan": SCAN_RESULTS.get(aid)})
+            else:
+                scans = {
+                    k: {kk: vv for kk, vv in v.items() if kk != "files"}
+                    for k, v in SCAN_RESULTS.items()
+                }
+                self._json(200, {"scans": scans, "history": SCAN_HISTORY[-20:]})
         elif parsed.path == "/api/commands":
             # Agent poll perintah pending (keluar-saja, aman NAT): ?agent_id=003
             # Ambil + kosongkan antrean (sekali ambil = sekali eksekusi).
@@ -752,6 +911,42 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
+        elif parsed.path == "/api/vt-cache":
+            # Ringkasan cache verdict VT (untuk observabilitas & bukti laporan).
+            # ?hash=<hex> -> detail satu entri.
+            qs = parse_qs(parsed.query)
+            h = (qs.get("hash", [""])[0] or "").strip().lower()
+            if h:
+                ent = VT_CACHE.get(h)
+                now = time.time()
+                self._json(
+                    200,
+                    {
+                        "hash": h,
+                        "found": bool(ent),
+                        "entry": ent,
+                        "age_secs": int(now - ent["stored_at"]) if ent else None,
+                    },
+                )
+            else:
+                lookups = VT_CACHE_STATS["lookups"]
+                self._json(
+                    200,
+                    {
+                        "size": len(VT_CACHE),
+                        "max": VT_CACHE_MAX,
+                        "ttl_secs": {
+                            "malicious": VT_TTL_MALICIOUS,
+                            "clean": VT_TTL_CLEAN,
+                            "unknown": VT_TTL_UNKNOWN,
+                        },
+                        "stats": dict(VT_CACHE_STATS),
+                        "hit_rate": (
+                            round(VT_CACHE_STATS["hits"] / lookups, 4) if lookups else 0.0
+                        ),
+                        "file": VT_CACHE_FILE,
+                    },
+                )
         elif parsed.path == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -791,6 +986,7 @@ class Handler(BaseHTTPRequestHandler):
                     "cpu_pct": j.get("cpu_pct", 0),
                     "ram_gb": j.get("ram_gb", {}),
                 }
+                _save_state()
                 # Simpan titik metrics untuk grafik (hanya kalau agent melapor)
                 try:
                     cpu = float(j.get("cpu_pct", 0) or 0)
@@ -897,9 +1093,170 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode())
+        elif parsed.path == "/api/vt-cache/lookup":
+            # Lapis-1 n8n (node "Cek Cache VT"): {"hash": "<hex>"} ->
+            # {"hit": true, stats, known, age_secs, ttl_secs} atau {"hit": false}.
+            # Fail-open di sisi n8n: error/timeout apa pun -> tetap panggil VT.
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                j = json.loads(body)
+                h = str(j.get("hash", "")).strip().lower()
+                if not _is_hex_hash(h):
+                    raise ValueError("hash harus hex 32/40/64")
+                now = time.time()
+                VT_CACHE_STATS["lookups"] += 1
+                ent = VT_CACHE.get(h)
+                if ent and now - ent.get("stored_at", 0) < ent.get("ttl", 0):
+                    VT_CACHE_STATS["hits"] += 1
+                    self._json(
+                        200,
+                        {
+                            "hit": True,
+                            "hash": h,
+                            "stats": ent.get("stats"),
+                            "known": ent.get("known", False),
+                            "malicious": ent.get("malicious", 0),
+                            "age_secs": int(now - ent["stored_at"]),
+                            "ttl_secs": ent.get("ttl"),
+                        },
+                    )
+                else:
+                    VT_CACHE_STATS["misses"] += 1
+                    VT_CACHE.pop(h, None)  # kadaluwarsa -> buang
+                    self._json(200, {"hit": False, "hash": h})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/vt-cache/store":
+            # Simpan verdict dari VT (node "Simpan Cache VT"). Dua bentuk:
+            #   {"hash":..., "stats":{malicious,...}}  -> verdict dikenal
+            #   {"hash":..., "not_found": true}        -> VT tak kenal hash (404)
+            # Error transien (429/5xx/timeout) TIDAK sampai ke sini (n8n hanya
+            # menyimpan NotFoundError), jadi kuota tidak "membekukan" verdict.
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                j = json.loads(body)
+                h = str(j.get("hash", "")).strip().lower()
+                if not _is_hex_hash(h):
+                    raise ValueError("hash harus hex 32/40/64")
+                now = time.time()
+                if j.get("not_found"):
+                    ent = {
+                        "stats": None,
+                        "known": False,
+                        "malicious": 0,
+                        "stored_at": now,
+                        "ttl": VT_TTL_UNKNOWN,
+                    }
+                else:
+                    stats = j.get("stats")
+                    if not isinstance(stats, dict):
+                        raise TypeError("butuh stats (objek) atau not_found true")
+                    slim = {
+                        k: int(stats.get(k, 0) or 0)
+                        for k in (
+                            "malicious",
+                            "suspicious",
+                            "undetected",
+                            "harmless",
+                            "timeout",
+                        )
+                    }
+                    malicious = slim["malicious"]
+                    ent = {
+                        "stats": slim,
+                        "known": True,
+                        "malicious": malicious,
+                        "stored_at": now,
+                        "ttl": _vt_ttl_secs(malicious, True),
+                    }
+                VT_CACHE[h] = ent
+                VT_CACHE_STATS["stores"] += 1
+                _vt_cache_prune(now)
+                _vt_cache_save()
+                self._json(
+                    200,
+                    {
+                        "status": "ok",
+                        "hash": h,
+                        "ttl_secs": ent["ttl"],
+                        "cache_size": len(VT_CACHE),
+                    },
+                )
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/scan-result":
+            # Laporan scan on-demand dari agent (walk folder -> hash -> kirim 1
+            # ringkasan). Cache-first: hash yang sudah dikenal tidak dihitung
+            # baru, jadi laporan fokus ke file yang belum pernah terlihat.
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                j = json.loads(body)
+                aid = str(j.get("agent_id", "")).strip()
+                if not aid:
+                    raise ValueError("need agent_id")
+                if not isinstance(j.get("files"), list):
+                    raise TypeError("files harus list")
+                now = time.time()
+                files = []
+                new_hashes = 0
+                total_bytes = 0
+                for f in j["files"][:SCAN_FILES_MAX]:
+                    if not isinstance(f, dict):
+                        continue
+                    h = str(f.get("sha256", "")).strip().lower()
+                    if len(h) != 64:
+                        continue
+                    size = int(f.get("size", 0) or 0)
+                    files.append(
+                        {
+                            "path": str(f.get("path", "")),
+                            "size": size,
+                            "sha256": h,
+                            "new": h not in KNOWN_HASHES,
+                        }
+                    )
+                    if h not in KNOWN_HASHES:
+                        new_hashes += 1
+                    KNOWN_HASHES[h] = now
+                    total_bytes += size
+                # Batasi memori cache: buang entri paling lama (LRU kasar).
+                if len(KNOWN_HASHES) > KNOWN_HASHES_MAX:
+                    oldest = sorted(KNOWN_HASHES.items(), key=lambda kv: kv[1])
+                    for k, _ in oldest[: len(KNOWN_HASHES) - KNOWN_HASHES_MAX]:
+                        KNOWN_HASHES.pop(k, None)
+                scanned = len(files)
+                result = {
+                    "agent_id": aid,
+                    "agent_name": str(j.get("agent_name", "")),
+                    "path": str(j.get("path", "")),
+                    "started": j.get("started") or datetime.now(WITA).isoformat(),
+                    "finished": datetime.now(WITA).isoformat(),
+                    "elapsed_ms": int(j.get("elapsed_ms", 0) or 0),
+                    "scanned": scanned,
+                    "new_hashes": new_hashes,
+                    "known_hashes": scanned - new_hashes,
+                    "total_bytes": int(j.get("total_bytes", 0) or 0) or total_bytes,
+                    "truncated": bool(j.get("truncated")),
+                    "files": files,
+                }
+                SCAN_RESULTS[aid] = result
+                SCAN_HISTORY.append({k: v for k, v in result.items() if k != "files"})
+                del SCAN_HISTORY[:-SCAN_HISTORY_MAX]
+                self._json(
+                    200,
+                    {
+                        "status": "ok",
+                        "scan": {k: v for k, v in result.items() if k != "files"},
+                    },
+                )
+            except Exception as e:
+                self._json(400, {"error": str(e)})
         elif parsed.path == "/api/commands":
             # Dashboard antrekan perintah untuk agent (agent poll via GET).
-            # Aksi valid: quarantine (target = path file absolut),
+            # Aksi valid: quarantine|scan (target = path absolut),
             # sinkhole (target = domain). Validasi ketat biar tidak jadi RCE.
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length) if length else b"{}"
@@ -910,12 +1267,12 @@ class Handler(BaseHTTPRequestHandler):
                 target = str(j.get("target", "")).strip()
                 if not aid:
                     raise ValueError("need agent_id")
-                if action == "quarantine":
+                if action in ("quarantine", "scan"):
                     # path absolut saja, tolak traversal ke luar home? izinkan
                     # absolut umum tapi tolak pola berbahaya
                     if not target.startswith(("/", "C:\\", "C:/")) or ".." in target:
                         raise ValueError(
-                            "target quarantine harus path absolut tanpa .."
+                            f"target {action} harus path absolut tanpa .."
                         )
                 elif action == "sinkhole":
                     if not target or any(c in target for c in " /\\;|&$`'\""):
@@ -923,7 +1280,7 @@ class Handler(BaseHTTPRequestHandler):
                     if "." not in target:
                         raise ValueError("target sinkhole harus domain")
                 else:
-                    raise ValueError("action harus quarantine|sinkhole")
+                    raise ValueError("action harus quarantine|sinkhole|scan")
                 q = COMMANDS.setdefault(aid, [])
                 q.append(
                     {
@@ -963,6 +1320,8 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     cfg = _cfg()
     port = cfg["port"]
+    _load_state()
+    _vt_cache_load()
     # ponytail: bind 0.0.0.0 supaya bisa diakses dari Tailscale 100.95.198.108:8080 untuk 100 PC
     server = HTTPServer(("0.0.0.0", port), Handler)
     print(

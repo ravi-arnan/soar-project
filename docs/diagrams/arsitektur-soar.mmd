@@ -1,0 +1,36 @@
+%% Arsitektur SOAR — diagram gaya minimal (abu-abu, tanpa emoji).
+%% Render: npx @mermaid-js/mermaid-cli@11 -i arsitektur-soar.mmd \
+%%   -o arsitektur-soar.png -c mermaid-minimal.json -p puppeteer-config.json -b white -s 2
+%% (puppeteer-config.json: sesuaikan "executablePath" bila path Chrome berbeda di mesinmu)
+flowchart TB
+    AG["ENDPOINT · soar-agent (Rust)<br/>Windows · Linux · macOS<br/>pantau berkas · hash SHA-256 · karantina lokal"]
+
+    subgraph SRV["SOAR SERVER — Docker"]
+        N8N["n8n — 5 workflow<br/>orkestrasi deteksi dan respons"]
+        WM["Wazuh Manager<br/>korelasi aturan · API :55000"]
+        LLM["LLM<br/>ringkasan dan rekomendasi"]
+        FL["fleet-monitor<br/>dashboard :3000 · TUI"]
+    end
+
+    subgraph TI["THREAT INTELLIGENCE — eksternal"]
+        TI1["VirusTotal · MalwareBazaar · OTX<br/>reputasi hash (malware)"]
+        TI2["Google Safe Browsing · URLScan.io<br/>reputasi URL (phishing)"]
+    end
+
+    TG["TELEGRAM BOT"]
+    AN["ANALIS"]
+
+    AG -->|"alert hash-only (1-2 KB)"| N8N
+    WM -->|"alert rantai proses"| N8N
+
+    N8N --> TI1
+    N8N --> TI2
+    N8N -->|"ringkasan"| LLM
+    N8N -->|"notifikasi + tombol"| TG
+    N8N -->|"active response"| WM
+    N8N -->|"antrean perintah"| FL
+    AG -->|"heartbeat 60 dtk"| FL
+
+    TG --> AN
+    AN -->|"isolasi / blokir / abaikan"| TG
+    TG -->|"callback"| N8N

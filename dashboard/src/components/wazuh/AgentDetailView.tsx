@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import { agentStatus, formatWazuhTime, formatClock, severityLevel } from '@/lib/fleet';
 import { ExpandableCard } from './ExpandableCard';
-import type { FleetAgent, FleetEvent } from '@/lib/fleet';
+import type { FleetAgent, FleetEvent, FleetScanResult } from '@/lib/fleet';
 
 interface AgentDetailViewProps {
   agentId?: string;
@@ -79,6 +79,171 @@ function ResourceChart({ agentId }: { agentId: string }) {
           RAM {last.ram_used.toFixed(1)}/{last.ram_total.toFixed(1)} GB
         </span>
         <span className="ml-auto">{n} titik</span>
+      </div>
+    </div>
+  );
+}
+
+/** Kartu scan on-demand: antre scan folder + ringkasan hasil terakhir. */
+function ScanPanel({ agentId, canScan }: { agentId: string; canScan: boolean }) {
+  const [scan, setScan] = useState<FleetScanResult | null>(null);
+  const [state, setState] = useState('');
+
+  const load = useCallback(() => {
+    fetch(`/api/scan-results?agent_id=${encodeURIComponent(agentId)}`)
+      .then((r) => r.json())
+      .then((d) => setScan(d.scan || null))
+      .catch(() => {});
+  }, [agentId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function runScan() {
+    const path = window.prompt(
+      `Folder absolut di agent ${agentId} yang mau dipindai (contoh /home/user/Downloads):`,
+      ''
+    );
+    if (!path) return;
+    setState('mengirim...');
+    try {
+      const r = await fetch('/api/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_id: agentId,
+          action: 'scan',
+          target: path,
+          by: 'dashboard',
+        }),
+      });
+      const j = await r.json();
+      setState(
+        r.ok && j.status === 'queued'
+          ? 'diantrekan ✓ — menunggu agent poll (≤60 dtk)'
+          : `gagal: ${j.error || r.status}`
+      );
+    } catch {
+      setState('gagal: jaringan');
+    }
+  }
+
+  const gb = (n: number) => (n / 1_073_741_824).toFixed(2);
+
+  return (
+    <div className="space-y-3 text-[12px]">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={runScan}
+          disabled={!canScan}
+          title={
+            canScan
+              ? 'Antre scan folder on-demand ke agent ini'
+              : 'Hanya agent Rust (soar-agent) yang mendukung scan on-demand'
+          }
+          className={`px-3 py-1.5 rounded border text-[11px] font-medium transition-colors ${
+            canScan
+              ? 'border-[#006BB4] text-[#006BB4] hover:bg-[#EBF5FB]'
+              : 'border-[#D3DAE6] text-[#98A2B3] cursor-not-allowed'
+          }`}
+        >
+          Scan folder…
+        </button>
+        <button
+          onClick={load}
+          className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[11px] text-[#5A626F] hover:bg-[#F8FAFC]"
+        >
+          Muat ulang
+        </button>
+        {state && <span className="text-[11px] text-[#5A626F]">{state}</span>}
+      </div>
+
+      {!scan ? (
+        <div className="text-[12px] text-[#8A94A6] py-4 text-center">
+          Belum ada scan on-demand untuk agent ini. Scan menutup blind spot file
+          yang sudah ada di disk sebelum agent dipasang.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <ScanStat label="File dipindai" value={String(scan.scanned)} />
+            <ScanStat label="Hash baru" value={String(scan.new_hashes)} accent />
+            <ScanStat label="Sudah dikenal" value={String(scan.known_hashes)} />
+            <ScanStat label="Total" value={`${gb(scan.total_bytes)} GB`} />
+          </div>
+          <div className="text-[11px] text-[#5A626F]">
+            <span className="font-mono">{scan.path}</span> ·{' '}
+            {formatWazuhTime(scan.finished)}
+            {scan.elapsed_ms ? ` · ${scan.elapsed_ms} ms` : ''}
+            {scan.truncated ? ' · dipotong di batas 2000 file' : ''}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[11px]">
+              <thead>
+                <tr className="border-b border-[#D3DAE6] text-[#8A94A6]">
+                  <th className="pb-1">Path</th>
+                  <th className="pb-1 text-right">Size</th>
+                  <th className="pb-1">Status</th>
+                  <th className="pb-1">SHA256 (VT)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EBEFF5]">
+                {(scan.files || []).slice(0, 20).map((f, i) => (
+                  <tr key={`${f.sha256}-${i}`}>
+                    <td
+                      className="py-1 font-mono text-[#1A1C21] truncate max-w-[220px]"
+                      title={f.path}
+                    >
+                      {f.path.split('/').pop() || f.path}
+                    </td>
+                    <td className="py-1 text-right text-[#5A626F]">{f.size}</td>
+                    <td className="py-1">
+                      {f.new ? (
+                        <span className="text-[#BD271E] font-medium">baru</span>
+                      ) : (
+                        <span className="text-[#8A94A6]">dikenal</span>
+                      )}
+                    </td>
+                    <td className="py-1">
+                      <a
+                        className="text-[#006BB4] font-mono"
+                        href={`https://www.virustotal.com/gui/file/${f.sha256}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {f.sha256.slice(0, 12)}…
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ScanStat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="border border-[#D3DAE6] rounded p-2">
+      <div className="text-[10px] text-[#8A94A6]">{label}</div>
+      <div
+        className={`text-[16px] font-semibold ${
+          accent ? 'text-[#BD271E]' : 'text-[#1A1C21]'
+        }`}
+      >
+        {value}
       </div>
     </div>
   );
@@ -349,6 +514,12 @@ export function AgentDetailView({
           </div>
         </ExpandableCard>
       </div>
+
+      {/* On-demand scan: tutup blind spot file yang sudah ada di disk
+          sebelum agent dipasang (agent reaktif hanya lihat create/modify). */}
+      <ExpandableCard title="On-demand scan">
+        <ScanPanel agentId={agentId} canScan={agent?.type === 'rust'} />
+      </ExpandableCard>
     </div>
   );
 }

@@ -44,6 +44,31 @@ export interface FleetEvent {
   verdict?: string;
 }
 
+/** Satu file dalam laporan scan on-demand (`/api/scan-results`). */
+export interface FleetScanFile {
+  path: string;
+  size: number;
+  sha256: string;
+  /** true = hash belum pernah terlihat (cache-first), false = sudah dikenal. */
+  new?: boolean;
+}
+
+/** Ringkasan scan on-demand 1 agent (bukan alert per-file). */
+export interface FleetScanResult {
+  agent_id: string;
+  agent_name: string;
+  path: string;
+  started: string;
+  finished: string;
+  elapsed_ms: number;
+  scanned: number;
+  new_hashes: number;
+  known_hashes: number;
+  total_bytes: number;
+  truncated: boolean;
+  files?: FleetScanFile[];
+}
+
 export interface FleetHealth {
   n8n: boolean;
   gemini: boolean;
