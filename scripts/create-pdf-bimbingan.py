@@ -147,7 +147,7 @@ pdf.add_table(
         ["Self-aware", "Tergantung analis", "Tidak ada", "Tidak ada", "Degrade otomatis"],
         ["Audit trail", "Manual", "Ada (bayar)", "Terbatas", "Gratis"],
         ["Phishing", "Tidak ada", "Tergantung playbook", "Tidak ada", "URLhaus auto-block"],
-        ["AI advisory", "Tergantung analis", "Tergantung vendor", "Tidak ada", "Ollama lokal"],
+        ["AI advisory", "Tergantung analis", "Tergantung vendor", "Tidak ada", "LLM API"],
         ["Multi-sumber", "Manual", "Tergantung integrasi", "Beberapa", "VT + MB"],
         ["Setup", "Tidak ada", "Kompleks", "Sedang", "Docker + Ansible"],
     ],
@@ -169,7 +169,7 @@ pdf.add_body("Stack:", bold=True)
 for item in [
     "Wazuh 4.9.2 (SIEM + FIM + Active Response)",
     "n8n 2.36.9 (workflow automation)",
-    "Ollama llama3.2:3b (AI lokal)",
+    "LLM API (Atria-Dawn)",
     "VirusTotal API (hash reputation)",
     "Google Safe Browsing (URL reputation)",
     "MalwareBazaar (malware intel)",
@@ -192,7 +192,7 @@ pdf.ln(3)
 pdf.add_body("Alur:", bold=True)
 pdf.set_font("Courier", "", 10)
 pdf.set_text_color(50, 50, 50)
-pdf.cell(0, 6, "Endpoint -> Wazuh -> n8n Webhook -> VT+MB -> Ollama -> Telegram", new_x="LMARGIN", new_y="NEXT")
+pdf.cell(0, 6, "Endpoint -> Wazuh -> n8n Webhook -> VT+MB -> LLM API -> Telegram", new_x="LMARGIN", new_y="NEXT")
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE 5: Alur Keputusan

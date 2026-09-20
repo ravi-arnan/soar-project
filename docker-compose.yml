@@ -51,7 +51,7 @@ services:
     depends_on:
       - n8n
 
-  # Self-aware health monitor (kategori F): deteksi agent putus / n8n / Ollama /
+  # Self-aware health monitor (kategori F): deteksi agent putus / n8n / LLM API /
   # Wazuh-API down, alert Telegram HANYA saat status berubah (anti-spam). Cek
   # keluar-saja; tak ada port yang diekspos.
   health-monitor:

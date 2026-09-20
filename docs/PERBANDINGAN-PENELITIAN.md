@@ -9,8 +9,8 @@
 
 | # | Karya / Sumber (jenis) | Orkestrasi (SOAR) | SIEM | Ancaman ditangani | Sumber intel/reputasi | Human-in-the-loop 2-arah | Active Response otomatis | Respons berjenjang berbasis keyakinan | AI analisis | Multi-agent lintas-OS |
 |---|------------------------|-------------------|------|-------------------|-----------------------|--------------------------|--------------------------|----------------------------------------|-------------|------------------------|
-| **0** | **Karya ini (2026) — Stack utama** | **n8n** | **Wazuh** | **Malware + Phishing** | **VirusTotal + Google Safe Browsing + URLScan.io** | **✔ (tombol Telegram → AR)** | **✔ quarantine-file + sinkhole domain** | **✔ (VT-gated: auto / tombol / sunyi)** | **✔ lokal (Ollama llama3.2:3b)** | **✔ (Ubuntu + Rocky 9)** |
-| **0a** | **Karya ini — Agen Ringan Rust (alternatif)** | **n8n** | **FIM Rust (5,3 MB)** | **Malware (file)** | **VirusTotal + MalwareBazaar** | **✔ (tombol Telegram → AR)** | **✔ quarantine-file via HTTP lokal** | **✔ (VT-gated, sama dgn #0)** | **✔ lokal (Gemini 2.5 Flash)** | **✔ (Linux + Windows + NixOS)** |
+| **0** | **Karya ini (2026) — Stack utama** | **n8n** | **Wazuh** | **Malware + Phishing** | **VirusTotal + Google Safe Browsing + URLScan.io** | **✔ (tombol Telegram → AR)** | **✔ quarantine-file + sinkhole domain** | **✔ (VT-gated: auto / tombol / sunyi)** | **✔ (LLM API, prompt *severity-aware*)** | **✔ (Ubuntu + Rocky 9)** |
+| **0a** | **Karya ini — Agen Ringan Rust (alternatif)** | **n8n** | **FIM Rust (5,3 MB)** | **Malware (file)** | **VirusTotal + MalwareBazaar** | **✔ (tombol Telegram → AR)** | **✔ quarantine-file via HTTP lokal** | **✔ (VT-gated, sama dgn #0)** | **✔ (LLM API)** | **✔ (Linux + Windows + NixOS)** |
 | 1 | Wazuh + Shuffle, serangan app-layer Windows — *jurnal IJESTE, 2025* | Shuffle | Wazuh | Serangan application-layer | – | ✘ (otomatis) | ✔ | ✘ | ✘ | – |
 | 2 | Wazuh + Active Response + Telegram, brute force — *jurnal, 2024* | Native Wazuh AR | Wazuh | Brute force | ✘ | **1-arah** (notif) | ✔ (blok IP) | ✘ | ✘ | ✘ |
 | 3 | Wazuh + n8n + VirusTotal + Gmail — *blog (Medium)* | n8n | Wazuh | Malware (file) | VirusTotal | **1-arah** (email) | ✘ (enrichment saja) | ✘ | ✘ | – |
@@ -36,7 +36,7 @@
 | **Respons berjenjang berbasis keyakinan (VT-gated)** | Otoritas keputusan = konsensus VirusTotal/GSB, bukan noise FIM. Auto-isolasi (≥20) / tombol (1–19) / **sunyi** (bersih) → menekan *alert fatigue* & false positive | 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15 |
 | **Human-in-the-loop interaktif 2-arah** | Tombol Telegram [Isolasi]/[Blokir]/[Abaikan] langsung memicu Active Response — bukan sekadar notifikasi | 1, 2 (1-arah), 3, 6 (1-arah), 8, 9, 10, 13, 14, 15; 11 & 12 sudah HITL tetapi **lewat antarmuka IRIS/web**, bukan tombol di kanal analis |
 | **Dua kelas ancaman + dua AR berbeda** | Malware → `quarantine-file`; Phishing → **sinkhole domain** (`/etc/hosts`) | Mayoritas hanya 1 ancaman / 1 AR (11, 12, 14 juga) |
-| **AI analisis lokal (kedaulatan data, biaya nol)** | Ollama on-premise → data tidak keluar infrastruktur, tanpa biaya API | 2, 3, 6, 8, 9, 12, 13, 14, 15 (tanpa AI); 4, 10, 11 (AI cloud) |
+| **Analisis LLM untuk ringkasan alert** | LLM API (OpenAI-compatible) dengan *prompt* yang menyesuaikan *severity* | 2, 3, 6, 8, 9, 12, 13, 14, 15 (tanpa AI); 4, 10, 11 (AI cloud) |
 | **n8n sebagai mesin SOAR (akademik)** | Jurnal sejenis umumnya Shuffle/TheHive (termasuk 2026); n8n masih jarang di ranah akademik | 1, 5, 9, 14, 15 |
 | **Multi-agent lintas distribusi + open-source penuh** | Ubuntu + Rocky 9 lapor ke 1 manager; seluruh stack open-source, biaya nol | Jarang disebut eksplisit (kec. 8 yang fokus HA; 11 & 13 lab VM saja) |
 
@@ -78,7 +78,7 @@ VirusTotal andal sebagai **sinyal pendukung** (konsensus 70+ engine untuk ancama
 | Hanya melihat **hash yang dikenal** (ganti 1 byte → hash baru) | Reputasi hash mudah dielakkan |
 | *Detection lag* (verdict berubah seiring waktu) | Cache 6 jam bisa menyajikan verdict "bersih" yang basi |
 | Rate limit / downtime (free: 4/mnt, 500/hari) | Sudah ditangani via `vt_unverified` (jangan dianggap bersih) |
-| Hash/URL dikirim ke pihak ketiga (cloud) | Nuansa klaim kedaulatan data: hanya AI (Ollama) yang lokal; VT/GSB tetap cloud |
+| Hash/URL/ringkasan dikirim ke pihak ketiga (cloud) | Seluruh pengayaan (VirusTotal/GSB/URLScan dan LLM) berjalan via API eksternal |
 
 **Titik lemah utama:** false-negative pada file tak-dikenal (zero-day). Penguatan yang diusulkan:
 
@@ -96,7 +96,7 @@ Prinsip: perlakukan VT/GSB/URLScan sebagai **corroboration multi-sinyal**, bukan
 - **Decoupling:** message queue (Redis/RabbitMQ) antara Wazuh `integratord` ↔ n8n → buffering & replay.
 - **High-Availability:** manager/indexer redundan + load balancer + failover (selaras Springer CCIS 2026).
 - **Observability:** Prometheus + Grafana untuk metrik SOAR (sumber data bab evaluasi).
-- **AI:** Ollama sebagai microservice inferensi terpisah; opsi RAG atas playbook/threat-intel (selaras pendekatan SERC, MDPI 2025).
+- **AI:** LLM sebagai layanan inferensi terpisah; opsi RAG atas playbook/threat-intel (selaras pendekatan SERC, MDPI 2025).
 
 ### Prioritas sepadan-usaha (rekomendasi)
 

@@ -17,7 +17,7 @@ cd wazuh-docker/single-node && docker compose up -d && cd ../..
 # 2. Pastikan 2 agent Active
 docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l
 
-# 3. WAJIB: pastikan AI key ada (Ollama sudah pensiun, AI via Atria cloud)
+# 3. WAJIB: pastikan ATRIA_API_KEY ada di .env (analisis LLM via API)
 grep -q ATRIA_API_KEY .env || echo "ISI ATRIA_API_KEY di .env!"
 
 # 4. Tes 1x sebelum tampil (pastikan Telegram nyampe)
@@ -75,7 +75,7 @@ echo "dokumen kerja yang sah" > ~/Downloads/demoreview-laporan-rapat.txt
 ```
 > Penanda `demoreview` memaksa jalur konfirmasi agar bisa diperagakan kapan saja tanpa perlu sampel malware deteksi-rendah. File biasa lain tetap di-suppress bila VirusTotal bersih. Hapus penanda untuk perilaku produksi murni.
 
-**Yang terjadi:** Wazuh FIM deteksi file baru → pipeline → AI lokal analisis → Telegram **dengan tombol [Isolasi File] [Abaikan (False Positive)]**.
+**Yang terjadi:** Wazuh FIM deteksi file baru → pipeline → analisis LLM → Telegram **dengan tombol [Isolasi File] [Abaikan (False Positive)]**.
 
 **Aksi di HP:** klik salah satu tombol.
 - **Isolasi File** → pesan jadi "DIISOLASI", file dikarantina.
@@ -105,7 +105,7 @@ echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
 | **Wazuh** | SIEM + HIDS: File Integrity Monitoring, korelasi aturan, eksekusi Active Response |
 | **n8n** | Mesin orkestrasi (otak SOAR): playbook deteksi → pengayaan → keputusan |
 | **VirusTotal** | Threat intelligence: reputasi hash/URL terhadap 60+ antivirus |
-| **Atria (Atria-Dawn-Preview)** | Analisis AI via API (dulu Ollama lokal; pensiun 16 Sep) |
+| **Atria (Atria-Dawn-Preview)** | Analisis LLM via API penyedia |
 | **Telegram Bot** | Kanal notifikasi + antarmuka keputusan dua arah |
 | **tg-callback-poller** | Meneruskan klik tombol ke n8n (aman di balik NAT, long-poll) |
 | **Tailscale** | Mesh VPN: agent tetap terhubung walau beda jaringan |
@@ -118,7 +118,7 @@ echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
 1. **SOAR penuh dari open-source** — kapabilitas yang biasanya hanya di Cortex XSOAR / Splunk (mahal).
 2. **Respons berjenjang (confidence-based):** auto untuk keyakinan tinggi, human-in-the-loop untuk ambigu.
 3. **Deteksi berbasis intelijen, bukan kebisingan FIM** → keputusan diikat ke konsensus VirusTotal (60+ engine), sehingga **false positive ditekan** dan tidak ada alert fatigue.
-4. **AI via API** (Atria; dulu Ollama lokal → data sensitif hash/path keluar ke cloud, kompromi 100 PC).
+4. **AI via API** (Atria): hash dan path ringkas terkirim ke penyedia — kompromi yang diambil untuk skala 100 PC.
 5. **Lintas distribusi + resilient** (Tailscale).
 
 ---
@@ -126,7 +126,7 @@ echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
 ## 6. TROUBLESHOOTING CEPAT
 | Gejala | Tindakan |
 |--------|----------|
-| Telegram lama (>1 mnt) | Wajar bila VT lambat — jelaskan; AI cloud 1-3 dtk (era Ollama dingin 15-50 dtk) |
+| Telegram lama (>1 mnt) | Wajar bila VT lambat — jelaskan; LLM API 1-3 dtk |
 | Notifikasi tidak muncul | Cek workflow Active di n8n; cek `docker logs n8n --tail 20` |
 | Banyak alert serentak error | Sudah dimitigasi (timeout 300s) — picu **1 alert per kali** |
 | Agent tidak Active | `sudo systemctl restart wazuh-agent` di endpoint |

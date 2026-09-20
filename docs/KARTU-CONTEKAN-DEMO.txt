@@ -11,7 +11,6 @@ LAYAR: n8n (tab Executions, http://localhost:5678) + Telegram di HP.
 ------------------------------------------------------------------------------
   cd ~/Projects/soar-project && docker compose start
   cd wazuh-docker/single-node && docker compose start && cd ../..
-  ollama run llama3.2:3b "test" >/dev/null
 
   # cek 2 agent Active:
   docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l
@@ -96,7 +95,7 @@ LAYAR: n8n (tab Executions, http://localhost:5678) + Telegram di HP.
 ==============================================================================
  TROUBLESHOOTING CEPAT
 ==============================================================================
-  Telegram lama (>1 mnt)      -> Ollama dingin / VT lambat. Wajar, jelaskan.
+  Telegram lama (>1 mnt)      -> LLM API / VT lambat. Wajar, jelaskan.
   Notifikasi tak muncul       -> Cek workflow Active di n8n; docker logs n8n --tail 20
   Tombol diklik tak ada efek  -> docker logs tg-callback-poller --tail 10
                                  (harus ada "forwarded callback_query")
@@ -120,7 +119,7 @@ LAYAR: n8n (tab Executions, http://localhost:5678) + Telegram di HP.
                  keputusan
   VirusTotal   - Reputasi hash/URL terhadap 60+ antivirus
   GSB+URLScan  - Sumber reputasi URL (jalur phishing otomatis)
-  Ollama 3.2:3b- AI analisis LOKAL -> kedaulatan data, tanpa biaya API
+  LLM API      - Analisis kontekstual (ringkasan + rekomendasi) via API penyedia
   Telegram Bot - Kanal notifikasi + antarmuka keputusan dua arah
   tg-poller    - Teruskan klik tombol ke n8n (aman di balik NAT, long-poll)
   Tailscale    - Mesh VPN: agent tetap terhubung walau beda jaringan

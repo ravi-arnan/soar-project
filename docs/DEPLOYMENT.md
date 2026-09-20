@@ -35,16 +35,12 @@ sampai. Tambahkan di `/etc/nixos/configuration.nix`, lalu
 
 ```nix
 networking.firewall.trustedInterfaces = [ "docker0" "br-+" ];
-services.ollama.host = "0.0.0.0";
 ```
 
 - `br-+` wajib, `docker0` saja tidak cukup: setiap project Compose membuat
   bridge sendiri bernama `br-<id>`, sementara `docker0` justru tidak terpakai.
   Tanpa wildcard ini, bahkan port yang sudah di-publish pun timeout dari dalam
   container.
-- `services.ollama.host` default `127.0.0.1` sehingga tak terjangkau container.
-  Yang menjaganya tetap privat adalah firewall di atas: port 11434 tidak pernah
-  dimasukkan ke `allowedTCPPorts`.
 
 Verifikasi dari dalam container (dua-duanya harus membalas):
 
@@ -130,28 +126,12 @@ cd ~/Projects/soar-project
 docker compose up -d
 ```
 
-### 1.6 Setup Ollama (host service)
+### 1.6 Konfigurasi Modul LLM (API)
 
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull model
-ollama pull llama3.2:3b
-
-# Verify
-ollama list
-```
-
-Installer resmi menjalankan Ollama dengan bind `0.0.0.0`, sehingga container
-menjangkaunya lewat `host.docker.internal:11434` (compose sudah menyetel
-`extra_hosts: host-gateway`). Paket bawaan distribusi bisa berbeda — NixOS
-mem-bind `127.0.0.1` dan tidak terjangkau dari container (lihat
-[Khusus host NixOS](#khusus-host-nixos)). Periksa dulu:
-
-```bash
-ss -ltn | grep 11434   # harus 0.0.0.0:11434 atau *:11434, bukan 127.0.0.1
-```
+Tambahkan kunci penyedia LLM ke `.env` (mis. `ATRIA_API_KEY`) lalu jalankan
+`docker compose up -d n8n` agar env terbaca node. Node `AI Generate` memanggil
+API penyedia lewat HTTPS — tidak ada layanan inferensi lokal yang dijalankan,
+sehingga tidak ada port 11434 yang perlu dibuka.
 
 ## Step 2 — Setup Wazuh Integration
 
@@ -464,11 +444,11 @@ curl -X POST http://localhost:5678/webhook/wazuh-alert -d '{}'  # test
 
 ### Issue: Telegram parse error "Can't find end of entity"
 
-Cause: path file / jawaban Ollama (teks bebas) mengandung karakter Markdown
+Cause: path file / jawaban LLM (teks bebas) mengandung karakter Markdown
 (`_ * [ ] ( )`), sementara node Send Telegram Alert pakai `parse_mode: Markdown`.
 
 Fix (14 Sep, sudah live): escape 3 interpolasi di node Send Telegram Alert
-(filename, filepath, ollama_response) via `.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1')`.
+(filename, filepath, ai_response) via `.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1')`.
 `vt_footer` dibiarkan mentah (link disengaja). Lihat `scripts/patch-n8n-fp-guard.py::patch_telegram`.
 
 ### Issue: False positive flood dari /tmp atau /var paths
@@ -496,7 +476,6 @@ di kiri; pakai op string native (`contains/notContains/endsWith/notRegex`;
 
 - Wazuh documentation: https://documentation.wazuh.com/4.9/
 - n8n documentation: https://docs.n8n.io/
-- Ollama API: https://github.com/ollama/ollama/blob/main/docs/api.md
 - VirusTotal API v3: https://docs.virustotal.com/reference/overview
 - Telegram Bot API: https://core.telegram.org/bots/api
 - MITRE ATT&CK Framework: https://attack.mitre.org/

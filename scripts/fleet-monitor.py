@@ -374,7 +374,7 @@ def build_fleet(cfg):
     # Sort by id
     fleet.sort(key=lambda x: x["id"])
 
-    # Gemini API full — tidak cek Ollama lagi (hemat 4GB, 10-60s). Cek GEMINI_API_KEY ada atau coba endpoint Gemini (tanpa quota hit)
+    # Modul analisis LLM via API — cek GEMINI_API_KEY ada atau coba endpoint Gemini (tanpa quota hit)
     has_gemini = bool(cfg.get("gemini_key"))
     health = {
         "n8n": check_http(cfg["n8n_url"]),

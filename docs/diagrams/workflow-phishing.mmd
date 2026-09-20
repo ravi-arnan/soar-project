@@ -20,7 +20,7 @@ flowchart TD
     W --> WA["⚙️ Trigger Active Response<br/>!block-domain → sinkhole domain (/etc/hosts)"]
     WA --> K
     V -->|"Tidak — ambigu"| K["🧩 Build Payload<br/>Rakit konteks untuk AI"]
-    K --> M["🤖 Ollama Generate<br/>Analisis AI lokal"]
+    K --> M["🤖 Gemini Generate (API)<br/>Analisis kontekstual"]
     M --> N{"Tipe Notif?"}
     N -->|"Auto-block"| P["📱 Send Telegram Info<br/>Notifikasi domain diblokir"]
     N -->|"Perlu keputusan"| O["📱 Send Telegram Alert<br/>Tombol [Blokir] / [Abaikan]"]

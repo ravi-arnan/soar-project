@@ -20,7 +20,7 @@ Sekarang (baseline):
 POC Agen Ringan:
   Endpoint (soar-agent Rust ~5,3 MB, no Docker) -> HTTP POST JSON -> n8n webhook langsung
   + systemd service, update via scp, footprint <10 MB RAM
-  + tetap pakai n8n workflow yang sama (VT, Ollama, Telegram HITL)
+  + tetap pakai n8n workflow yang sama (VT, LLM, Telegram HITL)
 ```
 
 ## Timeline 10 hari (agar ada progres minggu depan)

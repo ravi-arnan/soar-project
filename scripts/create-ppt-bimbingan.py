@@ -143,7 +143,7 @@ make_table(slide, 0.5, 1.2, 12.3, 5.5, [
     ["Self-aware", "Tergantung analis", "Tidak ada", "Tidak ada", "Tandai degradasi otomatis"],
     ["Audit trail", "Manual / tidak ada", "Ada (bayar)", "Terbatas", "Gratis (Telegram + n8n)"],
     ["Phishing proaktif", "Tidak ada", "Tergantung playbook", "Tidak ada", "URLhaus auto-block"],
-    ["AI advisory", "Tergantung analis", "Tergantung vendor", "Tidak ada", "Ollama lokal (gratis)"],
+    ["AI advisory", "Tergantung analis", "Tergantung vendor", "Tidak ada", "LLM API (ringkasan otomatis)"],
     ["Multi-sumber intel", "Manual", "Tergantung integrasi", "Beberapa", "VT + MalwareBazaar"],
     ["Setup & maintenance", "Tidak ada", "Kompleks", "Sedang", "Docker + Ansible"],
 ], cols_width=[2.2, 2.3, 2.6, 2.5, 2.7], header_color=BLUE)
@@ -167,7 +167,7 @@ add_bullets(slide, 9.3, 1.2, 3.8, 5.5, [
     "Stack:",
     "  Wazuh 4.9.2",
     "  n8n 2.36.9",
-    "  Ollama llama3.2:3b",
+    "  LLM API (Atria-Dawn)",
     "  VirusTotal API",
     "  Google Safe Browsing",
     "  MalwareBazaar",
@@ -190,7 +190,7 @@ slide = prs.slides.add_slide(prs.slide_layouts[6])
 add_text(slide, 0.5, 0.3, 12, 0.6, "Alur Keputusan", 28, BLUE, True)
 add_divider(slide, 0.5, 0.9, 3)
 
-flow_labels = ["FIM Alert\n(Wazuh)", "Filter\n& Extract", "VT + MB\nLookup", "Keputusan\n(Ollama)", "Telegram\n(analis)"]
+flow_labels = ["FIM Alert\n(Wazuh)", "Filter\n& Extract", "VT + MB\nLookup", "Keputusan\n(LLM)", "Telegram\n(analis)"]
 for i, label in enumerate(flow_labels):
     x = 0.5 + i * 2.5
     shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(1.3), Inches(2.0), Inches(0.9))

@@ -1,6 +1,6 @@
 graph TD
     A["Berkas baru / akses URL pada endpoint"] --> B["Wazuh FIM: deteksi + hitung hash"]
-    B --> C["n8n: pengayaan VirusTotal + analisis AI lokal (Ollama)"]
+    B --> C["n8n: pengayaan VirusTotal + analisis LLM (API)"]
     C --> D{"Skor VirusTotal?"}
     D -->|"malicious >= 20<br/>(keyakinan tinggi)"| E["ACTIVE RESPONSE OTOMATIS<br/>quarantine-file via Wazuh API"]
     E --> F["Notifikasi Telegram:<br/>OTOMATIS DIISOLASI (tanpa tombol)"]
