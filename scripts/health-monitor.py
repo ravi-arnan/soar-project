@@ -13,7 +13,7 @@ disk supaya transisi tidak dikirim ulang tiap restart.
 Cek:
   - Wazuh Manager API   -> tiap agent: active? (disconnected = blind spot)
   - n8n                 -> /healthz reachable
-  - Gemini API          -> GEMINI_API_KEY ada (hemat 4GB vs Ollama lokal)
+  - LLM API             -> kunci penyedia (mis. GEMINI_API_KEY/ATRIA_API_KEY) ada
 
 Env (lihat .env.example):
   TELEGRAM_BOT_TOKEN   token bot (wajib)
@@ -22,7 +22,7 @@ Env (lihat .env.example):
   WAZUH_API_USER       default wazuh-wui
   WAZUH_API_PASS       password API (wajib untuk cek agent)
   N8N_HEALTH_URL       default http://n8n:5678/healthz
-  GEMINI_API_KEY       Gemini 2.0 Flash API key (wajib setelah migrasi dari Ollama)
+  GEMINI_API_KEY       kunci API untuk cek ketersediaan modul analisis LLM
   HEALTH_INTERVAL      detik antar-poll (default 60)
   HEALTH_STATE_FILE    default /state/health.json
 """

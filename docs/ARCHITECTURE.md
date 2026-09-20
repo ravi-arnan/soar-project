@@ -29,7 +29,7 @@ graph TB
 
         subgraph "Orchestration & AI — PUSAT KEPUTUSAN"
             N8N["n8n Workflow Engine<br/>OTAK: VT + AI + HITL<br/>semua logika di sini"]
-            OLLAMA[Ollama llama3.2:3b<br/>Local AI]
+            LLM[LLM API<br/>ringkasan Bahasa Indonesia]
         end
 
         SCRIPT[custom-n8n.py<br/>Bridge Wazuh -> n8n]
@@ -55,7 +55,7 @@ graph TB
     WD --> WI
 
     N8N -->|hash/url query| VT
-    N8N -->|inference| OLLAMA
+    N8N -->|inference| LLM
     N8N -->|sendMessage<br/>+ inline keyboard iso/ign| TG
     TG -->|notif + tombol| ANALYST
     ANALYST -->|Isolasi / Abaikan| TG
@@ -127,15 +127,15 @@ Sistem dirancang dengan **5 layer** terpisah dengan tanggung jawab yang clear:
 
 **Components**:
 - **VirusTotal API** — external threat intel (hash/URL reputation)
-- **Ollama** — local LLM untuk contextual analysis
+- **LLM API (Atria)** — analisis kontekstual via API penyedia (OpenAI-compatible)
 
 **Fungsi**:
 - VT: lookup hash/URL terhadap 60+ antivirus engines
-- Ollama: generate human-readable analysis dalam Bahasa Indonesia
+- LLM: generate human-readable analysis dalam Bahasa Indonesia
 - Severity-aware prompt (CRITICAL → urgent guidance, MEDIUM → informational)
 - Markdown sanitization untuk Telegram compatibility
 
-**Privacy**: AI inference berjalan lokal — data tidak keluar dari server
+**Privacy**: ringkasan dibuat melalui API penyedia LLM — hash, path, dan nama host ikut terkirim; isi berkas tetap tidak keluar endpoint
 
 ### Layer 5: Response Execution (Distributed, human-approved)
 
@@ -193,7 +193,7 @@ graph LR
 | Wazuh Indexer | 9200/tcp | 9200/tcp | Internal |
 | Wazuh Dashboard | 5601/tcp | 443/tcp | Internal (HTTPS) |
 | n8n webhook | 5678/tcp | 5678/tcp | Internal (untuk integratord) |
-| Ollama API | 11434/tcp | 11434/tcp | Internal (host service) |
+| API LLM (Atria) | 443/tcp | – | Keluar (HTTPS) |
 
 ## 4. Workflow Logic — Severity Classification
 
@@ -217,7 +217,7 @@ graph TD
     J --> P[Build Payload<br/>+ AI guidance per severity]
     K --> P
 
-    P --> Q[Ollama Generate<br/>analysis Bahasa Indonesia]
+    P --> Q[LLM Generate<br/>analysis Bahasa Indonesia]
     Q --> S{Perlu Konfirmasi?<br/>should_active_response}
     S -->|TRUE CRITICAL/HIGH| T[Send Telegram Alert<br/>+ tombol Isolasi/Abaikan]
     S -->|FALSE MEDIUM| U[Send Telegram Info<br/>polos, silent]
@@ -370,7 +370,7 @@ graph TB
     "name": "rocky-server"
   },
   "timestamp": "2026-05-16T20:08:00.000+0000",
-  "model": "llama3.2:3b",
+  "model": "Atria-Dawn-Preview",
   "data": {
     "sha256_after": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
     "path": "/home/ravi/Downloads/eicar-rocky-demo2.com",
@@ -418,7 +418,7 @@ Content-Type: application/json
 🕐 Waktu: 2026-05-16T20:07:38+0000
 
 🤖 Analisis AI:
-[Ollama-generated, severity-aware, Bahasa Indonesia, markdown-sanitized]
+[LLM-generated, severity-aware, Bahasa Indonesia, markdown-sanitized]
 
 🔗 Lihat di VirusTotal
 ```
@@ -433,9 +433,9 @@ Content-Type: application/json
 | Wazuh Indexer (heap 1g, light 512m) | ~1-1.5 GB | 1 core | `wazuh-docker/single-node/docker-compose.yml: OPENSEARCH_JAVA_OPTS=-Xms1g` (light: `-Xms512m` di `docker-compose.light.yml`) |
 | Wazuh Dashboard | ~1 GB (optional) | 1 core | **Bisa dimatikan** untuk 100 PC — `fleet-monitor :8080` desain Wazuh `#011a2f` jadi pengganti fleet, hemat 1 GB |
 | n8n + task runner | ~700 MB | 1 core |  |
-| Ollama llama3.2:3b **deprecated** | ~4 GB | 2-4 core | **Atria API sekarang** (sebelumnya Gemini, sebelumnya Ollama) — hemat 4 GB, latensi 1-3s vs 10-60s (node live `AI Generate`, model `Atria-Dawn-Preview`, `ATRIA_API_KEY` di `.env.example`, patch `scripts/patch-n8n-ai-generate.py`) |
+| LLM API (Atria) | – (cloud) | – | Node live `AI Generate`, model `Atria-Dawn-Preview`, key `ATRIA_API_KEY` di `.env`, patch `scripts/patch-n8n-ai-generate.py`; latensi 1-3 s tanpa RAM/CPU server |
 | **Total full (lama)** | **~11 GB** | 4+ core |  |
-| **Total light (Atria + Wazuh light)** | **~5-6 GB** | 2-3 core | Tanpa Dashboard + tanpa Ollama, Indexer 512m — muat 100 rust agent hash-only |
+| **Total light (LLM API + Wazuh light)** | **~5-6 GB** | 2-3 core | Tanpa Dashboard, Indexer 512m, LLM via API — muat 100 rust agent hash-only |
 
 > **Light profile:** `wazuh-docker/single-node/docker-compose.light.yml` (Dashboard `profiles: ["full"]` = off, Indexer 512m). Jalankan `docker compose -f docker-compose.yml -f docker-compose.light.yml up -d` atau cukup host `fleet-monitor` di `:8080` tanpa Dashboard untuk demo 100 PC.
 
@@ -483,12 +483,11 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 - Webhook trigger native (perfect untuk Wazuh integratord)
 - Self-hostable via Docker
 
-### Kenapa Atria API (bukan Ollama lokal)? — update 2026-09-16
+### Kenapa LLM API (bukan inferensi lokal)?
 
-- **Hemat 4 GB** — `Ollama llama3.2:3b` butuh 4 GB RAM + 2-4 core, latensi 10-60s sekuensial (bottleneck 100 PC). API cloud 1-3s, scale cloud. Riwayat: Ollama lokal → Gemini (3 Sep) → Experiential/deepseek-v4-flash → **Atria/Atria-Dawn-Preview** (16 Sep, kredit Experiential habis; `max_tokens` 300 → 1500).
+- **Tanpa beban server:** inferensi lokal menuntut RAM/CPU besar dan lambat untuk pemantauan 100 PC; LLM API menjawab 1-3 s tanpa memakai resource server.
 - **Kualitas** lebih baik untuk 2-3 kalimat Bahasa Indonesia formal.
 - Trade-off: **data keluar infra** (hash, path, hostname ke Atria), butuh `ATRIA_API_KEY` + internet. Untuk TA, Wazuh + hash-only tetap lokal, hanya AI yang cloud — kompromi 100 PC.
-- **Dulu Ollama:** data sovereignty, no cost, privacy — cocok kalau resource cukup atau butuh offline. Sekarang deprecated, tapi bisa fallback kalau `ATRIA_API_KEY` kosong.
 
 ### Kenapa severity classifier di Rangkum Hasil (bukan Build Payload)?
 
@@ -534,14 +533,12 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 
 - **n8n single instance** — no HA, single point of failure
 - **Wazuh SQLite agent DB** — tidak suitable untuk 1000+ agents
-- **Ollama single CPU inference** — sequential, 10-60s latency
 - **VirusTotal free tier rate limit** — 4 req/min, 500/day
 - **Telegram bukan audit-grade** — production butuh SIEM forwarding
 
 ## 12. Future Work
 
 - [ ] Replace n8n SQLite ke PostgreSQL HA
-- [ ] Ollama scaling via vLLM cluster
 - [ ] Multi-tenant workflow support
 - [ ] Integration dengan TheHive (incident case management)
 - [ ] EDR integration (Velociraptor / osquery)

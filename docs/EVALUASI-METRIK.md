@@ -13,7 +13,7 @@ Proyek: *Implementasi Sistem SOAR Open-Source Berbasis n8n…* — Ravi Arnan Ir
 ## 2. Lingkungan & metodologi
 
 - **Host uji:** agent `ravi-zorin` (Ubuntu/Zorin), FIM realtime `~/Downloads`. Agent `rocky-server` (Rocky 9) diverifikasi fungsional terpisah.
-- **Stack:** Wazuh 4.9.2 (Docker) + n8n + Ollama `llama3.2:3b` + VirusTotal (malware) + Google Safe Browsing/URLScan (phishing). VT cache hangat.
+- **Stack:** Wazuh 4.9.2 (Docker) + n8n + LLM API + VirusTotal (malware) + Google Safe Browsing/URLScan (phishing). VT cache hangat.
 - **E1 — MTTR malware (N=15):** drop file EICAR, ukur selisih epoch milidetik `drop → hilang (terkarantina)` via polling 0,2 dtk. Jeda 12 dtk antar-run.
 - **E3 — MTTR phishing auto-block (N=5):** bersihkan `/etc/hosts`, injeksi event URL ber-deteksi GSB, ukur `injeksi → domain ter-sinkhole di /etc/hosts`. Jeda antar-run; 1 event pemanasan tidak dihitung.
 - **E2 — FP suppression (N=8):** drop berkas jinak beragam tipe (.jpg/.txt/.md/.csv/.yaml/.png/.json/.docx), jeda 20 dtk (hormati rate-limit VT free ≤4/mnt). Bandingkan Active Response yang terpicu dengan jumlah alert FIM yang Wazuh hasilkan (baseline rule-only).
@@ -86,7 +86,7 @@ Ketiga angka mendukung klaim keunggulan pada tabel perbandingan (respons berjenj
 
 1. MTTR jalur **human-in-the-loop** (termasuk waktu keputusan analis) & jalur phishing **URLScan** (bukan hanya GSB).
 2. MTTR VT **cold** vs **cache** (kuantifikasi manfaat cache).
-3. **Uji beban**: N alert serentak → throughput, antrean, latensi Ollama.
+3. **Uji beban**: N alert serentak → throughput, antrean, latensi LLM.
 4. **False-negative rate** atas korpus malware nyata + zero-day.
 5. Ulangi seluruh eksperimen dengan **N ≥ 30**.
 
@@ -157,7 +157,7 @@ Seluruh benchmark dijalankan via `scripts/benchmark-soar.py` terhadap sistem liv
 | Std. deviasi | ± 0,01 detik |
 | P95 | 0,05 detik |
 
-**Catatan:** Ini adalah waktu response webhook n8n (async). n8n menerima alert → langsung return 200 → proses di background (VT/MB/Ollama/Telegram). End-to-end MTTR (termasuk seluruh pipeline) perlu diukur terpisah.
+**Catatan:** Ini adalah waktu response webhook n8n (async). n8n menerima alert → langsung return 200 → proses di background (VT/MB/LLM/Telegram). End-to-end MTTR (termasuk seluruh pipeline) perlu diukur terpisah.
 
 ### 9.2 MTTR Phishing — Webhook Response Time (N=10)
 
@@ -177,7 +177,7 @@ Seluruh benchmark dijalankan via `scripts/benchmark-soar.py` terhadap sistem liv
 | **Throughput** | **34,11 alert/detik** |
 | Wall time | 0,6 detik (20 alert) |
 
-**Interpretasi:** n8n mampu memproses **34 alert per detik** (webhook response). Pipeline backend (VT/MB/Ollama) berjalan async di background. Throughput ini jauh di atas beban normal SOC (~1-5 alert/menit).
+**Interpretasi:** n8n mampu memproses **34 alert per detik** (webhook response). Pipeline backend (VT/MB/LLM) berjalan async di background. Throughput ini jauh di atas beban normal SOC (~1-5 alert/menit).
 
 ### 9.4 False-Negative Rate (N=15, risky extension + unknown hash)
 

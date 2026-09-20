@@ -755,3 +755,76 @@ ditukar"). **Narasi laporan perlu diputuskan**: kalau tetap menyebut "AI lokal
 - Keputusan narasi AI di laporan (hidupkan Ollama atau ubah teks).
 - Opsional: tambahkan baris diagram baru di `docs/PANDUAN-DIAGRAM.md`.
 - Belum di-commit (menunggu aba-aba Ravi), termasuk perubahan B sebelumnya.
+
+---
+
+# Handoff SOAR - 2026-09-20 (lanjutan: klaim "AI lokal" dihapus)
+
+Keputusan Ravi: **"AI Lokal itu hapus saja, menurut saya tidak relevan"** → AI
+digambarkan sebagai **analisis LLM via API penyedia** (malware: Atria
+`Atria-Dawn-Preview`; phishing: Gemini). Tidak ada model lokal.
+
+## 1. Laporan (`docs/Laporan-SOAR.md`)
+
+45 sebutan Ollama/AI-lokal diganti (bab 1–3, Daftar Isi, Daftar Pustaka):
+
+- Judul sub-bab **2.10 Threat Intelligence dan Analisis AI Lokal → ... dan Analisis LLM**.
+- Bab 1 (latar belakang, rumusan masalah, tujuan, batasan, manfaat, luaran) —
+  daftar stack kini "Wazuh, n8n, VirusTotal, LLM, dan Telegram Bot".
+- **Klaim kedaulatan data dihapus** (3 tempat): diganti penjelasan trade-off API
+  (hash/path/nama host terkirim ke penyedia; isi berkas tetap tidak keluar endpoint).
+- Tabel perangkat lunak: baris `Ollama (llama3.2:3b)` → `API LLM (OpenAI-compatible)`.
+- Skenario kegagalan: "Ollama crash / slow" → "LLM API error / timeout";
+  bottleneck evaluasi: "inferensi Ollama (CPU-bound)" → "pemanggilan layanan eksternal".
+- Daftar pustaka: entri Ollama dihapus.
+
+## 2. Dokumen repo + figur
+
+- `ARCHITECTURE.md` (diagram komponen/port/layer/rationale), `FLOW.md` (step AI,
+  blok historis Ollama dihapus, skenario 3), `DEPLOYMENT.md` (§1.6 "Setup Ollama"
+  → konfigurasi kunci API; port 11434 dihapus), `PERBANDINGAN-PENELITIAN.md`
+  (kolom AI → "LLM API"), `KARTU-DEMO.md`, `KARTU-CONTEKAN-DEMO.txt` (perintah
+  `ollama run` di preflight dihapus), `EVALUASI-METRIK.md`, `PANDUAN-DIAGRAM.md`,
+  `N8N-VS-SHUFFLE.md`, `ROADMAP.md` (judul + klaim aktif), `docker-compose.yml`,
+  docstring `health-monitor.py`, `create-ppt/pdf-bimbingan.py`.
+- Figur dirender ulang (gaya asli dipertahankan): `fig-3.1`, `fig-3.3`, `fig-3.4`,
+  `overview-bernomor`, `demo-hybrid-flow`, `workflow-malware` (node Preload
+  Model/Ollama Generate → `AI Generate (Atria API)`), `workflow-phishing`
+  (→ `Gemini Generate (API)`). Skala render 2× seperti sebelumnya.
+- **Extent DOCX diselaraskan lagi** (Gambar 3.1/3.3/3.4) karena rasio PNG berubah
+  setelah render ulang → tidak ada gambar tertarik (verifikasi rasio cocok).
+
+## 3. Workflow live dibersihkan
+
+`scripts/patch-n8n-drop-ollama.py` (**baru**, idempoten + backup + dry-run):
+hapus node `Preload Model` + `Ollama Generate` (orphan, tidak pernah jalan),
+bersihkan edge, normalkan field `model` → `Atria-Dawn-Preview`.
+Hasil: **25 → 23 node**, workflow tetap aktif, `Build Payload → AI Generate →
+Send Telegram Alert`, tanpa edge yatim. E2E 1 alert sintetis: 18 node, **tanpa
+error**, sampai Telegram (1 pesan).
+
+## 4. Sengaja dibiarkan (alasan)
+
+- **Log historis**: `HANDOFF.md`, entri bertanggal di `ROADMAP.md` (13, 32),
+  checklist 09 Sep di `ROADMAP-AGEN-RINGAN.md`, notulen `CATATAN-DOSPEM-*`.
+- **Artefak legacy/sudah dikumpulkan**: `docs/diagrams/*.drawio` + PNG legacy
+  (tidak dirujuk dokumen mana pun), snapshot `n8n-workflows/*.json`, dan
+  **`proposal/`** — keputusan Ravi (20 Sep): **dibiarkan** karena dokumen usulan
+  ide yang sudah disetujui pembimbing (teks generator + aset diagram masih
+  menyebut AI lokal; perbedaannya dijelaskan saat bimbingan bila ditanya).
+- ✅ **Milestone direvisi** (keputusan Ravi, 20 Sep): `milestone/milestone.html` →
+  M4 "Analisis LLM dan explainability", deskripsi "large language model melalui
+  API penyedia", luaran "Modul analisis LLM", risiko #2 diarahkan ulang menjadi
+  ketergantungan pada layanan LLM eksternal (jaringan/kuota). PDF **diregenerasi**
+  dari HTML yang sama (Chrome headless `--print-to-pdf`, tetap **6 halaman**);
+  PDF lama diarsipkan ke `backups/Milestone-TA-bak-*.pdf`.
+- Field data inert: `"model": "llama3.2:3b"` di `scripts/custom-n8n.py` (tidak
+  dipakai node mana pun), fixture tes `health-monitor.py` (string 'ollama' hanya
+  nama komponen contoh), dan script patch lama (`patch-n8n-ai-generate.py` dll)
+  yang isinya mencatat perubahan historis.
+
+## 5. Verifikasi
+
+`git grep` dokumen/figur aktif: **0 sebutan** ollama/AI-lokal. Struktur laporan
+utuh (21 blok openxml, 26 heading). `ruff`/`py_compile` bersih untuk file baru &
+yang diubah (lint `create-*-bimbingan.py` tidak berubah dari HEAD = warisan).

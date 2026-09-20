@@ -1,4 +1,4 @@
-# ROADMAP — SOAR Open-Source (Wazuh + n8n + HITL + AI Lokal)
+# ROADMAP — SOAR Open-Source (Wazuh + n8n + HITL)
 
 Konsolidasi **gap (kesenjangan/masalah)** dan **solusi** untuk proyek:
 *Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop* — Ravi Arnan Irianto (2305551076).
@@ -102,7 +102,7 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | State tidak terbagi/persist (cache VT di `staticData`) | Pindah cache ke **Redis** (survive restart, dibagi lintas-worker) |
 | Kopling Wazuh↔n8n langsung (tanpa buffer) | **Message queue** (Redis/RabbitMQ) → buffering & replay |
 | Tak ada observability pipeline | **Prometheus + Grafana** (sekaligus sumber data metrik bab evaluasi) |
-| Ollama bersaing resource | AI sebagai **microservice inferensi** terpisah; opsi **RAG** atas playbook/threat-intel |
+| Inferensi AI bersaing resource | AI sebagai **microservice inferensi** terpisah; opsi **RAG** atas playbook/threat-intel |
 
 ## F. Kontribusi terhadap masalah INDUSTRI (arah kebaruan) 🟢 SEBAGIAN
 
@@ -110,9 +110,9 @@ Masalah industri 2025–2026: playbook rapuh/statis, *playbook rot* (silent-fail
 
 | Status | Gap industri | Kontribusi (dari fondasi proyek ini) |
 |--------|--------------|--------------------------------------|
-| ✅ **SELESAI** (2026-07-06) | Automasi **gagal diam-diam** & tak sadar cakupan turun | **Self-aware (inline):** notifikasi menandai **`⚠️ Deteksi TERDEGRADASI`** saat VT rate-limit/error (`degraded`). **Self-aware (health monitor):** `scripts/health-monitor.py` poll agent (putus = blind spot), n8n, Ollama, Wazuh-API → Telegram alert HANYA saat status berubah (anti-spam), state persist lintas-restart |
+| ✅ **SELESAI** (2026-07-06) | Automasi **gagal diam-diam** & tak sadar cakupan turun | **Self-aware (inline):** notifikasi menandai **`⚠️ Deteksi TERDEGRADASI`** saat VT rate-limit/error (`degraded`). **Self-aware (health monitor):** `scripts/health-monitor.py` poll agent (putus = blind spot), n8n, LLM API, Wazuh-API → Telegram alert HANYA saat status berubah (anti-spam), state persist lintas-restart |
 | ✅ **SELESAI** (explainable+audit, 2026-07-02) | **Black-box** merusak kepercayaan analis | Setiap notifikasi (malware **&** phishing) memuat **`🧠 Alasan`** (skor VT/GSB + keyakinan + jalur). **Audit-trail:** callback handler mencatat keputusan analis **`oleh <analis> pada <waktu WITA>`** di pesan Telegram + riwayat eksekusi n8n (action/agent/target/analis). Catatan: log file dari Code node tak tersedia (fs sandbox n8n) → audit via Telegram+execution-history |
-| ✅ **Selesai** (2026-09-02) | Alert yang **tak cocok playbook** → diam/dilempar | **LLM-fallback advisory** (Ollama): flag `needs_advisory` di Rangkum Hasil (VT unverified, borderline 1-4 malicious, review_unknown non-exec). Build Payload generate prompt advisory → Ollama → Telegram. AI hanya **advisory**, tak pernah eksekusi AR sendiri. |
+| ✅ **Selesai** (2026-09-02) | Alert yang **tak cocok playbook** → diam/dilempar | **LLM-fallback advisory** (LLM API): flag `needs_advisory` di Rangkum Hasil (VT unverified, borderline 1-4 malicious, review_unknown non-exec). Build Payload generate prompt advisory → Ollama → Telegram. AI hanya **advisory**, tak pernah eksekusi AR sendiri. |
 | ✅ **Terukur** (di C) | **Alert fatigue** | Reduksi FP VT-gated **100%** (lihat `docs/EVALUASI-METRIK.pdf`) |
 | ⬜ Lanjutan | HITL = bottleneck vs otonomi berisiko | **Trusted autonomy**: timeout/SLA + otonomi adaptif per tingkat keyakinan |
 

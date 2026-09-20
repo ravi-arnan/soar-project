@@ -181,7 +181,7 @@ Semua klaim di atas diverifikasi dalam kode proyek ini:
 | HITL Telegram buttons | `deteksi-malware.json` → node "Send Telegram Alert" → `inlineKeyboard` |
 | Callback audit trail | `telegram-callback-handler.json` → node "Parse Keputusan" → `decidedAt + analyst` |
 | Self-aware degradation | `deteksi-malware.json` → node "Rangkum Hasil" → `degraded = vt_unverified` |
-| Health monitor | `scripts/health-monitor.py` → poll agent/n8n/Ollama → Telegram alert |
+| Health monitor | `scripts/health-monitor.py` → poll agent/n8n/LLM API → Telegram alert |
 
 ---
 

@@ -180,7 +180,7 @@ payload = {
     "rule": {"id": rule_id, "level": rule_level, "description": ...},
     "agent": {"id": agent_id, "name": agent_name},
     "timestamp": timestamp,
-    "model": "llama3.2:3b",
+    "model": "Atria-Dawn-Preview",
     "data": {
         "sha256_after": hash_value,
         "path": file_path,
@@ -326,7 +326,7 @@ sengaja manual demi keamanan.
 
 ### Phase 6: AI Enrichment
 
-**Step 16-18: Atria analysis** (live 16 Sep; dulu Ollama lokal, lalu Gemini)
+**Step 16-18: LLM analysis (Atria API)**
 
 Build Payload prepare severity-aware prompt:
 
@@ -341,19 +341,6 @@ VirusTotal: 65 dari 67 antivirus mendeteksi file ini sebagai malware.
 
 Konteks: ancaman KRITIS. Berikan rekomendasi immediate response, isolasi sistem, dan eradikasi.
 Jelaskan tingkat bahaya file ini dan berikan rekomendasi tindakan yang harus diambil.
-```
-
-Ollama Generate (Code node) call — HISTORIS (Ollama disabled, ganti Atria 16 Sep):
-```http
-POST http://172.17.0.1:11434/api/generate
-Content-Type: application/json
-
-{
-  "model": "llama3.2:3b",
-  "prompt": "<prompt above>",
-  "stream": false,
-  "options": {"num_predict": 150}
-}
 ```
 
 Live sekarang: node `AI Generate` (Code) → `POST https://api.atria-asi.ai/v1/chat/completions`
@@ -385,7 +372,7 @@ text: expr(`={{ $json.severityIcon + " *" + $json.severityLabel + " - MALWARE TE
             "📊 Deteksi: " + $json.detection_text + "\\n" +
             "🖥️ Agent: " + $("Ekstrak Alert").first().json.agent_name + "\\n" +
             "🕐 Waktu: " + $("Ekstrak Alert").first().json.timestamp + "\\n\\n" +
-            "🤖 *Analisis AI:*\\n" + $json.ollama_response + "\\n\\n" +
+            "🤖 *Analisis AI:*\\n" + $json.ai_response + "\\n\\n" +
             $json.vt_footer }}`)
 ```
 
@@ -409,9 +396,9 @@ End-to-end latency dari file drop sampai Telegram delivery (observed):
 | 11-12: Workflow filter + ekstrak | ~30 ms |
 | 13-14: **VirusTotal scan** | **5-15 s** |
 | 15: Severity classifier | ~10 ms |
-| 16-18: **Atria AI inference** | **1-3 s** (cloud API; era Ollama 15-50 s CPU-bound) |
+| 16-18: **LLM inference (Atria API)** | **1-3 s** |
 | 19-21: Markdown sanitize + Telegram (+ tombol) | ~1 s |
-| **TOTAL (deteksi → notifikasi)** | **≈10-20 detik** (era Ollama 30-60 dtk) |
+| **TOTAL (deteksi → notifikasi)** | **≈10-20 detik** |
 
 Active Response (`quarantine-file`) **tidak masuk** latency di atas karena
 dipicu manual oleh analis. Latency klik-tombol → file terisolasi (workflow kedua):
@@ -420,7 +407,7 @@ setelah analis menekan tombol.
 
 **Bottleneck utama**:
 1. VirusTotal API call (network latency)
-2. Atria inference (cloud API; dulu Ollama CPU-bound 15-50 s)
+2. LLM inference (API penyedia)
 
 ## Failure Scenarios Handled
 
@@ -440,12 +427,12 @@ Workflow action: error caught (neverError: true di node options)
 Notification: tetap kirim, severity berdasarkan rule_level only
 ```
 
-### Skenario 3: Ollama crash / slow
+### Skenario 3: LLM API error / timeout
 
 ```
-Ollama: timeout setelah 5 menit
-Workflow: error di Code node
-Mitigation: di-restart workflow akan retry
+LLM API: timeout / error jaringan
+Workflow: node `AI Generate` gagal; notifikasi Telegram tanpa ringkasan AI
+(fallback teks statis), lalu workflow lanjut pada alert berikutnya
 ```
 
 ### Skenario 4: Wazuh agent disconnect

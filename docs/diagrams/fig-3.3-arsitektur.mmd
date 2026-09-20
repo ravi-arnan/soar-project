@@ -6,7 +6,7 @@ graph TB
     subgraph SRV["SOAR Server (Terpusat - Docker)"]
         WM["Wazuh Manager<br/>analysisd + remoted + integratord<br/>+ custom-n8n.py (filter &amp; jembatan)<br/>API :55000"]
         N8N["n8n - mesin orkestrasi playbook :5678<br/>Deteksi Malware | Deteksi Phishing<br/>Telegram Callback Handler"]
-        OL["Ollama llama3.2:3b<br/>analisis AI lokal :11434"]
+        OL["LLM API (Atria)<br/>analisis kontekstual"]
     end
 
     subgraph EXT["Layanan Eksternal (Threat Intelligence)"]
@@ -28,7 +28,7 @@ graph TB
     N8N -->|"cek hash"| VT
     N8N -->|"cek URL"| GSB
     N8N -->|"scan URL"| US
-    N8N -->|"inferensi lokal"| OL
+    N8N -->|"analisis kontekstual"| OL
     N8N -->|"sendMessage + tombol"| TG
 
     TG -->|"notifikasi"| AN

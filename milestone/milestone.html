@@ -161,9 +161,9 @@
     </tr>
     <tr>
       <td class="c">M4</td>
-      <td>Integrasi analisis AI lokal dan explainability</td>
-      <td>Integrasi large language model on-premise sebagai penghasil ringkasan dan penjelasan keputusan, penerapan pembatas agar AI tidak pernah mengeksekusi Active Response secara mandiri, serta pengujian konsistensi keluaran AI.</td>
-      <td>Modul analisis AI lokal, format notifikasi beserta alasan keputusan</td>
+      <td>Integrasi analisis LLM dan explainability</td>
+      <td>Integrasi large language model melalui API penyedia sebagai penghasil ringkasan dan penjelasan keputusan, penerapan pembatas agar AI tidak pernah mengeksekusi Active Response secara mandiri, serta pengujian konsistensi keluaran AI.</td>
+      <td>Modul analisis LLM, format notifikasi beserta alasan keputusan</td>
       <td class="c">Oktober 2026</td>
     </tr>
     <tr>
@@ -211,7 +211,7 @@
     <tr><td class="kiri">M1 Konsolidasi purwarupa dan lingkungan uji</td><td class="on"></td><td></td><td></td><td></td><td></td><td></td></tr>
     <tr><td class="kiri">M2 Verifikasi ancaman multi-sumber</td><td></td><td class="on"></td><td></td><td></td><td></td><td></td></tr>
     <tr><td class="kiri">M3 Respons berjenjang berbasis keyakinan</td><td></td><td></td><td class="on"></td><td></td><td></td><td></td></tr>
-    <tr><td class="kiri">M4 Analisis AI lokal dan explainability</td><td></td><td></td><td class="on"></td><td></td><td></td><td></td></tr>
+    <tr><td class="kiri">M4 Analisis LLM dan explainability</td><td></td><td></td><td class="on"></td><td></td><td></td><td></td></tr>
     <tr><td class="kiri">M5 Pengerasan keamanan dan reproduksibilitas</td><td></td><td></td><td></td><td class="on"></td><td></td><td></td></tr>
     <tr><td class="kiri">M6 Pengujian dan evaluasi kuantitatif</td><td></td><td></td><td></td><td class="on"></td><td class="on"></td><td></td></tr>
     <tr><td class="kiri">M7 Laporan dan seminar Proyek 1</td><td></td><td></td><td></td><td></td><td class="on"></td><td class="on"></td></tr>
@@ -246,7 +246,7 @@
   </thead>
   <tbody>
     <tr><td class="c">1</td><td>Pembatasan kuota (rate limit) pada layanan threat intelligence gratis menghambat pengujian dengan sampel besar.</td><td>Penerapan cache verdict beserta masa berlaku, penjadwalan pengujian secara bertahap, serta penggunaan sumber cadangan sehingga analisis tetap berjalan saat satu sumber terbatas.</td></tr>
-    <tr><td class="c">2</td><td>Keterbatasan sumber daya perangkat keras saat model AI lokal dijalankan berdampingan dengan Wazuh dan n8n.</td><td>Pemisahan layanan inferensi AI dari jalur deteksi utama dan penggunaan model berukuran kecil, sehingga jalur deteksi tetap berjalan meskipun layanan AI tidak tersedia.</td></tr>
+    <tr><td class="c">2</td><td>Ketergantungan pada layanan LLM eksternal (jaringan dan kuota) saat menghasilkan ringkasan dan penjelasan keputusan.</td><td>Pemisahan modul analisis AI dari jalur deteksi utama, sehingga jalur deteksi dan respons tetap berjalan meskipun layanan AI tidak tersedia.</td></tr>
     <tr><td class="c">3</td><td>Perubahan arsitektur pada tahap lanjut berpotensi mengganggu sistem yang sudah berjalan.</td><td>Pengujian perubahan pada lingkungan terpisah terlebih dahulu, seluruh konfigurasi disimpan pada version control, dan penggelaran dilakukan melalui Infrastructure as Code yang bersifat idempoten.</td></tr>
     <tr><td class="c">4</td><td>Jadwal pengujian berbenturan dengan kegiatan akademik lain pada akhir semester.</td><td>Pengujian utama dijadwalkan lebih awal, yaitu pada November sampai Desember 2026, sehingga periode akhir semester difokuskan pada analisis data dan penulisan laporan.</td></tr>
   </tbody>

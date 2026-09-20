@@ -8,7 +8,7 @@
 ```bash
 cd ~/Projects/soar-project && docker compose start
 cd wazuh-docker/single-node && docker compose start && cd ../..
-grep -q ATRIA_API_KEY .env || echo "ISI ATRIA_API_KEY di .env!"   # AI via Atria (Ollama pensiun)
+grep -q ATRIA_API_KEY .env || echo "ISI ATRIA_API_KEY di .env!"   # analisis LLM via Atria API
 docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l       # 2 agent Active?
 docker exec single-node-wazuh.manager-1 grep block-domain /var/ossec/etc/shared/ar.conf  # ada?
 ```

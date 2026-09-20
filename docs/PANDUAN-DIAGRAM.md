@@ -31,7 +31,7 @@ Skrip kecil yang **menyaring** kejadian tidak penting (noise) lalu mengirim aler
 **4 — n8n: OTAK SOAR.**
 Di sinilah "pemeriksaan lab" terjadi, otomatis:
 - Tanya **VirusTotal**: "sidik jari ini dikenal sebagai malware? berapa antivirus yang setuju?"
-- Minta **Ollama (AI lokal)** membuat ringkasan singkat berbahasa Indonesia.
+- Minta **LLM (analisis AI)** membuat ringkasan singkat berbahasa Indonesia.
 
 **5 — KEPUTUSAN (inti sistem).**
 Sistem bertanya: **"seberapa yakin ini malware?"** Jawabannya menentukan dua jalur di bawah.
@@ -63,7 +63,7 @@ Satu kalimat untuk diingat: **"Yakin → tindak sendiri. Ragu → tanya manusia.
 ```
 Endpoint (Agent)  --1514-->  Wazuh Manager  --alert-->  n8n
                                                           |--> VirusTotal (intel)
-                                                          |--> Ollama (AI lokal)
+                                                          |--> LLM (analisis AI)
                                                           |--> Telegram (notif + tombol)
 Analis klik tombol --> poller --> n8n --> Wazuh API --> Agent (karantina)
 ```
