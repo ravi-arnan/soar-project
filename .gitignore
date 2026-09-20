@@ -24,6 +24,13 @@ backups/
 ossec.conf.bak-*
 n8n-workflows/*.BACKUP.json
 
+# Fleet roster state (runtime fleet-monitor, jangan commit)
+scripts/.fleet-state.json
+scripts/.fleet-state.json.tmp
+scripts/.fleet-vt-cache.json
+scripts/.fleet-vt-cache.json.tmp
+state/
+
 # Rust build artifacts (agent-rs)
 agent-rs/target/
 

@@ -560,17 +560,32 @@ async fn main() -> Result<()> {
                                 if target.is_empty() {
                                     continue;
                                 }
-                                let res = match action {
-                                    "quarantine" => do_quarantine(target).map(|d| d),
-                                    "sinkhole" => do_sinkhole(target).map(|d| d),
-                                    _ => {
-                                        warn!(action = %action, "aksi queue tak dikenal, lewati");
-                                        continue;
+                                match action {
+                                    "quarantine" => match do_quarantine(target) {
+                                        Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah dashboard OK"),
+                                        Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
+                                    },
+                                    "sinkhole" => match do_sinkhole(target) {
+                                        Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah dashboard OK"),
+                                        Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
+                                    },
+                                    "scan" => {
+                                        // Scan on-demand bisa lama (hash ribuan file):
+                                        // jalankan di task sendiri supaya heartbeat
+                                        // tetap tepat waktu (TTL 120 detik).
+                                        let c = client.clone();
+                                        let b = base.to_string();
+                                        let id = hb_id.clone();
+                                        let nm = hb_name.clone();
+                                        let tgt = target.to_string();
+                                        tokio::spawn(async move {
+                                            match do_scan(&c, &b, &id, &nm, &tgt).await {
+                                                Ok(d) => info!(action = "scan", target = %tgt, detail = %d, "perintah dashboard OK"),
+                                                Err(e) => warn!(action = "scan", target = %tgt, error = %e, "perintah dashboard gagal"),
+                                            }
+                                        });
                                     }
-                                };
-                                match res {
-                                    Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah dashboard OK"),
-                                    Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
+                                    _ => warn!(action = %action, "aksi queue tak dikenal, lewati"),
                                 }
                             }
                         }
@@ -807,6 +822,112 @@ fn do_quarantine(path: &str) -> Result<String> {    let src = Path::new(path);
     Ok(dest.to_string_lossy().to_string())
 }
 
+/// Batas file per scan on-demand. Folder pilihan (bukan full disk): cukup besar
+/// untuk Downloads/USB, tetap kecil biar waktu hash + payload tidak meledak.
+const MAX_SCAN_FILES: usize = 2000;
+
+/// Kumpulkan file target scan di bawah `root` (rekursif, TANPA follow symlink).
+/// Melewati file yang di-ignore sensor, file 0-byte, dan non-file. Bounded:
+/// berhenti setelah `max` file -> (paths, truncated).
+fn collect_scan_targets(root: &Path, max: usize) -> (Vec<PathBuf>, bool) {
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    let mut truncated = false;
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            // symlink_metadata: symlink tidak di-follow (gotcha Wine dosdevices/z:).
+            let meta = match std::fs::symlink_metadata(&p) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let ft = meta.file_type();
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            if !ft.is_file() || meta.len() == 0 || should_ignore(&p) {
+                continue;
+            }
+            if out.len() >= max {
+                truncated = true;
+                break;
+            }
+            out.push(p);
+        }
+        if truncated {
+            break;
+        }
+    }
+    (out, truncated)
+}
+
+/// Scan on-demand: hash semua file di folder pilihan lalu kirim SATU laporan
+/// ringkasan ke fleet (`POST /api/scan-result`) — bukan alert per-file, biar
+/// Telegram & dedup tidak kebanjiran. Cache-first: fleet yang menandai hash
+/// baru vs sudah dikenal.
+async fn do_scan(
+    client: &reqwest::Client,
+    base: &str,
+    agent_id: &str,
+    agent_name: &str,
+    path: &str,
+) -> Result<String> {
+    let root = Path::new(path);
+    if !root.is_dir() {
+        anyhow::bail!("folder tidak ada atau bukan direktori: {}", path);
+    }
+    let started = std::time::Instant::now();
+    let (targets, truncated) = collect_scan_targets(root, MAX_SCAN_FILES);
+    let mut files = Vec::with_capacity(targets.len());
+    let mut total_bytes: u64 = 0;
+    for p in &targets {
+        let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        match sha256_file(p) {
+            Ok(h) => {
+                total_bytes += size;
+                files.push(serde_json::json!({
+                    "path": p.to_string_lossy(),
+                    "size": size,
+                    "sha256": h,
+                }));
+            }
+            Err(e) => warn!(path = %p.display(), error = %e, "scan: gagal hash, skip"),
+        }
+    }
+    let n = files.len();
+    let report = serde_json::json!({
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "path": path,
+        "started": chrono::Utc::now().to_rfc3339(),
+        "elapsed_ms": started.elapsed().as_millis() as u64,
+        "scanned": n,
+        "truncated": truncated,
+        "total_bytes": total_bytes,
+        "files": files,
+    });
+    let url = format!("{}/api/scan-result", base);
+    let resp = client.post(&url).json(&report).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("fleet {} -> {}", url, resp.status());
+    }
+    info!(path = %path, files = n, truncated, "scan on-demand terkirim");
+    Ok(format!(
+        "{} file, {} byte{}",
+        n,
+        total_bytes,
+        if truncated { ", dipotong di batas" } else { "" }
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -923,5 +1044,42 @@ mod tests {
         std::fs::remove_file(&url_path).ok();
         std::fs::remove_file(&html_path).ok();
         std::fs::remove_file(&kosong).ok();
+    }
+
+    #[test]
+    fn collect_scan_targets_skip_noise_dan_batas() {
+        // Simpan di target/ (BUKAN /tmp): should_ignore memfilter prefix /tmp/.
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/soar-test-scanwalk");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("a.bin"), b"x").unwrap();
+        std::fs::write(dir.join("sub/b.exe"), b"y").unwrap();
+        std::fs::write(dir.join("noise.log"), b"z").unwrap(); // NOISY_EXT
+        std::fs::write(dir.join("empty.txt"), b"").unwrap(); // 0-byte
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("a.bin"), dir.join("link.bin")).ok();
+
+        let (files, truncated) = collect_scan_targets(&dir, 100);
+        let names: Vec<String> = files
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert!(names.contains(&"a.bin".to_string()), "file normal harus ikut");
+        assert!(names.contains(&"b.exe".to_string()), "file di subfolder harus ikut");
+        assert!(!names.contains(&"noise.log".to_string()), "ekstensi noise harus diabaikan");
+        assert!(!names.contains(&"empty.txt".to_string()), "file 0-byte harus diabaikan");
+        assert!(!names.contains(&"link.bin".to_string()), "symlink tidak di-follow");
+        assert!(!truncated, "di bawah batas -> tidak terpotong");
+
+        // Batas: minta 1 file -> tepat 1 + truncated.
+        let (one, trunc1) = collect_scan_targets(&dir, 1);
+        assert_eq!(one.len(), 1);
+        assert!(trunc1, "melewati batas -> truncated true");
+
+        // Root tidak ada = kosong, bukan panic.
+        let (none, _) = collect_scan_targets(Path::new("/tidak-ada-xyz-scan"), 100);
+        assert!(none.is_empty());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

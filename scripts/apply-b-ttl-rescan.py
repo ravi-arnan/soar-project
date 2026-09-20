@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """B (re-scan): TTL diferensial untuk cache VT — verdict bersih di-cache lebih singkat.
 
+JANGAN DIPAKAI untuk environment live — sudah DIGANTIKAN.
+Live tidak lagi punya cache di dalam n8n (staticData tidak persist di n8n 2.40,
+terbukti saat dedup 19 Sep): cache verdict VT sekarang ada di fleet-monitor
+(`POST /api/vt-cache/lookup|store`, key = hash, TTL diferensial 7 hari / 24 jam /
+6 jam) dan node `Cek Cache VT` di workflow live. Lihat
+`scripts/patch-n8n-vt-cache-mb.py`. Script ini hanya mengedit file repo yang
+sudah menyimpang — jangan diimport ke live.
+
 Edit pada n8n-workflows/deteksi-malware.json:
 1. Node 'Cek Cache VT': TTL diferensial berdasarkan verdict sebelumnya.
    - Confirmed malicious (stats.malicious >= 1): 7 hari (sudah pasti berbahaya)

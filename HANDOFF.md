@@ -504,8 +504,254 @@ M: `.env.example`, `docker-compose.yml`,
 
 ## Sisa
 
-- Lapis-2 dedup n8n (JANJI #18, BELUM): struktur live dipetakan
-  (Ekstrak Alert -> Scan VT titik sisip terbaik), API key di
-  `/tmp/n8n_api_key.txt` (bukan di repo). Lanjut: tulis
-  `scripts/patch-n8n-dedup.py` pola patch-*.py + uji double-POST.
 - Commit ini: `main.rs` (metrics) + exe 9888768. `.opencode/` tetap tak ikut.
+
+# Handoff SOAR - 2026-09-20 (nixbox, fitur Scan on-demand)
+
+## Scan on-demand (tutup blind spot file lama)
+
+Latar: agent reaktif (FIM create/modify) — file jahat yang **sudah ada di disk
+sebelum agent dipasang** tak pernah memicu event, jadi tak terlihat selamanya.
+Scan on-demand menutup celah itu, dengan batasan sengaja: folder pilihan (**bukan
+full disk** -> VT 4 req/menit jebol), **cache-first**, dan hasil = **satu laporan
+ringkasan** (**bukan alert per-file** -> Telegram & dedup n8n tak kebanjiran).
+
+Fondasi yang dipakai: command queue `/api/commands` (sudah quarantine/sinkhole) —
+tinggal tambah aksi `scan` + path; agent walk + hash + lapor ke endpoint baru.
+
+- **Agent** (`agent-rs/src/main.rs`): aksi `scan` di command loop; scan dijalankan
+  di **task terpisah** supaya heartbeat tetap tepat waktu (TTL 120 dtk). Helper
+  `collect_scan_targets()` walk rekursif TANPA follow symlink, skip `should_ignore`
+  + file 0-byte, batas `MAX_SCAN_FILES=2000` (flag `truncated`). `do_scan()` hash
+  semua file lalu POST satu laporan ke `/api/scan-result`. Test baru
+  `collect_scan_targets_skip_noise_dan_batas`.
+- **Fleet** (`scripts/fleet-monitor.py`): `POST /api/scan-result` (hitung
+  **new vs known** via `KNOWN_HASHES`, LRU cap 200k) + `GET /api/scan-results`
+  (`?agent_id=` -> termasuk daftar file) + `/api/commands` terima `action=scan`
+  (validasi target = path absolut tanpa `..`). Helper `Handler._json()`.
+- **Dashboard** (`AgentDetailView.tsx` + `lib/fleet.ts`): kartu "On-demand scan" —
+  tombol "Scan folder…" (prompt path -> antre command) + ringkasan (file, hash
+  baru, dikenal, total byte) + tabel 20 file teratas, hash baru = link VirusTotal.
+  Aktif hanya untuk agent Rust.
+
+## Bukti uji (semua hijau)
+
+- `cargo test --release`: **6 passed** (termasuk test walker baru).
+- `cargo build --release`: binary gnu `target/release/soar-agent` = 7.953.928 byte.
+- `py_compile` + `ruff`: bersih (delta hanya +1 BLE001, mengikuti pola existing).
+- Dashboard: `eslint` file baru bersih, `tsc --noEmit` bersih, `next build` sukses.
+  (3 error lint **existing** di `SecurityEventsDashboard.tsx` — sudah ada di HEAD,
+  bukan dari fitur ini.)
+- **E2E nyata** (agent baru + fleet-monitor di port uji 18080): scan
+  `~/soar-scan-test` (5 file: 2 normal, 1 `.log` noise, 1 kosong, 1 di subfolder)
+  -> `scanned=3` (noise + 0-byte di-skip, subfolder ikut), `new=3`. Scan **ulang**
+  -> `new=0, known=3` (cache-first terbukti). Agent 099 heartbeat `active`.
+  Test server/agent dimatikan, folder uji + port dibersihkan.
+
+## Deploy Scan on-demand (2026-09-20) — ravi-debian + nixbox LIVE
+
+Dikerjakan nixbox via SSH (`192.168.1.47`) + docker group; install agent pakai sudo
+(password via stdin, tidak disimpan).
+
+- ✅ 4 file sinkron ke `~/Projects/soar-project` ravi-debian (main.rs, fleet-monitor.py,
+  fleet.ts, AgentDetailView.tsx) + `docker-compose.yml` + `.gitignore`.
+- ✅ Image `soar-fleet-dashboard` di-rebuild + container di-recreate → `:3000` sehat,
+  kartu "On-demand scan" tampil di detail agent.
+- ✅ Binary agent ravi-debian dibuild + **di-install** (`/usr/local/bin`, sudo) +
+  `systemctl restart soar-agent` (md5 cocok, service active).
+- ✅ **009 nixbox**: `sudo nixos-rebuild switch --flake /etc/nixos#nixbox --impure`
+  (build dari source lokal → ikut fitur scan), service active.
+- ✅ **Uji scan SUNGGUHAN live**: 010 ravi-debian `~/Downloads` → `scanned=14 new=3`;
+  009 nixbox `~/Downloads` → `scanned=2000 new=1880` **truncated=true** (cap 2000 file
+  kena, 13,8 GB). Log agent: "scan on-demand terkirim ... perintah dashboard OK
+  action=scan". Fitur terbukti end-to-end dari tombol dashboard.
+
+### Fix regresi "list agent berkurang" (bukan fitur scan)
+
+- Akar: `HEARTBEATS` fleet-monitor **in-memory** → tiap restart container, agent yang
+  sedang **offline** (008 macbook 100.114.170.66, 002 bali 100.126.10.58 — dua-duanya
+  unreachable/ping mati) **hilang dari daftar**, bukan sekadar "disconnected".
+  Bukan bug fitur scan; restart deploy yang mengekspos kerapuhan lama.
+- Fix: roster heartbeat **di-persist** ke `state/fleet-state.json` (volume compose
+  `./state:/state:rw`, `FLEET_STATE_FILE=/state/fleet-state.json`; `/scripts` memang
+  read-only). Load saat start, save tiap heartbeat; entri >30 hari dibuang.
+  Uji: agent tetap ada setelah restart (status `disconnected`).
+- Backfill 1x: roster diisi ulang `008 macbook` (identitas dari board) agar tampil
+  `disconnected` seperti sebelumnya — sembuh sendiri begitu macbook online.
+- Fleet kembali **7**: 000 manager, 001 ideapc, 002 bali (disconnected), 003 toshiba,
+  008 macbook (disconnected), 009 nixbox, 010 ravi-debian.
+
+## Sisa (device lain)
+
+- **002** (Linux) + **005/006/007** (Windows): binary baru via
+  `./deploy/rebuild-agent-binaries.sh --windows --deb` lalu sebar (`:8000` / ps1).
+  (008 macbook menyusul saat perangkatnya online.)
+
+## File berubah
+
+M: `agent-rs/src/main.rs`, `scripts/fleet-monitor.py`, `docker-compose.yml`,
+`.gitignore`, `dashboard/src/lib/fleet.ts`,
+`dashboard/src/components/wazuh/AgentDetailView.tsx`, `ROADMAP.md`, `HANDOFF.md`.
+`.opencode/` tetap tak ikut commit.
+
+# Handoff SOAR - 2026-09-20 (nixbox, sisa B: cache VT + ensemble MalwareBazaar LIVE)
+
+## 0. Temuan pembuka: live TIDAK punya cache VT
+
+`apply-b-malwarebazaar.py` + `apply-b-ttl-rescan.py` (script lama) hanya mengedit
+`n8n-workflows/deteksi-malware.json` — dan file itu sudah menyimpang dari workflow
+live (live 21 node; tidak ada `Cek Cache VT` / `Cache Hit?` / `vtCache`). Jadi:
+
+- Script lama **tidak bisa dipakai** (import file repo = menimpa workflow live).
+  Keduanya sudah ditandai **SUPERSEDED** di docstring-nya.
+- TTL diferensial **tak punya target**: cache di dalam n8n dibuang karena
+  `staticData` tidak persist di 2.40 (pelajaran dedup 19 Sep).
+- Dedup `/api/seen` ber-key `agent_id|rule_id|hash|filepath` → 100 PC kena malware
+  **sama** = 100 key = **100 panggilan VT** (kuota 4/menit jebol). Cache ber-key
+  **hash** yang menutup celah ini.
+
+Keputusan (pilihan Ravi): cache dibangun **server-side di fleet-monitor**, bukan
+dikembalikan ke n8n.
+
+## 1. Cache verdict VT di `scripts/fleet-monitor.py`
+
+- `POST /api/vt-cache/lookup` `{hash}` → `{hit, stats, known, malicious, age_secs,
+  ttl_secs}` (miss → `{hit:false}`). `POST /api/vt-cache/store` `{hash, stats}`
+  atau `{hash, not_found:true}`. `GET /api/vt-cache[?hash=]` = ringkasan
+  (size, stats, hit_rate) untuk bukti laporan.
+- **TTL diferensial**: malicious 7 hari · bersih 24 jam · tidak dikenal 6 jam
+  (`_vt_ttl_secs`). Key = hash, LRU cap 20k, validasi hash hex 32/40/64.
+- **Persist** ke `state/.fleet-vt-cache.json` (ikut volume `/state`, tulis
+  di-throttle 30 dtk) → restart container/deploy tidak membuang verdict.
+- Hanya verdict sah yang disimpan dari sisi n8n: data VT, atau 404
+  `NotFoundError`. **429/5xx/timeout tidak disimpan** supaya error transien tidak
+  membekukan verdict jadi "tidak dikenal" selama 6 jam.
+
+## 2. Patch workflow live `scripts/patch-n8n-vt-cache-mb.py` (baru, idempoten)
+
+Alur jadi: `Dedup → Cek Cache VT → Cache Hit?`
+- **hit** → `MalwareBazaar Lookup` → `Rangkum Hasil` (VT dilewati)
+- **miss** → `Scan VirusTotal` → `Simpan Cache VT` → `VT OK?` → true: MB ·
+  false: `OTX Lookup` → MB → `Rangkum Hasil`
+
++ credential `MalwareBazaar Auth` (HTTP Header Auth `Auth-Key`) dibuat lewat API,
++ `Rangkum Hasil` sadar cache (`cache_hit`, `cached_stats`) dan MB
+  (`mb_known/mb_signature/mb_tags/mb_threat`; `mb_threat` menaikkan severity,
+  dual-source +malicious≥5 → CRITICAL).
+
+### Bug yang ketangkap saat uji (penting)
+
+Versi 1 menaruh MB **hanya di jalur cache miss**. Uji E2E membuktikan akibatnya:
+hash yang ada di cache (verdict "bersih") **tidak pernah diadu dengan MB** →
+`mb_known:false`, celah FN tetap terbuka selama TTL. Versi 2 memindahkan MB ke
+**kedua jalur** (input `Rangkum Hasil` selalu respons MB; status cache dibaca dari
+`$('Cek Cache VT')`). Script bisa **upgrade** dari v1 (fixture uji dari live
+disimpan; marker `patch:cache-mb:v2`).
+
+## 3. Bukti uji (semua hijau)
+
+- **24 pass** uji endpoint cache (kelas TTL 7h/24j/6j, stats utuh, validasi hash,
+  burst 100 lookup = 100 hit, restart masih ada, entri kadaluwarsa dibuang).
+- **42 pass** uji patch script lawan mock n8n API, 2 skenario: workflow asli (21
+  node) dan **upgrade dari v1** (25 node) → 25 node, tanpa duplikat, idempoten.
+- **E2E live A: 23 pass** `e2e-vt-cache.py` (hash acak → dijamin miss): run 1
+  VT 404 (`0/0`, MEDIUM) → cache disimpan kelas **unknown 6 jam**; run 2 **melewati
+  `Scan VirusTotal` + `Simpan Cache VT`**, `source: vt-cache`, MB tetap
+  dikonsultasi. Cache: lookups 2, hits 1, misses 1.
+- **E2E live B: 11 pass** `e2e-mb-only.py`: cache di-seed verdict "VT bersih 0/70"
+  (fixture), rule level 3 → **MB signature `Mirai` menaikkan severity ke HIGH +
+  `silent:false` + Telegram terkirim**. Tanpa MB = MEDIUM/senyap → **celah
+  false-negative terbukti tertutup**. Fixture dikembalikan ke verdict asli 33/64.
+- Catatan: 3 pesan Telegram asli terkirim saat uji (2 di A, 1 di B).
+
+## 4. Lain-lain
+
+- `deploy/n8n-setup.py`: credential `MalwareBazaar Auth` ditambahkan (dry-run →
+  6 credential; `build_data` httpHeaderAuth jadi data-driven pakai `extra.name`).
+- `.env.example`: `MALWAREBAZAAR_API_KEY` didokumentasikan.
+- `.gitignore`: `scripts/.fleet-vt-cache.json*`.
+- 🔴 **Server ravi-debian REBOOT (10:46) di tengah uji** — pola lama (baterai X260 /
+  listrik). Semua container pulih otomatis; **cache selamat** (`state/.fleet-vt-cache.json`
+  ada isinya) = bukti persist jalan. `/tmp` server terhapus → API key dipulihkan
+  ulang dari sqlite n8n.
+- ⚠️ **Temuan keamanan (kategori D, belum diperbaiki):** key **OTX tertulis inline**
+  di node `OTX Lookup` (bukan credential) — ikut ter-return `GET /api/v1/workflows/{id}`
+  dan tersalin ke tiap file di `backups/`. Sama polanya dengan VT/urlscan/GSB yang
+  sudah pakai credential → sebaiknya dipindah ke credential `OTX API Key`
+  (httpHeaderAuth) seperti `MalwareBazaar Auth`. Perlu 1 patch kecil + rotasi key.
+
+## 5. Sisa
+
+- **Commit** (nanti saja — sudah ditandai Ravi): fitur scan on-demand + cache/MB ini.
+- Deploy binary agent baru ke **002/005/006/007/008** (kebanyakan offline).
+- Bukti laporan: screenshot dashboard + Telegram; kolom "Agen Ringan" di
+  `docs/PERBANDINGAN-PENELITIAN.md`.
+- Benchmark **VT cold-vs-cache** — sekarang bisa diukur (hit_rate sudah tersedia
+  di `GET /api/vt-cache`).
+
+## File berubah sesi ini
+
+M: `scripts/fleet-monitor.py`, `deploy/n8n-setup.py`, `.env.example`, `.gitignore`,
+`ROADMAP.md`, `HANDOFF.md`, `scripts/apply-b-malwarebazaar.py`,
+`scripts/apply-b-ttl-rescan.py` (ditandai SUPERSEDED).
+Baru: `scripts/patch-n8n-vt-cache-mb.py`.
+
+---
+
+# Handoff SOAR - 2026-09-20 (lanjutan: README + diagram arsitektur minimal)
+
+## 1. README.md ditulis ulang
+
+Sebab: README masih menyebut Wazuh 4.9.2, Ollama sebagai AI utama, agent Wazuh
+saja, dan daftar host lama (ravi-zorin/rocky-server) yang sudah tidak ada di fleet.
+
+Isi baru (semua diverifikasi ke sistem live): versi stack (Wazuh 4.10.5,
+n8n 2.40.0), agen Rust, ensemble VT+MB+OTX, cache verdict TTL diferensial,
+dedup claim-check, scan on-demand, monitoring (dashboard `:3000` / API `:8080` /
+TUI), tabel fleet 7 endpoint, quick start (`deploy/setup-server.sh` + 4 jalur
+agent), struktur repo, catatan bahwa `n8n-workflows/` hanyalah **snapshot**
+(sumber kebenaran = workflow live, patch lewat `scripts/patch-n8n-*.py`).
+
+## 2. Diagram arsitektur baru (gaya minimal)
+
+- **Baru**: `docs/diagrams/arsitektur-soar.mmd` + `.png` (1568x480) — gaya
+  minimal: abu-abu/putih, tanpa emoji, garis tipis, sans-serif. Isi: endpoint
+  (soar-agent Rust) → n8n → intel (VT/MB/OTX + GSB/URLScan) + LLM → Telegram →
+  analis → Active Response; plus fleet-monitor (dashboard/TUI) dan heartbeat.
+- **Baru**: `docs/diagrams/mermaid-minimal.json` (tema + wrapping) supaya render
+  bisa diulang; perintah render ditulis sebagai komentar `%%` di file `.mmd`.
+  Catatan: `docs/diagrams/puppeteer-config.json` menunjuk `/usr/bin/google-chrome`
+  (tidak ada di nixbox) — sesuaikan `executablePath` bila render di mesin lain.
+- README sekarang memakai diagram ini (sebelumnya `fig-3.3-arsitektur.png`).
+- Diagram lain **tidak disentuh** (sesuai keputusan Ravi): `fig-3.1`–`fig-3.6`,
+  `workflow-*`, `overview-bernomor`, `demo-hybrid-flow`, `fig-karyawan-*`.
+
+## 3. Perbaikan laporan: Gambar 3.3 tertarik
+
+`docs/Laporan-SOAR.md` adalah XML Word (openxml) yang menempel PNG pada
+**extent tetap**. Gambar 3.3 dipasang `cx=5486400 cy=4489704` (rasio 1,22)
+padahal PNG-nya 1584x902 (rasio 1,76) → gambar tampil **tertarik vertikal**.
+Diperbaiki: `cy` → **3124200** (rasio 1,76, dua kemunculan: `<wp:extent>` dan
+`<a:ext>`). Figur lain sudah cocok (3.1/3.2/3.4/3.5/3.6 selisih < 1%).
+
+## 4. ⚠️ Temuan yang butuh keputusan Ravi: "AI lokal" tidak lagi akurat
+
+Audit live (5 workflow aktif) menunjukkan:
+
+- **Tidak ada Ollama** di server: port `11434` mati, tidak ada container Ollama.
+- Node `Preload Model` dan `Ollama Generate` di `Deteksi Malware` **orphan** —
+  tidak ada koneksi masuk ke `Preload Model`, jadi jalur Ollama tidak pernah
+  dijalankan (itulah sebabnya eksekusi E2E tetap tanpa error).
+- Jalur AI yang benar-benar jalan: **Atria** (OpenAI-compatible) untuk malware,
+  **Gemini** untuk phishing. `Submit URL VirusTotal` + `Get URL Report` di
+  workflow phishing juga orphan (eskalasi manual lama).
+
+README sudah ditulis netral ("LLM — ringkasan dan rekomendasi, provider dapat
+ditukar"). **Narasi laporan perlu diputuskan**: kalau tetap menyebut "AI lokal
+(Ollama)", hidupkan kembali Ollama atau ubah klaimnya.
+
+## Sisa sesi ini
+
+- Keputusan narasi AI di laporan (hidupkan Ollama atau ubah teks).
+- Opsional: tambahkan baris diagram baru di `docs/PANDUAN-DIAGRAM.md`.
+- Belum di-commit (menunggu aba-aba Ravi), termasuk perubahan B sebelumnya.

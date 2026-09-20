@@ -2,9 +2,9 @@
 """n8n-setup.py — sinkronisasi credentials + import workflow n8n via REST API.
 
 Menutup satu-satunya langkah manual yang tersisa dari setup-server.sh: buat
-credentials n8n dari .env (Telegram, Wazuh, GSB, urlscan) + VirusTotal key
-(ditanya sekali, TIDAK disimpan ke .env), lalu import 4 workflow dengan
-**remap credential ID by name** — hal yang tidak dilakukan import-from-file
+credentials n8n dari .env (Telegram, Wazuh, GSB, urlscan, MalwareBazaar) +
+VirusTotal key (ditanya sekali, TIDAK disimpan ke .env), lalu import 4 workflow
+dengan **remap credential ID by name** — hal yang tidak dilakukan import-from-file
 UI (file bawa ID credential dari mesin lama, node jadi merah).
 
 API: pakai n8n public REST API v1 dengan owner API key (N8N_OWNER_API_KEY di
@@ -69,6 +69,15 @@ CREDENTIALS = [
         "extra": {"name": "X-API-Key"},  # header name urlscan.io
     },
     {
+        # MalwareBazaar: node "MalwareBazaar Lookup" pakai httpHeaderAuth Auth-Key.
+        # Sumber intel kedua (ensemble VT+MB) — key dari .env MALWAREBAZAAR_API_KEY.
+        "name": "MalwareBazaar Auth",
+        "type": "httpHeaderAuth",
+        "env": {"MALWAREBAZAAR_API_KEY": "value", "_MB_HEADER": "name"},
+        "keys_env": ["MALWAREBAZAAR_API_KEY"],
+        "extra": {"name": "Auth-Key"},  # header name mb-api.abuse.ch
+    },
+    {
         # VirusTotal: node "Scan VirusTotal" pakai httpHeaderAuth x-apikey.
         # Key TIDAK di .env — ditanya interaktif / flag --vt-key / env VT_API_KEY.
         "name": "VirusTotal API Key",
@@ -124,10 +133,12 @@ def build_data(cred, env, vt_key):
     elif t == "httpQueryAuth":
         data = {"name": "key"}
     elif t == "httpHeaderAuth":
+        header = cred.get("extra", {}).get("name", "X-API-Key")
         if cred["name"].startswith("VirusTotal"):
-            data = {"name": "x-apikey", "value": vt_key or ""}
-        else:  # urlscan
-            data = {"name": "X-API-Key", "value": env.get("URLSCAN_API_KEY", "")}
+            value = vt_key or ""
+        else:
+            value = env.get(cred["keys_env"][0], "")
+        data = {"name": header, "value": value}
     return data
 
 
