@@ -958,4 +958,126 @@ agent `ideapc`, 2026-09-26.
 
 1. **Konfirmasi E2E**: tunggu event `ideapc` berikutnya — alert rundll32 System32
    semestinya berhenti (turun ke level 0, tak masuk n8n/Telegram).
-2. Perubahan ada di working tree `scripts/process-chain-rules.xml` (belum commit).
+2. ✅ Sudah di-commit & push (`4e3cf28`) — 2 file (`scripts/process-chain-rules.xml` + `HANDOFF.md`).
+
+# Handoff SOAR - 2026-09-28 (lanjutan: regDate agent Rust + insiden deploy fleet-monitor)
+
+## Fitur "Registration date" (first_seen) agent Rust — KODE SIAP, BELUM DEPLOY
+
+Masalah asal (laporan Ravi): kolom **Cluster node** & **Registration date** di
+halaman Agents selalu `-`.
+
+- **Cluster node**: hardcoded `'-'` (`AgentsManagement.tsx:72`,
+  `AgentDetailView.tsx:371`) — placeholder warisan clone; di single-node memang N/A.
+- **Registration date**: `fleet-monitor.py` hanya mengisi `regDate` untuk agent
+  Wazuh (`a.get("dateAdd")`); cabang heartbeat Rust tak men-set sama sekali →
+  semua baris (type `rust`) jatuh ke `-`.
+
+Perubahan di repo (**belum live**):
+
+- `scripts/fleet-monitor.py`: simpan `first_seen` di tiap heartbeat (dipertahankan
+  lintas heartbeat/restart) + emit `"regDate"` di entry Rust (`build_fleet`).
+- `dashboard/src/components/wazuh/AgentDetailView.tsx`: field Registration date
+  di-wire ke `agent.regDate` (sebelumnya hardcoded `-`).
+- `scripts/test_fleet_monitor.py`: +2 test (`first_seen` dipertahankan; `build_fleet`
+  emit regDate) → **14/14 OK**. State file diarahkan ke temp agar test tak
+  mengotori `scripts/.fleet-state.json`.
+
+## INSIDEN: fleet-monitor crash-loop saat deploy (BUKAN dari fitur di atas)
+
+- Percobaan deploy: scp `fleet-monitor.py` versi repo → `docker restart
+  fleet-monitor` → container **crash-loop** dengan
+  `RuntimeError: runtime secret belum valid: FLEET_COMMAND_TOKEN,
+  FLEET_AGENT_POLL_TOKENS_JSON`.
+- **Akar masalah:** skrip yang terpasang di server ternyata **versi LAMA** (1338
+  baris, TANPA remote-command API & tanpa `_validate_runtime_secrets`). Repo sudah
+  lebih baru (1479 baris) dan mewajibkan 2 token tersebut — sedangkan `.env` server
+  (11 kunci) **tidak punya** `FLEET_*` sama sekali. Fitur command API memang belum
+  pernah diaktifkan di host ini.
+- **Pemulihan:** copy balik `scripts/fleet-monitor.py.bak-20260928-215945` (backup
+  di server) → restart → **healthz 200**, container Up. Tak ada data hilang.
+- **Keputusan Ravi (2026-09-28):** tidak deploy dulu, cukup dicatat di md.
+
+## Cara menuntaskan nanti (pilih satu)
+
+1. **Patch minimal (aman)** — tanam 2 edit `first_seen`/`regDate` ke skrip LAMA yang
+   terpasang (strukturnya identik: heartbeat ~baris 978, entry Rust ~baris 359),
+   lalu restart. Tak mengubah `.env`/postur keamanan. Drift server-vs-repo tetap ada.
+2. **Naikkan server ke versi repo** — generate `FLEET_COMMAND_TOKEN` +
+   `FLEET_AGENT_POLL_TOKENS_JSON` (min 32 char, bukan placeholder), isi `.env`,
+   lalu `docker compose up -d fleet-monitor`. Sekaligus mengaktifkan remote-command
+   API — **token poll harus cocok di sisi agent** agar polling perintah jalan.
+
+Verifikasi pasca-deploy: `curl -s localhost:8080/api/fleet` → agent Rust punya
+`regDate` (muncul setelah heartbeat pertama, ≤60 dtk); kolom di tabel Agents +
+detail view terisi.
+
+## Sisa
+
+- `scripts/fleet-monitor.py`, `scripts/test_fleet_monitor.py`,
+  `dashboard/src/components/wazuh/AgentDetailView.tsx`: **belum di-commit**
+  (ada di working tree).
+- `fleet-monitor` di server masih versi lama (sesuai keputusan).
+
+# Handoff SOAR - 2026-09-28 (lanjutan 2: fix FP file sistem `hosts` + pengaman AR)
+
+## Masalah
+
+Alert Telegram **"TINGGI - MALWARE TERDETEKSI"** untuk
+`C:\Windows\System32\drivers\etc\hosts` di agent **002 bali-handmade**
+(2026-09-28 15:14Z). Bukan vonis malware — hanya perubahan FIM.
+
+## Akar masalah
+
+- Rule **550 "Integrity checksum changed" (bawaan Wazuh, level 7)**, event
+  `modified`, `size_after=1498`, `sha_after=f4615804…`. `ruleLevel >= 7` di
+  `Rangkum Hasil` ⇒ **HIGH**, dan judul **di-hardcode `'MALWARE TERDETEKSI'`**
+  (`Build Payload`) untuk SEMUA alert FIM. Jadi setiap perubahan checksum file
+  terpantau otomatis berbunyi "malware, level tinggi".
+- Hash `hosts` spesifik-mesin ⇒ VirusTotal **tak akan pernah** mengenalinya
+  ("Belum dikenali") — VT bukan sinyal untuk artefak ini.
+- **Temuan lebih serius:** alert FIM ini memicu `should_active_response=true` →
+  cabang AR (`Cek Ancaman`), dan `Fleet Quarantine` mengirim perintah
+  `quarantine` dengan `target = filepath`. Kondisinya
+  `ar.status !== 'isolated'` **selalu true** (status sebenarnya `blocked`/`failed`)
+  → jalur karantina-sendiri **selalu** dicoba. Pada exec 1231 ia **gagal 400**
+  (validasi menolak path Windows) sehingga `hosts` selamat — tapi path Linux
+  absolut (mis. `/etc/hosts`) akan lolos → **risiko karantina file OS**.
+- `Trigger Active Response` juga mengirim `!firewall-drop` dengan `srcip=0.0.0.0`
+  pada alert file — secara konsep tidak nyambung (AR blokir IP untuk alert file).
+- Alert FIM **tidak** membawa isi/`diff` file (`mode: scheduled`), jadi tak mungkin
+  mendeteksi penanda `# soar-sinkhole` dari konten → fix harus berbasis **path**.
+
+## Fix (LIVE) — `scripts/patch-n8n-systemfile.py`
+
+Patch idempoten (marker `patch:systemfile:v1`) menyentuh **4 node** jalur FIM:
+
+1. `Ekstrak Alert` → tandai `is_system_file` (hosts / `drivers\etc\` / resolv.conf).
+2. `Rangkum Hasil` → file sistem: severity **maksimum MEDIUM** (tetap diberitakan,
+   `silent=false`, bukan silent-failure) + `should_active_response=false`.
+3. `Build Payload` → judul **"PERUBAHAN FILE KONFIGURASI SISTEM"**, VirusTotal
+   ditandai **N/A**, prompt AI diberi konteks bahwa SOAR ini sendiri menulis
+   `# soar-sinkhole` ke hosts (mencegah over-eskalasi "isolasi/zero-day").
+4. `Fleet Quarantine` → **pengaman**: file sistem **tidak pernah** dikarantina.
+
+## Bukti
+
+- Test: `scripts/test_patch_n8n_systemfile.py` → **8/8 OK** (transformasi +
+  idempotensi + gagal-keras saat pola live tak cocok, dan eksekusi JS hasil patch
+  via `node` dengan stub n8n).
+- Dry-run ke live: 4/4 pola cocok. Backup: `backups/deteksi-malware-live-systemfile-20260928-233348.json`.
+- **E2E live (exec 1234)**: kirim alert hosts sintetis ke `/webhook/wazuh-alert` →
+  `is_system_file=True`, severity **MEDIUM**, `should_active_response=false`,
+  judul "PERUBAHAN FILE KONFIGURASI SISTEM", VT N/A, dan **cabang AR tidak jalan**
+  (tidak ada `Get Wazuh Token`/`Trigger Active Response`/`Fleet Quarantine`).
+- Catatan: exec **1233** (uji pertamaku) pakai payload dengan backslash ganda
+  sehingga tak terdeteksi sebagai file sistem → tetap HIGH + AR (gagal 400). Itu
+  salah payload uji, bukan bug patch; alert asli memakai backslash tunggal.
+
+## Sisa / belum ditutup
+
+1. Kondisi `ar.status !== 'isolated'` di `Fleet Quarantine` masih selalu true —
+   pengaman baru hanya membatasi **file sistem**, belum merapikan logika AR
+   menyeluruh (mis. `firewall-drop` srcip 0.0.0.0 untuk alert file).
+2. `scripts/test_patch_n8n_systemfile.py` + `scripts/patch-n8n-systemfile.py`
+   **belum di-commit**.
