@@ -682,7 +682,7 @@ disimpan; marker `patch:cache-mb:v2`).
 
 ## 5. Sisa
 
-- **Commit** (nanti saja — sudah ditandai Ravi): fitur scan on-demand + cache/MB ini.
+- **Commit**: sudah dikerjakan (`aa0aa12` — lihat bagian Penutupan sesi).
 - Deploy binary agent baru ke **002/005/006/007/008** (kebanyakan offline).
 - Bukti laporan: screenshot dashboard + Telegram; kolom "Agen Ringan" di
   `docs/PERBANDINGAN-PENELITIAN.md`.
@@ -754,7 +754,9 @@ ditukar"). **Narasi laporan perlu diputuskan**: kalau tetap menyebut "AI lokal
 
 - Keputusan narasi AI di laporan (hidupkan Ollama atau ubah teks).
 - Opsional: tambahkan baris diagram baru di `docs/PANDUAN-DIAGRAM.md`.
-- Belum di-commit (menunggu aba-aba Ravi), termasuk perubahan B sebelumnya.
+- ✅ **Sudah di-commit & push** (lihat bagian "Penutupan sesi" di bawah):
+  fitur scan on-demand + cache/MB (`aa0aa12`), lalu hapus klaim AI lokal +
+  revisi milestone (`7947d0c`).
 
 ---
 
@@ -828,3 +830,132 @@ error**, sampai Telegram (1 pesan).
 `git grep` dokumen/figur aktif: **0 sebutan** ollama/AI-lokal. Struktur laporan
 utuh (21 blok openxml, 26 heading). `ruff`/`py_compile` bersih untuk file baru &
 yang diubah (lint `create-*-bimbingan.py` tidak berubah dari HEAD = warisan).
+
+---
+
+# PENUTUPAN SESI — 2026-09-20 (nixbox)
+
+## Yang sudah LIVE dan terverifikasi
+
+| Item | Bukti |
+|------|-------|
+| Cache verdict VT di `fleet-monitor` (`/api/vt-cache/lookup\|store`, TTL diferensial 7h/24j/6j, persist `state/`) | 24 uji endpoint + E2E live |
+| Ensemble **MalwareBazaar** di workflow live (node + credential, MB di kedua jalur) | E2E: verdict cache "VT bersih 0/70" + signature `Mirai` → HIGH |
+| Workflow `Deteksi Malware` **23 node** (node Ollama orphan dihapus) | read-back API + E2E 18 node tanpa error |
+| Scan on-demand (agent Rust + fleet + kartu dashboard) | `cargo test` 6 passed + E2E live 009/010 |
+| Klaim AI lokal dihapus dari laporan/docs/figur; AI = analisis LLM via API | grep 0 sebutan; extent DOCX Gambar 3.1/3.3/3.4 cocok |
+| Milestone direvisi (M4 → "Analisis LLM dan explainability") | HTML + PDF regenerasi, tetap 6 halaman |
+
+## Commit yang sudah di-push
+
+- `aa0aa12` — feat: scan on-demand + cache verdict VT & ensemble MalwareBazaar
+  (19 file, +1785/−132). Sebelumnya `2defc73` + trailer co-author → dibersihkan
+  (amend + force-push), isi identik.
+- `7947d0c` — docs: hapus klaim AI lokal + revisi milestone (39 file, +340/−161).
+- Repo lain: `ravi-arnan/arcadehub-id` (publik) — 8 commit ber-trailer ditulis
+  ulang (`12aca48...c97cee9`), isi kode identik, situs live 200.
+
+## Aturan baru yang sudah dicatat permanen
+
+- **Commit tanpa trailer co-author** (`Co-authored-by: ...`) — atribusi murni
+  atas nama Ravi. Tercatat di sistem taste + memori
+  `~/.claude/projects/-home-ravi-Projects/memory/feedback_git_attribution.md`.
+- Sudah disapu: 37 repo git di `~/Projects` — tidak ada sisa trailer.
+
+## Keputusan yang diambil sesi ini
+
+- AI lokal (Ollama) **tidak relevan** → dihapus dari laporan, docs, figur, dan
+  milestone; AI digambarkan sebagai analisis LLM via API penyedia.
+- **Proposal (Usulan Ide) dibiarkan** apa adanya karena sudah disetujui pembimbing.
+- Cache VT dibangun di **fleet-monitor** (server-side), bukan dikembalikan ke
+  `staticData` n8n yang tidak persist.
+
+## Sisa untuk sesi berikutnya
+
+1. **Deploy binary agent** scan-on-demand ke 002/005/006/007/008 (kebanyakan offline).
+2. **Bukti laporan**: screenshot dashboard + Telegram; kolom "Agen Ringan" di
+   `docs/PERBANDINGAN-PENELITIAN.md`.
+3. **Benchmark VT cold-vs-cache** (§ hit_rate sudah tersedia di `GET /api/vt-cache`).
+4. Opsional: OTX key masih **inline** di node (bukan credential) — pindahkan ke
+   credential `OTX API Key` + rotasi; tambah baris diagram baru di `docs/PANDUAN-DIAGRAM.md`;
+   `scripts/patch-n8n-ai-generate.py` bisa ditandai SUPERSEDED (node Ollama sudah dihapus).
+
+## Catatan operasional
+
+- Server **ravi-debian** pernah reboot sendiri di tengah sesi (baterai X260) —
+  container pulih otomatis dan cache VT di `state/` selamat.
+- API key n8n tidak ada permanen di disk: ambil ulang dari sqlite
+  (`docker cp n8n:/home/node/.n8n/database.sqlite`, tabel `user_api_keys`,
+  label `soar-project`) → tulis ke `/tmp/n8n_api_key.txt` di server.
+- Uji E2E mengirim **pesan Telegram asli**; jalankan manual saja.
+
+# Handoff SOAR - 2026-09-28 (nixbox, fix FP rundll32 System32 + allowlist chain)
+
+## Masalah
+
+Alert Telegram **"TINGGI - RANTAI PROSES MENCURIGAKAN"** (level 10) untuk
+`rundll32.exe` yang memuat `Windows.StateRepositoryClient.dll,
+StateRepositoryDoMaintenanceTasks` (parent `svchost.exe -k netsvcs -p -s
+Schedule`) = **false positive** maintenance bawaan Windows. Dilaporkan Ravi dari
+agent `ideapc`, 2026-09-26.
+
+## Akar masalah — rule 110017 (varian JSON), BUKAN event-nya
+
+- `scripts/process-chain-rules.xml` (versi lama, baris 98 & 170):
+  `<match type="pcre2">(?i)(https?://|\\appdata\\|\\temp\\|\.dll.*\s*-)</match>`.
+  **Elemen `<match>` diuji ke SELURUH log**, bukan commandline proses. Alternatif
+  `\.dll.*\s*-` menelan sisa log sampai ` -k netsvcs` di **ParentCommandLine** →
+  match. Commandline asli event memang bersih: `rundll32.exe Startupscan.dll,
+  SusRunTask` (tak ada URL/temp/`-`).
+- Tak ada allowlist path System32 / signature di rule engine.
+- Severity HIGH murni dari mapping `scripts/patch-n8n-chain.py:154`
+  (`ruleLevel >= 7 → HIGH`), bukan dihitung rule.
+
+## Fix (3 bagian) — sudah LIVE di manager
+
+- **110007 & 110017**: `<match>` → `<field name="sysmon.commandLine">` /
+  `<field name="win.eventdata.commandLine">`, regex `\.dll.*\s*-` →
+  `\.dll[,\s]+-\w`. (Duplikat varian teks + JSON diperbaiki keduanya.)
+- **110019** (level 0, `if_sid 110017`) + **110020** (level 0, `if_sid 110007`):
+  allowlist rundll32/regsvr32 di System32 + parent `svchost.exe` + parent cmdline
+  `-k netsvcs`. Image pattern pakai `^[A-Z]:\\+Windows\\+System32\\+...`.
+- `config/wazuh/wazuh_manager.conf:364` **TIDAK** diubah — rule level 0 tak pernah
+  jadi alert, jadi tak perlu masuk daftar integration.
+
+## Deploy
+
+- File (sha256 `a433258a26c76497c3c4368ac85ae82cf9ca247d66bc3ea0dcd540dfab286822`)
+  → `single-node-wazuh.manager-1:/var/ossec/etc/rules/`, host **ravi-debian** via
+  Tailscale `100.73.91.17` (SSH LAN `192.168.1.47` mati dari jaringan nixbox kini).
+- Backup live: `process-chain-rules.xml.bak-20260928-205944` (di container).
+- `wazuh-analysisd -t` rc=0 → restart → daemon inti (analysisd/integratord/apid)
+  running, `ossec.log` bersih. Manager **v4.10.5**.
+
+## Verifikasi
+
+- Bukti akar masalah dari **alert asli**: `full_log` 110017 di
+  `/var/ossec/logs/alerts/2026/Sep/ossec-alerts-20.json` (3 alert, decoder
+  `windows_eventchannel`, location `EventChannel`).
+- Simulasi regex terhadap nilai field asli: pola lama vs full_log = **True**,
+  pola baru FP = **False**, TP (rundll32 dari AppData\Temp) = **True**,
+  allowlist = **True**.
+
+## Gotcha penting (catat untuk sesi depan)
+
+- Field JSON `win.eventdata.*` berisi **backslash GANDA**
+  (`C:\\Windows\\System32\\...`). Konvensi rule bawaan `0800-sysmon_id_1.xml`
+  memakai `\\\\`. Anchor `^[A-Z]:\\Windows...` (single) **tidak akan match**;
+  pakai `\\+` (toleran 1+ backslash, sekaligus aman untuk varian teks `sysmon.*`
+  yang single).
+- **`wazuh-logtest` (CLI + legacy) selalu men-decode event Sysmon JSON sebagai
+  decoder `json`, bukan `windows_eventchannel`.** Gate group `sysmon_event1`
+  (rule 60000 → 61603, `decoded_as windows_eventchannel`) tak terpenuhi, sehingga
+  rule 1100xx **tak bisa** diuji lewat logtest. Logtest hanya cocok untuk varian
+  teks-klasik (jalur rule 18100). Verifikasi rule JSON = `wazuh-analysisd -t`
+  (parse) + simulasi regex terhadap event asli.
+
+## Sisa
+
+1. **Konfirmasi E2E**: tunggu event `ideapc` berikutnya — alert rundll32 System32
+   semestinya berhenti (turun ke level 0, tak masuk n8n/Telegram).
+2. Perubahan ada di working tree `scripts/process-chain-rules.xml` (belum commit).
