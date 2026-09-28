@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import { agentStatus, formatWazuhTime, formatClock, severityLevel } from '@/lib/fleet';
+import { postCommand } from '@/lib/commands';
 import { ExpandableCard } from './ExpandableCard';
 import type { FleetAgent, FleetEvent, FleetScanResult } from '@/lib/fleet';
 
@@ -108,16 +109,7 @@ function ScanPanel({ agentId, canScan }: { agentId: string; canScan: boolean }) 
     if (!path) return;
     setState('mengirim...');
     try {
-      const r = await fetch('/api/commands', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agent_id: agentId,
-          action: 'scan',
-          target: path,
-          by: 'dashboard',
-        }),
-      });
+      const r = await postCommand({ agent_id: agentId, action: 'scan', target: path });
       const j = await r.json();
       setState(
         r.ok && j.status === 'queued'
@@ -381,7 +373,7 @@ export function AgentDetailView({
 
         <div>
           <div className="text-[#8A94A6] text-[11px]">Registration date</div>
-          <div className="text-[#5A626F] mt-0.5">-</div>
+          <div className="text-[#5A626F] mt-0.5">{formatWazuhTime(agent?.regDate || '-')}</div>
         </div>
 
         <div>

@@ -18,14 +18,19 @@ Upgrade path: ganti http.server dengan FastAPI + Prometheus kalau butuh Grafana 
 """
 
 import base64
+import hmac
+import ipaddress
 import json
 import os
+import re
 import ssl
 import time
-import urllib.request
 import urllib.error
+import urllib.request
+import uuid
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import PurePosixPath, PureWindowsPath
 from urllib.parse import parse_qs, urlparse
 
 
@@ -50,6 +55,19 @@ def _load_dotenv():
 
 
 _load_dotenv()
+
+FLEET_COMMAND_TOKEN = os.environ.get("FLEET_COMMAND_TOKEN", "").strip()
+try:
+    FLEET_AGENT_POLL_TOKENS = json.loads(
+        os.environ.get("FLEET_AGENT_POLL_TOKENS_JSON", "{}")
+    )
+except json.JSONDecodeError:
+    FLEET_AGENT_POLL_TOKENS = {}
+MIN_RUNTIME_SECRET_LENGTH = 32
+COMMAND_BODY_MAX = 8 * 1024
+COMMAND_AGENT_MAX = 64
+COMMAND_TARGET_MAX = 4096
+COMMANDS_MAX_AGENTS = 1000
 
 WITA = timezone(timedelta(hours=8))
 
@@ -154,6 +172,122 @@ def _load_state():
             if isinstance(v, dict) and v.get("last_seen", 0) >= cutoff:
                 HEARTBEATS[str(k)] = v
     print(f"state dimuat: {len(HEARTBEATS)} heartbeat dari {STATE_FILE}", flush=True)
+
+
+def _secret_is_valid(value):
+    return len(value) >= MIN_RUNTIME_SECRET_LENGTH and not value.lower().startswith(
+        ("your-", "isi-dengan", "replace-", "generate-")
+    )
+
+
+def _validate_runtime_secrets():
+    missing = []
+    if not _secret_is_valid(FLEET_COMMAND_TOKEN):
+        missing.append("FLEET_COMMAND_TOKEN")
+    if not isinstance(FLEET_AGENT_POLL_TOKENS, dict) or not FLEET_AGENT_POLL_TOKENS:
+        missing.append("FLEET_AGENT_POLL_TOKENS_JSON")
+    else:
+        seen_tokens = set()
+        for agent_id, token in FLEET_AGENT_POLL_TOKENS.items():
+            if (
+                not _valid_agent_id(str(agent_id))
+                or not isinstance(token, str)
+                or not _secret_is_valid(token)
+            ):
+                missing.append(f"token agent {agent_id}")
+            if str(token) in seen_tokens:
+                missing.append(f"token agent duplikat {agent_id}")
+            seen_tokens.add(str(token))
+            if _secret_is_valid(FLEET_COMMAND_TOKEN) and hmac.compare_digest(
+                FLEET_COMMAND_TOKEN, str(token)
+            ):
+                missing.append(f"token agent {agent_id} sama dengan command token")
+    if missing:
+        raise RuntimeError("runtime secret belum valid: " + ", ".join(missing))
+
+
+def _bearer_matches(headers, expected):
+    if not _secret_is_valid(expected):
+        return False
+    value = headers.get("Authorization", "")
+    if not value.startswith("Bearer "):
+        return False
+    try:
+        return hmac.compare_digest(value[7:].strip(), expected)
+    except (TypeError, UnicodeEncodeError):
+        return False
+
+
+def _valid_agent_id(value):
+    return bool(re.fullmatch(rf"[A-Za-z0-9._-]{{1,{COMMAND_AGENT_MAX}}}", value))
+
+
+def _valid_path_target(value):
+    if not value or len(value) > COMMAND_TARGET_MAX:
+        return False
+    if any(ord(char) < 32 for char in value):
+        return False
+    if value.startswith(("//", "\\\\")):
+        return False
+    posix = PurePosixPath(value.replace("\\", "/"))
+    windows = PureWindowsPath(value)
+    if ".." in posix.parts or ".." in windows.parts:
+        return False
+    if not (value.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", value)):
+        return False
+    driveless = value[2:] if re.match(r"^[A-Za-z]:", value) else value
+    return ":" not in driveless
+
+
+def _valid_domain_target(value):
+    domain = value.rstrip(".").lower()
+    if not domain or len(domain) > 253 or "." not in domain:
+        return False
+    try:
+        ipaddress.ip_address(domain)
+        return False
+    except ValueError:
+        pass
+    labels = domain.split(".")
+    return all(
+        re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels
+    )
+
+
+def _read_command_body(handler):
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except ValueError as exc:
+        raise ValueError("Content-Length tidak valid") from exc
+    if length < 0:
+        raise ValueError("Content-Length tidak valid")
+    if length > COMMAND_BODY_MAX:
+        raise OverflowError("body command terlalu besar")
+    raw = handler.rfile.read(length) if length else b"{}"
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise TypeError("body command harus object")
+    return value
+
+
+def _validate_command(value):
+    agent_id = str(value.get("agent_id", "")).strip()
+    action = str(value.get("action", "")).strip()
+    target = str(value.get("target", "")).strip()
+    actor = str(value.get("by", "dashboard")).strip() or "dashboard"
+    if not _valid_agent_id(agent_id):
+        raise ValueError("agent_id tidak valid")
+    if action in ("quarantine", "scan"):
+        if not _valid_path_target(target):
+            raise ValueError(f"target {action} harus path absolut tanpa traversal")
+    elif action == "sinkhole":
+        if not _valid_domain_target(target):
+            raise ValueError("target sinkhole harus domain valid")
+    else:
+        raise ValueError("action harus quarantine|sinkhole|scan")
+    if len(actor) > 64 or any(ord(char) < 32 for char in actor):
+        raise ValueError("by tidak valid")
+    return {"agent_id": agent_id, "action": action, "target": target, "by": actor}
 
 
 def _save_state():
@@ -357,6 +491,9 @@ def build_fleet(cfg):
             "ip": hb.get("ip", "-"),
             "version": hb.get("version", "0.1.0"),
             "lastKeepAlive": datetime.fromtimestamp(hb["last_seen"], WITA).isoformat(),
+            "regDate": datetime.fromtimestamp(hb["first_seen"], WITA).isoformat()
+            if hb.get("first_seen")
+            else "-",
             "last_hash": hb.get("last_hash", "-")[:12] + "..."
             if hb.get("last_hash")
             else "-",
@@ -843,11 +980,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"{self.client_address[0]} {fmt % args}", flush=True)
 
-    def _json(self, code, obj):
+    def _json(self, code, obj, headers=None):
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -864,14 +1002,12 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(data).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
         elif parsed.path == "/api/events":
             body = json.dumps({"events": list(reversed(EVENTS))}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
         elif parsed.path == "/api/metrics":
@@ -883,7 +1019,6 @@ class Handler(BaseHTTPRequestHandler):
             ).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(body)
         elif parsed.path == "/api/scan-results":
@@ -900,17 +1035,24 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 self._json(200, {"scans": scans, "history": SCAN_HISTORY[-20:]})
         elif parsed.path == "/api/commands":
-            # Agent poll perintah pending (keluar-saja, aman NAT): ?agent_id=003
-            # Ambil + kosongkan antrean (sekali ambil = sekali eksekusi).
             qs = parse_qs(parsed.query)
             aid = (qs.get("agent_id", [""])[0] or "").strip()
-            cmds = COMMANDS.pop(aid, []) if aid else []
-            body = json.dumps({"commands": cmds}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(body)
+            if not _valid_agent_id(aid):
+                self._json(400, {"error": "agent_id tidak valid"})
+                return
+            expected_token = FLEET_AGENT_POLL_TOKENS.get(aid, "")
+            if not expected_token:
+                self._json(403, {"error": "agent tidak terdaftar"})
+                return
+            if not _bearer_matches(self.headers, str(expected_token)):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            cmds = COMMANDS.pop(aid, [])
+            self._json(200, {"commands": cmds})
         elif parsed.path == "/api/vt-cache":
             # Ringkasan cache verdict VT (untuk observabilitas & bukti laporan).
             # ?hash=<hex> -> detail satu entri.
@@ -942,7 +1084,9 @@ class Handler(BaseHTTPRequestHandler):
                         },
                         "stats": dict(VT_CACHE_STATS),
                         "hit_rate": (
-                            round(VT_CACHE_STATS["hits"] / lookups, 4) if lookups else 0.0
+                            round(VT_CACHE_STATS["hits"] / lookups, 4)
+                            if lookups
+                            else 0.0
                         ),
                         "file": VT_CACHE_FILE,
                     },
@@ -975,13 +1119,19 @@ class Handler(BaseHTTPRequestHandler):
                 if _sent_ip in ("", "127.0.0.1", "0.0.0.0", "localhost", "::1"):
                     _sent_ip = ""
                 ip = _sent_ip or self.client_address[0]
+                # first_seen = kapan agent ini PERTAMA terlihat. Roster sudah
+                # persisten, jadi nilai ini bertahan lintas restart/offline dan
+                # dipakai dashboard sebagai "Registration date" gaya Wazuh.
+                _prev = HEARTBEATS.get(hid) or {}
+                _now = time.time()
                 HEARTBEATS[hid] = {
                     "name": j.get("name", f"rust-agent-{hid}"),
                     "ip": ip,
                     "version": j.get("version", "0.1.0"),
                     "os": j.get("os", "unknown"),
                     "last_hash": j.get("last_hash", ""),
-                    "last_seen": time.time(),
+                    "last_seen": _now,
+                    "first_seen": _prev.get("first_seen") or _now,
                     # Resource metrics dari agent (sysinfo, opsional; 0/absen = tak dilaporkan)
                     "cpu_pct": j.get("cpu_pct", 0),
                     "ram_gb": j.get("ram_gb", {}),
@@ -1008,6 +1158,7 @@ class Handler(BaseHTTPRequestHandler):
                 if j.get("last_hash") and j.get("last_path"):
                     EVENTS.append(
                         {
+                            "id": uuid.uuid4().hex,
                             "ts": datetime.now(WITA).isoformat(),
                             "agent": j.get("name", hid),
                             "agent_id": hid,
@@ -1034,6 +1185,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 j = json.loads(body)
                 ev = {
+                    "id": uuid.uuid4().hex,
                     "ts": j.get("ts") or datetime.now(WITA).isoformat(),
                     "agent": j.get("agent", "-"),
                     "agent_id": j.get("agent_id", "-"),
@@ -1049,7 +1201,6 @@ class Handler(BaseHTTPRequestHandler):
                 del EVENTS[:-EVENTS_MAX]
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(b'{"status":"ok"}')
             except Exception as e:
@@ -1085,7 +1236,6 @@ class Handler(BaseHTTPRequestHandler):
                     dup = False
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(json.dumps({"duplicate": dup}).encode())
             except Exception as e:
@@ -1255,69 +1405,60 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/commands":
-            # Dashboard antrekan perintah untuk agent (agent poll via GET).
-            # Aksi valid: quarantine|scan (target = path absolut),
-            # sinkhole (target = domain). Validasi ketat biar tidak jadi RCE.
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            if not self.headers.get("Content-Type", "").startswith("application/json"):
+                self._json(415, {"error": "Content-Type harus application/json"})
+                return
             try:
-                j = json.loads(body)
-                aid = str(j.get("agent_id", "")).strip()
-                action = str(j.get("action", "")).strip()
-                target = str(j.get("target", "")).strip()
-                if not aid:
-                    raise ValueError("need agent_id")
-                if action in ("quarantine", "scan"):
-                    # path absolut saja, tolak traversal ke luar home? izinkan
-                    # absolut umum tapi tolak pola berbahaya
-                    if not target.startswith(("/", "C:\\", "C:/")) or ".." in target:
-                        raise ValueError(
-                            f"target {action} harus path absolut tanpa .."
-                        )
-                elif action == "sinkhole":
-                    if not target or any(c in target for c in " /\\;|&$`'\""):
-                        raise ValueError("target sinkhole harus satu domain valid")
-                    if "." not in target:
-                        raise ValueError("target sinkhole harus domain")
-                else:
-                    raise ValueError("action harus quarantine|sinkhole|scan")
-                q = COMMANDS.setdefault(aid, [])
-                q.append(
-                    {
-                        "action": action,
-                        "target": target,
-                        "ts": datetime.now(WITA).isoformat(),
-                        "by": str(j.get("by", "dashboard")),
-                    }
-                )
-                del q[:-COMMANDS_MAX]
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(
-                    json.dumps(
-                        {"status": "queued", "agent_id": aid, "action": action}
-                    ).encode()
-                )
-            except Exception as e:
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                value = _read_command_body(self)
+            except OverflowError:
+                self._json(413, {"error": "body command terlalu besar"})
+                return
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                self._json(400, {"error": str(exc)})
+                return
+            try:
+                command = _validate_command(value)
+            except (TypeError, ValueError) as exc:
+                self._json(400, {"error": str(exc)})
+                return
+            aid = command["agent_id"]
+            if aid not in FLEET_AGENT_POLL_TOKENS:
+                self._json(404, {"error": "agent tidak terdaftar"})
+                return
+            if aid not in COMMANDS and len(COMMANDS) >= COMMANDS_MAX_AGENTS:
+                self._json(429, {"error": "queue agent penuh"})
+                return
+            q = COMMANDS.setdefault(aid, [])
+            q.append(
+                {
+                    **command,
+                    "ts": datetime.now(WITA).isoformat(),
+                }
+            )
+            del q[:-COMMANDS_MAX]
+            self._json(
+                200,
+                {"status": "queued", "agent_id": aid, "action": command["action"]},
+            )
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_response(204)
+        self.send_header("Allow", "GET, POST, OPTIONS")
         self.end_headers()
 
 
 def main():
+    _validate_runtime_secrets()
     cfg = _cfg()
     port = cfg["port"]
     _load_state()
