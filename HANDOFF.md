@@ -1015,8 +1015,8 @@ detail view terisi.
 ## Sisa
 
 - `scripts/fleet-monitor.py`, `scripts/test_fleet_monitor.py`,
-  `dashboard/src/components/wazuh/AgentDetailView.tsx`: **belum di-commit**
-  (ada di working tree).
+  `dashboard/src/components/wazuh/AgentDetailView.tsx`: ✅ sudah di-commit & push
+  (`2bee27c`).
 - `fleet-monitor` di server masih versi lama (sesuai keputusan).
 
 # Handoff SOAR - 2026-09-28 (lanjutan 2: fix FP file sistem `hosts` + pengaman AR)
@@ -1079,5 +1079,77 @@ Patch idempoten (marker `patch:systemfile:v1`) menyentuh **4 node** jalur FIM:
 1. Kondisi `ar.status !== 'isolated'` di `Fleet Quarantine` masih selalu true —
    pengaman baru hanya membatasi **file sistem**, belum merapikan logika AR
    menyeluruh (mis. `firewall-drop` srcip 0.0.0.0 untuk alert file).
-2. `scripts/test_patch_n8n_systemfile.py` + `scripts/patch-n8n-systemfile.py`
-   **belum di-commit**.
+2. ✅ `scripts/test_patch_n8n_systemfile.py` + `scripts/patch-n8n-systemfile.py`
+   sudah di-commit & push (`c224626`).
+
+# Handoff SOAR - 2026-09-28 (PENUTUP SESI)
+
+Sesi nixbox. Tiga pekerjaan — dua **live**, satu sengaja **ditahan**.
+
+## Live & terverifikasi hari ini
+
+1. **Rule chain: FP rundll32 System32 hilang** — `scripts/process-chain-rules.xml`
+   (110007/110017 di-scope ke `commandLine`, regex `.dll.*\s*-` → `.dll[,\s]+-\w`;
+   + allowlist level 0 `110019`/`110020`). Deploy ke manager
+   `single-node-wazuh.manager-1` v4.10.5, `wazuh-analysisd -t` rc=0, ossec.log bersih.
+   Backup: `/var/ossec/etc/rules/process-chain-rules.xml.bak-20260928-205944`.
+   Commit `4e3cf28`.
+2. **File sistem `hosts` tak lagi "MALWARE HIGH" + pengaman AR** —
+   `scripts/patch-n8n-systemfile.py` live di workflow n8n "Deteksi Malware"
+   (4 node). Test 8/8; E2E exec 1234 hijau. Backup:
+   `backups/deteksi-malware-live-systemfile-20260928-233348.json`. Commit `c224626`.
+
+## Kode siap, SENGAJA belum deploy
+
+3. **regDate (`first_seen`) agent Rust** — `scripts/fleet-monitor.py` +
+   `AgentDetailView.tsx`, test 14/14. Ditahan karena server menjalankan
+   `fleet-monitor` versi LAMA (tanpa `_validate_runtime_secrets`) dan `.env` server
+   tak punya `FLEET_COMMAND_TOKEN`/`FLEET_AGENT_POLL_TOKENS_JSON` → deploy mentah
+   = crash-loop (kejadian hari ini, sudah dipulihkan). Jalur deploy ada di bagian
+   "Cara menuntaskan nanti". Commit `2bee27c`.
+
+## Commit yang dipush
+
+`4e3cf28` (rule chain) → `2bee27c` (regDate) → `c224626` (hosts/AR) ke `origin/main`.
+Semua **tanpa trailer co-author** (aturan taste).
+
+## Keputusan sesi ini
+
+- Deploy regDate **ditahan** — cukup dicatat di md.
+- File konfigurasi sistem: severity maks **MEDIUM** tetapi **tidak silent**
+  (hindari silent-failure), Active Response otomatis **dimatikan**.
+- Fix berbasis **path**, sebab alert FIM tak membawa isi/`diff` (`mode: scheduled`).
+
+## Sisa untuk sesi berikutnya
+
+1. **Rapikan logika Active Response menyeluruh** (temuan baru): `ar.status !== 'isolated'`
+   di `Fleet Quarantine` **selalu true** → jalur karantina selalu dicoba;
+   `Trigger Active Response` kirim `!firewall-drop` srcip `0.0.0.0` untuk alert **file**.
+   Batasi karantina ke direktori user-writable.
+2. **Deploy regDate** — pilih 1 dari 2 jalur (patch minimal ke skrip lama, atau isi
+   2 token lalu `docker compose up -d fleet-monitor`).
+3. **Bukti laporan** (prioritas #1 pengembangan): screenshot dashboard + Telegram,
+   kolom "Agen Ringan" di `docs/PERBANDINGAN-PENELITIAN.md`, sub-bab arsitektur.
+4. **Benchmark resmi N≥30 → simpan**, dan **ralat klaim ROADMAP** yang menyebut
+   `result/bench-mttr-malware-n30.json` (folder `result/` tak ada; `.gitignore`
+   juga meng-ignore `result`).
+5. **Ops D**: firewall Wazuh (allow 1514/1515 hanya dari subnet endpoint) + ganti
+   password default Wazuh; OTX key inline → credential + rotasi (temuan 2026-09-20).
+6. **WIP lama yang belum masuk git** (dashboard `src/app/api/` + `lib/session.ts` +
+   `lib/commands.ts`, `deploy/test_n8n_setup.py`, dll) — commit + putuskan deploy-nya.
+
+## Catatan operasional
+
+- Manager Wazuh & n8n ada di **ravi-debian**, diakses via Tailscale `100.73.91.17`
+  (SSH LAN `192.168.1.47` mati dari jaringan nixbox kini). API key n8n disimpan di
+  `/tmp/n8n_api_key.txt` di server (praktik lama).
+- **`wazuh-logtest` (CLI + legacy) selalu resolve decoder `json`** untuk event Sysmon
+  JSON → rule chain varian JSON tak bisa diuji lewat logtest. Verifikasi pakai
+  `wazuh-analysisd -t` + simulasi regex terhadap `full_log` asli dari arsip manager.
+- Backup skrip `fleet-monitor` lama masih di server:
+  `scripts/fleet-monitor.py.bak-20260928-215945`.
+- Saat E2E hari ini terkirim **2 pesan Telegram uji** (exec 1233 = HIGH dari payload
+  uji salah, 1234 = MEDIUM yang benar) — aman diabaikan.
+- `agent-rs/src/main.rs:858` (`do_sinkhole`) menulis ke
+  `C:\Windows\System32\drivers\etc\hosts`; entri ditandai `# soar-sinkhole`
+  (perintah hapus ada di `docs/KARTU-CONTEKAN-*`).
