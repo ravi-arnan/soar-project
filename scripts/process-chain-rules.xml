@@ -95,7 +95,7 @@
   <rule id="110007" level="10">
     <if_group>sysmon_event1</if_group>
     <field name="sysmon.image" type="pcre2">(?i)\\(regsvr32|rundll32)\.exe$</field>
-    <match type="pcre2">(?i)(https?://|\\appdata\\|\\temp\\|\.dll.*\s*-)</match>
+    <field name="sysmon.commandLine" type="pcre2">(?i)(https?://|\\appdata\\|\\temp\\|\.dll[,\s]+-\w)</field>
     <description>SOAR: regsvr32/rundll32 memuat dari URL/temp (LOLBin abuse)</description>
     <group>process_chain,lolbin,attack_T1218.010,attack_T1218.011,</group>
   </rule>
@@ -167,7 +167,7 @@
   <rule id="110017" level="10">
     <if_group>sysmon_event1</if_group>
     <field name="win.eventdata.image" type="pcre2">(?i)\\(regsvr32|rundll32)\.exe$</field>
-    <match type="pcre2">(?i)(https?://|\\appdata\\|\\temp\\|\.dll.*\s*-)</match>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(https?://|\\appdata\\|\\temp\\|\.dll[,\s]+-\w)</field>
     <description>SOAR: regsvr32/rundll32 memuat dari URL/temp (JSON)</description>
     <group>process_chain,lolbin,attack_T1218.010,attack_T1218.011,</group>
   </rule>
@@ -177,6 +177,30 @@
     <field name="win.eventdata.image" type="pcre2">(?i)\\(Temp|AppData|Downloads|Desktop)\\.*\\.(bat|cmd|vbs|ps1|js)$</field>
     <description>SOAR: Script (.bat/.vbs/.ps1) dijalankan dari user-temp (JSON)</description>
     <group>process_chain,lolbin,attack_initial_access,attack_T1059,</group>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 0: Allowlist — rundll32/regsvr32 SAH dari System32 yang
+       di-spawn Tasks Scheduler (svchost -k netsvcs). Contoh nyata:
+       rundll32 Windows.StateRepositoryClient.dll,StateRepositoryDoMaintenanceTasks.
+       Menimpa 110007/110017 supaya maintenance bawaan Windows tak
+       naik jadi HIGH (false positive rundll32,DLL dari System32).
+       Dua rule terpisah: 110019 = varian JSON (win.eventdata.*),
+       110020 = varian teks-klasik (sysmon.*).
+       ============================================================ -->
+  <rule id="110019" level="0">
+    <if_sid>110017</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+(rundll32|regsvr32)\.exe$</field>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\svchost\.exe$</field>
+    <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)-k\s+netsvcs</field>
+    <description>SOAR allowlist: rundll32/regsvr32 System32 dari Task Scheduler (maintenance Windows)</description>
+  </rule>
+
+  <rule id="110020" level="0">
+    <if_sid>110007</if_sid>
+    <field name="sysmon.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+(rundll32|regsvr32)\.exe$</field>
+    <field name="sysmon.parentImage" type="pcre2">(?i)\\svchost\.exe$</field>
+    <description>SOAR allowlist: rundll32/regsvr32 System32 dari Task Scheduler (maintenance Windows, teks-klasik)</description>
   </rule>
 
 </group>
