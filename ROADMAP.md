@@ -1,7 +1,7 @@
 # ROADMAP — SOAR Open-Source (Wazuh + n8n + HITL)
 
 Konsolidasi **gap (kesenjangan/masalah)** dan **solusi** untuk proyek:
-*Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop* — Ravi Arnan Irianto (2305551076).
+*Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)* — Ravi Arnan Irianto (2305551076).
 
 Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) Keamanan platform, (E) Arsitektur, (F) Kontribusi terhadap masalah industri, (G) Perluasan cakupan deteksi (penguatan TA), (H) Pemeliharaan & modernisasi stack, (I) Agen Ringan.
 
@@ -46,6 +46,9 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | **#6** | **Arsitektur**: n8n queue-mode (Redis+worker) + PostgreSQL, HA, message-queue, observability | E | berat/berisiko ke live |
 | Ditunda pasca-TA | **Upgrade Wazuh 4.9.2 → 4.14.7** terjadwal (agent ikut) | H3 | berat |
 | Ditunda pasca-TA | **I-future — Fork Wazuh diet** (branch diet-syscheck-only, build .deb minimal) | I | berat |
+| Menengah | **Registration date agent Rust (`first_seen`)** — kode **SIAP di repo, BELUM deploy** (lihat HANDOFF 2026-09-28): fleet-monitor simpan `first_seen` + emit `regDate`; `AgentDetailView` sudah di-wire. Tests 14/14 | I | kecil |
+| Tinggi (drift) | **`fleet-monitor` server = versi lama** (tanpa command API & `_validate_runtime_secrets`), sedangkan repo lebih baru — dan `.env` server **tak punya** `FLEET_COMMAND_TOKEN` / `FLEET_AGENT_POLL_TOKENS_JSON`. Deploy versi repo tanpa mengisi token → crash-loop. Isi 2 token dulu sebelum naikkan versi | D | kecil |
+| Menengah | **Rapikan logika Active Response** (temuan 2026-09-28): `Fleet Quarantine` selalu jalan + `!firewall-drop` srcip `0.0.0.0` untuk alert file. Pengaman file-sistem sudah live, jalur lain belum | A | sedang |
 
 **Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
 
@@ -60,6 +63,9 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | ✅ **SELESAI** (2026-07-02) | AR `block-domain` **hilang tiap container restart** | Manager sync `ossec.conf` dari template bind-mount tiap start; `block-domain` dulu hanya diedit runtime → tertimpa | Blok `block-domain` (command + active-response rules_id 999998) ditambahkan **permanen** ke template `wazuh-docker/single-node/config/wazuh_cluster/wazuh_manager.conf`. Terverifikasi via `--force-recreate`: block-domain0 tetap di ar.conf tanpa deploy script |
 | ✅ **SELESAI** (2026-07-02) | **≥2 notifikasi untuk 1 file** | Karantina memindahkan file → FIM memicu event **`deleted`** → alert & eksekusi kedua (loop umpan balik) | Node `Ekstrak Alert` kini **mengabaikan event `deleted`** (`fimEvent === 'deleted' → return []`). Terverifikasi: EICAR → hanya **1** baris AR & 1 notifikasi (eksekusi event deleted berhenti di Ekstrak Alert). Tersimpan ke repo `n8n-workflows/deteksi-malware.json` |
 | 🟡 **Dimitigasi / ditunda** | **Event phishing pertama terlewat** pasca-restart agent | Timing **logcollector** saat agent restart (seek ke EOF; `client_buffer` sudah aktif jadi bukan drop-disconnect). Tak ada toggle config yang menjamin fix | **Mitigasi operasional:** picu 1 event "pemanasan" setelah restart (sudah jadi praktik pra-demo). **Fix sejati (arsitektural, kategori E):** buffer/queue antara sumber log ↔ Wazuh. Di produksi dampak minim (gateway kirim banyak event); ini mayoritas artefak demo (injeksi manual tunggal) |
+| 🟡 **Dipulihkan** (temuan 2026-09-28) | `fleet-monitor` **crash-loop** saat deploy versi repo (outage singkat) | Container menjalankan skrip **LAMA** (tanpa validasi); repo menambah `_validate_runtime_secrets()` yang mewajibkan `FLEET_COMMAND_TOKEN` + `FLEET_AGENT_POLL_TOKENS_JSON`, padahal `.env` server tak punya keduanya | **Dipulihkan** ke skrip lama (healthz 200). Jalur aman: patch minimal ke skrip lama, atau isi 2 token dulu lalu `docker compose up -d fleet-monitor` |
+| ✅ **SELESAI** (2026-09-28, live) | Perubahan file FIM apa pun (mis. `hosts`) naik jadi **"MALWARE TERDETEKSI" HIGH** | Rule **550 level 7** dipetakan `ruleLevel>=7 → HIGH` + judul di-hardcode; hash `hosts` spesifik-mesin → VT tak relevan; AR otomatis (`Fleet Quarantine`) **mencoba karantina file OS** (exec 1231, gagal 400 hanya karena validasi menolak path Windows) | `scripts/patch-n8n-systemfile.py`: `is_system_file` (path) → severity maks **MEDIUM** (tetap diberitakan), `should_active_response=false`, judul "PERUBAHAN FILE KONFIGURASI SISTEM", VT N/A, prompt AI sadar `soar-sinkhole`, + pengaman `Fleet Quarantine` tak pernah karantina file sistem. Test 8/8, E2E exec 1234 hijau |
+| ⬜ **BARU** (temuan 2026-09-28) | Logika AR belum rapi: `Fleet Quarantine` selalu jalan (`ar.status !== 'isolated'` **selalu true**), dan `Trigger Active Response` kirim `!firewall-drop` srcip `0.0.0.0` untuk alert **file** (bukan IP) | Pengaman file-sistem sudah ada, tapi jalur AR lain masih bisa salah sasaran | Rapikan: ganti kondisi sukses AR yang benar, pisahkan AR IP vs file, dan batasi karantina ke direktori user-writable |
 
 ## B. Gap keandalan Threat Intelligence (VirusTotal/GSB/URLScan)
 
@@ -92,6 +98,7 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | ✅ **SELESAI** | n8n rentan (CVE-2026-21858 "Ni8mare", CVSS 10.0; penyalahgunaan webhook) | Webhook **tidak diekspos publik** (poller keluar-saja di balik NAT — sudah) + `deploy/hardened/`: **Caddy reverse-proxy + TLS + basic-auth** di depan editor, n8n **tak publish port** (hanya internal/Caddy), **segmentasi jaringan** edge/backend, **secret mgmt** (`.env.example` + `N8N_ENCRYPTION_KEY`, tanpa kredensial hardcode) |
 | ✅ **SELESAI** | Reproducibility | **IaC** `deploy/ansible/deploy-integration.yml` — playbook idempoten ganti langkah manual `docker cp`/`docker exec` (integration script, AR scripts, blok `<integration>` ossec.conf, restart+verif) |
 | ⬜ Operasional | Firewall + password default | Allow 1514/1515 dari subnet endpoint saja (DEPLOYMENT Step 7.1); **ganti password default Wazuh** sebelum produksi |
+| ⬜ **BARU** (temuan 2026-09-20) | **Key OTX tertulis inline** di node `OTX Lookup` (bukan credential) → ikut ter-return `GET /api/v1/workflows/{id}` dan tersalin ke setiap file di `backups/` | Pindahkan ke credential `OTX API Key` (httpHeaderAuth) seperti `MalwareBazaar Auth`/`VirusTotal API Key`, lalu **rotasi key**. Perlu 1 patch kecil + verifikasi |
 
 ## E. Gap arsitektur (jangka menengah–panjang) ⬜ BELUM
 
