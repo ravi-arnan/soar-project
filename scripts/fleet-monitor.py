@@ -497,6 +497,7 @@ def build_fleet(cfg):
             "last_hash": hb.get("last_hash", "-")[:12] + "..."
             if hb.get("last_hash")
             else "-",
+            "watch_paths": hb.get("watch_paths", []),
             "binary": "5.3 MB",
             "ram": "5.2 MB",
             "age_sec": int(age),
@@ -1130,6 +1131,7 @@ class Handler(BaseHTTPRequestHandler):
                     "version": j.get("version", "0.1.0"),
                     "os": j.get("os", "unknown"),
                     "last_hash": j.get("last_hash", ""),
+                    "watch_paths": j.get("watch_paths", []),
                     "last_seen": _now,
                     "first_seen": _prev.get("first_seen") or _now,
                     # Resource metrics dari agent (sysinfo, opsional; 0/absen = tak dilaporkan)

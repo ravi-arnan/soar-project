@@ -43,13 +43,18 @@ FQ_JSCODE = """// Fallback karantina via fleet (agen Rust 002/003 bukan agent Wa
 // Wazuh API balas 1701 untuk id itu). Hanya jalan kalau Wazuh AR gagal.
 const ar = $('Trigger Active Response').first().json;
 const alert = $('Ekstrak Alert').first().json;
+const commandToken = $env.FLEET_COMMAND_TOKEN;
 let fleet = { attempted: false, result: 'skipped-wazuh-ok' };
 if (ar.status !== 'isolated') {
   try {
+    if (!commandToken) throw new Error('FLEET_COMMAND_TOKEN belum dikonfigurasi');
     const resp = await this.helpers.httpRequest({
       method: 'POST',
       url: 'http://host.docker.internal:8080/api/commands',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${commandToken}`,
+      },
       body: JSON.stringify({
         agent_id: alert.agent_id,
         action: 'quarantine',
@@ -74,7 +79,7 @@ def read_file(p):
 
 def api_get(url, api_key):
     req = urllib.request.Request(url, headers={"X-N8N-API-KEY": api_key})
-    with urllib.request.urlopen(req) as r:
+    with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read())
 
 
@@ -86,7 +91,7 @@ def api_put(url, api_key, payload):
         method="PUT",
         headers={"X-N8N-API-KEY": api_key, "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req) as r:
+    with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read())
 
 
