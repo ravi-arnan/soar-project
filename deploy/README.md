@@ -36,12 +36,13 @@ credential/workflow dengan nama sama di-update, bukan diduplikat.
 
 | Jalur | Perintah | Cocok untuk |
 |-------|----------|-------------|
-| **.deb / apt** | `agent-rs/build-deb.sh` lalu `sudo apt install ./soar-agent_0.1.0_amd64.deb` | admin yang terbiasa package manager |
-| **1 host manual** | `sudo AGENT_ID=004 SERVER=<ip> bash deploy/agent-install.sh` | 1-2 mesin / percobaan |
-| **fleet via Ansible** | isi `deploy/ansible/inventory-agents.ini` lalu `ansible-playbook -i inventory-agents.ini deploy-agents.yml -e server_ip=<ip>` | rollout massal + update binary sekali jalan |
+| **.deb / apt** | `agent-rs/build-deb.sh` lalu `sudo apt install ./soar-agent_0.3.0_amd64.deb` | admin yang terbiasa package manager |
+| **1 host manual** | `sudo AGENT_ID=004 SERVER=<ip> FLEET_AGENT_POLL_TOKEN=<token-agent-004> bash deploy/agent-install.sh` | 1-2 mesin / percobaan |
+| **fleet via Ansible** | isi `poll_token` unik per host di inventory, lalu `ansible-playbook -i inventory-agents.ini deploy-agents.yml -e server_ip=<ip>` | rollout massal + update binary sekali jalan |
 
-Konfigurasi per-host cuma 4 baris di `/etc/default/soar-agent` (AGENT_ID,
-AGENT_NAME, SERVER, WATCH) — binary sama untuk semua PC.
+Konfigurasi per-host ada di `/etc/default/soar-agent` dan file token
+`/etc/soar-agent/fleet.token` mode 0600. Binary sama untuk semua PC, tetapi
+token polling harus unik per agent dan cocok dengan `FLEET_AGENT_POLL_TOKENS_JSON`.
 
 ### Dashboard: GUI atau TUI, data sama
 

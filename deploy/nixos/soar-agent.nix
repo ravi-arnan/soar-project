@@ -19,6 +19,7 @@
 #   };
 #
 # Lalu: sudo nixos-rebuild switch --flake /etc/nixos#nixbox
+# Token polling disimpan di /etc/soar-agent/fleet.token (mode 0600, owner ravi).
 
 { config, lib, pkgs, ... }:
 
@@ -27,7 +28,7 @@ let
 
   soar-agent = pkgs.rustPlatform.buildRustPackage {
     pname = "soar-agent";
-    version = "0.1.0";
+    version = "0.3.0";
     src = cfg.packageSource;
     cargoLock.lockFile = cfg.packageSource + "/Cargo.lock";
     nativeBuildInputs = [ pkgs.pkg-config ];
@@ -90,6 +91,12 @@ in
       description = "Port fleet-monitor (endpoint /api/heartbeat).";
     };
 
+    fleetPollTokenFile = lib.mkOption {
+      type = lib.types.path;
+      default = "/etc/soar-agent/fleet.token";
+      description = "File token polling agent, mode 0600.";
+    };
+
     heartbeatSecs = lib.mkOption {
       type = lib.types.ints.positive;
       default = 60;
@@ -131,6 +138,7 @@ in
       environment = {
         RUST_LOG = "info";
         HOME = config.users.users.${cfg.user}.home;
+        SOAR_FLEET_POLL_TOKEN_FILE = cfg.fleetPollTokenFile;
       };
 
       serviceConfig = {

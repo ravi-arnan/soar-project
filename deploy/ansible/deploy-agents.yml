@@ -23,6 +23,8 @@
     server_ip: "100.73.91.17"
     binary_src: "{{ playbook_dir }}/../../agent-rs/target/x86_64-unknown-linux-musl/release/soar-agent"
     agent_name_default: "rust-agent-{{ inventory_hostname | lower | truncate(20, true, '') }}"
+    agent_poll_token: "{{ hostvars[inventory_hostname].poll_token | default('') }}"
+
 
   tasks:
     - name: Cek binary musl sudah dibangun
@@ -47,6 +49,36 @@
         owner: root
         group: root
         mode: "0750"
+
+    - name: Validasi token polling agent
+      ansible.builtin.assert:
+        that:
+          - agent_poll_token is defined
+          - agent_poll_token | length >= 32
+        fail_msg: "poll_token minimal 32 karakter, gunakan vault/secret manager"
+      no_log: true
+
+    - name: Buat direktori environment agent
+      ansible.builtin.file:
+        path: /etc/soar-agent
+        state: directory
+        mode: "0700"
+
+    - name: Buat file token polling
+      ansible.builtin.copy:
+        content: "{{ agent_poll_token }}\n"
+        dest: /etc/soar-agent/fleet.token
+        mode: "0600"
+      no_log: true
+      notify: restart soar-agent
+
+    - name: Buat environment token polling
+      ansible.builtin.copy:
+        content: "SOAR_FLEET_POLL_TOKEN_FILE=/etc/soar-agent/fleet.token\n"
+        dest: /etc/soar-agent/fleet.env
+        mode: "0600"
+      no_log: true
+      notify: restart soar-agent
 
     - name: Render systemd unit (agent id/nama per-host dari inventory)
       ansible.builtin.template:

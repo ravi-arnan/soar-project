@@ -22,11 +22,17 @@ LOCAL="$NIXOS_DIR/soar-agent.nix"
 
 AGENT_ID="${AGENT_ID:-002}"
 AGENT_NAME="${AGENT_NAME:-nixbox}"
+AGENT_USER="${AGENT_USER:-ravi}"
 SERVER="${SERVER:-192.168.1.47}"
 FLAKE_ATTR="${FLAKE_ATTR:-nixbox}"
+POLL_TOKEN="${FLEET_AGENT_POLL_TOKEN:-}"
 
 if [[ $EUID -ne 0 ]]; then
   echo "ERROR: jalankan dengan sudo (butuh tulis /etc/nixos + nixos-rebuild)" >&2
+  exit 1
+fi
+if [[ ${#POLL_TOKEN} -lt 32 ]]; then
+  echo "ERROR: FLEET_AGENT_POLL_TOKEN minimal 32 karakter" >&2
   exit 1
 fi
 
@@ -54,9 +60,11 @@ cat >"$LOCAL" <<EOF
 
   services.soar-agent = {
     enable = true;
-    agentId = "$AGENT_ID";
-    agentName = "$AGENT_NAME";
-    server = "$SERVER";
+     agentId = "$AGENT_ID";
+     agentName = "$AGENT_NAME";
+     user = "$AGENT_USER";
+     server = "$SERVER";
+
     packageSource = $AGENT_SRC;
   };
 }
@@ -82,9 +90,14 @@ print("[+] ./soar-agent.nix ditambahkan ke imports")
 PY
 fi
 
+install -d -m 700 -o "$AGENT_USER" -g "$(id -gn "$AGENT_USER")" /etc/soar-agent
+printf '%s\n' "$POLL_TOKEN" > /etc/soar-agent/fleet.token
+chown "$AGENT_USER:$(id -gn "$AGENT_USER")" /etc/soar-agent/fleet.token
+chmod 600 /etc/soar-agent/fleet.token
+
 # --- 4. rebuild --------------------------------------------------------------
 echo "[i] nixos-rebuild switch --flake $NIXOS_DIR#$FLAKE_ATTR"
-nixos-rebuild switch --flake "$NIXOS_DIR#$FLAKE_ATTR"
+nixos-rebuild switch --impure --flake "$NIXOS_DIR#$FLAKE_ATTR"
 
 echo
 echo "[i] status:"
