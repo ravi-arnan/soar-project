@@ -3,7 +3,7 @@
 # build-deb.sh — build soar-agent musl statis + bungkus .deb (package manager)
 #
 # Hasil: agent-rs/dist/soar-agent_<versi>_amd64.deb
-# Pasang di workstation:   sudo apt install ./soar-agent_0.1.0_amd64.deb
+# Pasang di workstation:   sudo apt install ./soar-agent_0.3.0_amd64.deb
 # Uninstall:               sudo apt remove soar-agent
 # Upgrade = pasang .deb versi lebih tinggi (systemd unit ikut terganti).
 #
@@ -71,7 +71,8 @@ set -e
 mkdir -p /var/ossec/quarantine && chmod 750 /var/ossec/quarantine
 systemctl daemon-reload || true
 echo "soar-agent terpasang. Konfigurasi: /etc/default/soar-agent"
-echo "lalu: sudo systemctl enable --now soar-agent"
+echo "lalu: isi /etc/soar-agent/fleet.token dengan token polling agent"
+echo "kemudian: sudo systemctl enable --now soar-agent"
 EOF
 
 cat > "$DEBROOT/DEBIAN/prerm" <<'EOF'
