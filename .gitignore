@@ -45,3 +45,4 @@ typescript
 
 # Binary build artifacts
 result
+.opencode/
