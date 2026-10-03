@@ -86,9 +86,10 @@ function ResourceChart({ agentId }: { agentId: string }) {
 }
 
 /** Kartu scan on-demand: antre scan folder + ringkasan hasil terakhir. */
-function ScanPanel({ agentId, canScan }: { agentId: string; canScan: boolean }) {
+function ScanPanel({ agentId, canScan, watchPaths }: { agentId: string; canScan: boolean; watchPaths?: string[] }) {
   const [scan, setScan] = useState<FleetScanResult | null>(null);
   const [state, setState] = useState('');
+  const [pick, setPick] = useState('');
 
   const load = useCallback(() => {
     fetch(`/api/scan-results?agent_id=${encodeURIComponent(agentId)}`)
@@ -102,14 +103,13 @@ function ScanPanel({ agentId, canScan }: { agentId: string; canScan: boolean }) 
   }, [load]);
 
   async function runScan() {
-    const path = window.prompt(
-      `Folder absolut di agent ${agentId} yang mau dipindai (contoh /home/user/Downloads):`,
-      ''
-    );
-    if (!path) return;
+    if (!pick) {
+      setState('pilih folder dulu');
+      return;
+    }
     setState('mengirim...');
     try {
-      const r = await postCommand({ agent_id: agentId, action: 'scan', target: path });
+      const r = await postCommand({ agent_id: agentId, action: 'scan', target: pick });
       const j = await r.json();
       setState(
         r.ok && j.status === 'queued'
@@ -126,9 +126,23 @@ function ScanPanel({ agentId, canScan }: { agentId: string; canScan: boolean }) 
   return (
     <div className="space-y-3 text-[12px]">
       <div className="flex flex-wrap items-center gap-2">
+        {watchPaths && watchPaths.length > 0 && (
+          <select
+            value={pick}
+            onChange={(e) => setPick(e.target.value)}
+            className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[11px] bg-white"
+          >
+            <option value="">Pilih folder yang dipantau…</option>
+            {watchPaths.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        )}
         <button
           onClick={runScan}
-          disabled={!canScan}
+          disabled={!canScan || (!!watchPaths?.length && !pick)}
           title={
             canScan
               ? 'Antre scan folder on-demand ke agent ini'
@@ -298,7 +312,7 @@ export function AgentDetailView({
     <div className="space-y-4">
       {/* Top Sub-tabs & Actions */}
       <div className="flex flex-wrap items-center justify-between border-b border-[#D3DAE6] pb-1 gap-2">
-        <div className="flex items-center gap-5 text-[13px] overflow-x-auto">
+        <div className="flex items-center gap-5 text-[13px] flex-wrap">
           <span className="pb-2 -mb-1 font-semibold text-[#1A1C21] whitespace-nowrap">
             {agent?.name || 'Ubuntu'}
           </span>
@@ -364,11 +378,6 @@ export function AgentDetailView({
           <div className="font-medium text-[#1A1C21] mt-0.5">
             {agent?.os && agent.os !== 'unknown' ? agent.os : '-'}
           </div>
-        </div>
-
-        <div>
-          <div className="text-[#8A94A6] text-[11px]">Cluster node</div>
-          <div className="text-[#1A1C21] mt-0.5">-</div>
         </div>
 
         <div>

@@ -10,6 +10,8 @@ interface SettingsViewProps {
   stats: FleetStats;
   generatedAt: string;
   online: boolean;
+  refreshMs: number;
+  onRefreshMsChange: (ms: number) => void;
 }
 
 function StatusRow({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
@@ -28,7 +30,7 @@ function StatusRow({ ok, label, detail }: { ok: boolean; label: string; detail: 
   );
 }
 
-export function SettingsView({ health, stats, generatedAt, online }: SettingsViewProps) {
+export function SettingsView({ health, stats, generatedAt, online, refreshMs, onRefreshMsChange }: SettingsViewProps) {
   const endpoints = [
     { method: 'GET', path: '/api/fleet', desc: 'Status agent + kesehatan stack' },
     { method: 'GET', path: '/api/events', desc: 'Threat events untuk dashboard' },
@@ -39,6 +41,26 @@ export function SettingsView({ health, stats, generatedAt, online }: SettingsVie
 
   return (
     <div className="space-y-4">
+      {/* Preferensi */}
+      <div className="bg-white border border-[#D3DAE6] rounded p-4">
+        <h2 className="text-[14px] font-semibold mb-3">Preferences</h2>
+        <div className="flex items-center justify-between py-2 border-b border-[#EDEEF2]">
+          <div>
+            <div className="text-[13px] font-medium">Refresh interval</div>
+            <div className="text-[12px] text-[#5A626F]">Seberapa sering dashboard menarik data fleet</div>
+          </div>
+          <select
+            value={refreshMs}
+            onChange={(e) => onRefreshMsChange(Number(e.target.value))}
+            className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[12px] bg-white"
+          >
+            <option value={5000}>5 detik</option>
+            <option value={10000}>10 detik</option>
+            <option value={30000}>30 detik</option>
+          </select>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Stack status */}
         <div className="bg-white border border-[#D3DAE6] rounded p-4">

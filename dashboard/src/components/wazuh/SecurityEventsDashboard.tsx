@@ -1,17 +1,16 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Radio,
   FileText,
   ChevronRight,
   ChevronDown,
-  Info,
-  List,
 } from 'lucide-react';
 import { WazuhFilterBar } from './WazuhFilterBar';
 import { ExpandableCard } from './ExpandableCard';
 import { formatWazuhTime, severityLevel } from '@/lib/fleet';
+import { postCommand } from '@/lib/commands';
 import type { FleetEvent, FleetStats } from '@/lib/fleet';
 
 interface SecurityEventsDashboardProps {
@@ -39,7 +38,7 @@ export function SecurityEventsDashboard({
   onRefresh,
 }: SecurityEventsDashboardProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>('dashboard');
-  const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   /** Rentang waktu event dalam jam (null = semua). */
@@ -47,7 +46,13 @@ export function SecurityEventsDashboard({
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   /** Status antrean AR per baris: queued | gagal | mengirim. */
-  const [arState, setArState] = useState<Record<number, string>>({});
+  const [arState, setArState] = useState<Record<string, string>>({});
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   /** Terima search + chip filter dari WazuhFilterBar, reset ke halaman 1. */
   const handleSearch = (q: string, filters: string[]) => {
@@ -64,12 +69,12 @@ export function SecurityEventsDashboard({
   // Event dalam rentang waktu terpilih (berlaku untuk tabel + grafik).
   const rangedEvents = useMemo(() => {
     if (rangeHours === null) return events;
-    const cutoff = Date.now() - rangeHours * 3600 * 1000;
+    const cutoff = now - rangeHours * 3600 * 1000;
     return events.filter((e) => {
       const t = new Date(e.ts).getTime();
       return !Number.isNaN(t) && t >= cutoff;
     });
-  }, [events, rangeHours]);
+  }, [events, now, rangeHours]);
 
   /** Unduh event yang tampil (filter + rentang aktif) sebagai CSV. */
   const exportCsv = () => {
@@ -100,19 +105,15 @@ export function SecurityEventsDashboard({
   }
 
   /** Antrekan perintah ke agent via fleet-monitor (di-poll agent, keluar-saja). */
-  async function queueCommand(rowId: number, agentId: string, action: 'quarantine' | 'sinkhole', target: string) {
+  async function queueCommand(rowId: string, agentId: string, action: 'quarantine' | 'sinkhole', target: string) {
     const label = action === 'quarantine' ? `karantina file ${target}` : `sinkhole domain ${target}`;
     if (!window.confirm(`Antrekan ${label} di agent ${agentId}?`)) return;
     setArState((s) => ({ ...s, [rowId]: 'mengirim...' }));
     try {
-      const r = await fetch('/api/commands', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId, action, target, by: 'dashboard' }),
-      });
+      const r = await postCommand({ agent_id: agentId, action, target });
       const j = await r.json();
       setArState((s) => ({ ...s, [rowId]: r.ok && j.status === 'queued' ? 'queued ✓' : `gagal: ${j.error || r.status}` }));
-    } catch (e) {
+    } catch {
       setArState((s) => ({ ...s, [rowId]: 'gagal: jaringan' }));
     }
   }
@@ -121,8 +122,8 @@ export function SecurityEventsDashboard({
   // (CRITICAL=12, HIGH=8, MEDIUM=5, UNVERIFIED=4, INFO=3).
   const alertsData = useMemo(
     () =>
-      rangedEvents.map((e, i) => ({
-        id: i + 1,
+      rangedEvents.map((e) => ({
+        id: e.id || JSON.stringify([e.ts, e.agent_id, e.hash, e.path, e.url]),
         time: formatWazuhTime(e.ts),
         agentId: e.agent_id || '-',
         agentName: e.agent || '-',
@@ -140,16 +141,15 @@ export function SecurityEventsDashboard({
 
   // Filter search + chip dari WazuhFilterBar: tiap token harus cocok (AND)
   // ke deskripsi / agent / rule.
-  const visibleAlerts = useMemo(() => {
-    const tokens = [query, ...activeFilters]
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean);
-    if (!tokens.length) return alertsData;
-    return alertsData.filter((r) => {
-      const hay = `${r.description} ${r.agentName} ${r.agentId} ${r.ruleId}`.toLowerCase();
-      return tokens.every((t) => hay.includes(t));
-    });
-  }, [alertsData, query, activeFilters]);
+  const tokens = [query, ...activeFilters]
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+  const visibleAlerts = tokens.length
+    ? alertsData.filter((r) => {
+        const hay = `${r.description} ${r.agentName} ${r.agentId} ${r.ruleId}`.toLowerCase();
+        return tokens.every((t) => hay.includes(t));
+      })
+    : alertsData;
 
   // Pagination: potong hasil filter per halaman.
   const pageCount = Math.max(1, Math.ceil(visibleAlerts.length / rowsPerPage));
@@ -180,19 +180,19 @@ export function SecurityEventsDashboard({
   // Histogram event per hari, 14 hari terakhir (dalam rentang aktif).
   const dailyHits = useMemo(() => {
     const days: { label: string; count: number }[] = [];
-    const now = new Date();
+    const current = new Date(now);
     for (let i = 13; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const d = new Date(current.getFullYear(), current.getMonth(), current.getDate() - i);
       days.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, count: 0 });
     }
     rangedEvents.forEach((e) => {
       const t = new Date(e.ts).getTime();
       if (Number.isNaN(t)) return;
-      const idx = 13 - Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(new Date(t).getFullYear(), new Date(t).getMonth(), new Date(t).getDate()).getTime()) / 86400000);
+      const idx = 13 - Math.floor((new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime() - new Date(new Date(t).getFullYear(), new Date(t).getMonth(), new Date(t).getDate()).getTime()) / 86400000);
       if (idx >= 0 && idx < 14) days[idx].count += 1;
     });
     return days;
-  }, [rangedEvents]);
+  }, [now, rangedEvents]);
   const dailyMax = Math.max(1, ...dailyHits.map((d) => d.count));
 
   const topTotal = topAgents.reduce((sum, [, n]) => sum + n, 0) || 1;
@@ -519,6 +519,8 @@ export function SecurityEventsDashboard({
                     <tr className="hover:bg-[#F8FAFC] transition-colors">
                       <td className="py-2 px-3 text-center">
                         <button
+                          type="button"
+                          aria-label={isExpanded ? 'Tutup detail alert' : 'Buka detail alert'}
                           onClick={() => setExpandedRow(isExpanded ? null : row.id)}
                           className="text-[#5A626F] hover:text-[#1A1C21]"
                         >
@@ -576,28 +578,32 @@ export function SecurityEventsDashboard({
                       <td className="py-2 px-3 text-right whitespace-nowrap">
                         {(() => {
                           const st = arState[row.id];
-                          if (st) return <span className="text-[11px] text-[#5A626F]">{st}</span>;
                           const dom = row.rawUrl ? domainOf(row.rawUrl) : '';
                           return (
-                            <span className="inline-flex gap-1.5">
+                            <span className="inline-flex items-center gap-1.5">
                               {row.rawPath && (
                                 <button
+                                  type="button"
+                                  disabled={Boolean(st)}
                                   onClick={() => queueCommand(row.id, row.agentId, 'quarantine', row.rawPath)}
                                   title={`Karantina ${row.rawPath} di agent ${row.agentId}`}
-                                  className="text-[11px] font-medium text-[#BD271E] border border-[#F5C2C0] bg-[#FDF3F2] hover:bg-[#FDE8E8] px-1.5 py-0.5 rounded"
+                                  className="text-[11px] font-medium text-[#BD271E] border border-[#F5C2C0] bg-[#FDF3F2] hover:bg-[#FDE8E8] px-1.5 py-0.5 rounded disabled:opacity-50"
                                 >
                                   Karantina
                                 </button>
                               )}
                               {dom && (
                                 <button
+                                  type="button"
+                                  disabled={Boolean(st)}
                                   onClick={() => queueCommand(row.id, row.agentId, 'sinkhole', dom)}
                                   title={`Sinkhole ${dom} di agent ${row.agentId}`}
-                                  className="text-[11px] font-medium text-[#B25E09] border border-[#F5D9A8] bg-[#FEF6E8] hover:bg-[#FDEFD4] px-1.5 py-0.5 rounded"
+                                  className="text-[11px] font-medium text-[#B25E09] border border-[#F5D9A8] bg-[#FEF6E8] hover:bg-[#FDEFD4] px-1.5 py-0.5 rounded disabled:opacity-50"
                                 >
                                   Blokir
                                 </button>
                               )}
+                              {st && <span role="status" aria-live="polite" className="text-[11px] text-[#5A626F]">{st}</span>}
                               {!row.rawPath && !dom && <span className="text-[#8A94A6]">-</span>}
                             </span>
                           );

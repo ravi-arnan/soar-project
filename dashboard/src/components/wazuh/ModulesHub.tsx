@@ -9,6 +9,7 @@ import {
   Server,
   HeartPulse,
   Network,
+  SearchCheck,
 } from 'lucide-react';
 
 import type { FleetAgent, FleetHealth, FleetStats } from '@/lib/fleet';
@@ -46,18 +47,6 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
       ],
     },
     {
-      title: 'AUDITING AND POLICY MONITORING',
-      modules: [
-        {
-          id: 'mitre',
-          title: 'MITRE ATT&CK',
-          description:
-            'Pemetaan playbook n8n ke teknik MITRE ATT&CK — 6 playbook, 10 teknik unik, 4 fase.',
-          icon: ShieldCheck,
-        },
-      ],
-    },
-    {
       title: 'THREAT DETECTION AND RESPONSE',
       modules: [
         {
@@ -67,11 +56,32 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
             'Verdict gabungan VirusTotal + OTX atas file mencurigakan via pipeline n8n.',
           icon: Box,
         },
+        {
+          id: 'mitre',
+          title: 'MITRE ATT&CK',
+          description:
+            'Pemetaan playbook n8n ke teknik MITRE ATT&CK — 6 playbook, 10 teknik unik, 4 fase.',
+          icon: ShieldCheck,
+        },
         
       ],
     },
     {
+      title: 'OPERATIONS',
+      wide: true,
+      modules: [
+        {
+          id: 'scan-on-demand',
+          title: 'Scan on-demand',
+          description:
+            'Jalankan scan folder di agent Rust langsung dari sini, lihat hash baru vs dikenal.',
+          icon: SearchCheck,
+        },
+      ],
+    },
+    {
       title: 'FLEET OVERVIEW',
+      wide: true,
       modules: [
         {
           id: 'agents',
@@ -137,7 +147,7 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
         {sections.map((section) => (
           <div
             key={section.title}
-            className="relative border border-[#D3DAE6] rounded bg-white p-5 pt-7"
+            className={`relative border border-[#D3DAE6] rounded bg-white p-5 pt-7 flex flex-col ${section.wide ? 'lg:col-span-2' : ''}`}
           >
             {/* Pill Header Badge */}
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-[#D3DAE6] px-4 py-0.5 rounded-full text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase whitespace-nowrap shadow-xs">
@@ -145,7 +155,7 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
             </div>
 
             {/* Modules Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div className={`grid gap-3.5 flex-1 auto-rows-fr ${section.wide ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
               {section.modules.map((mod) => {
                 const Icon = mod.icon;
                 return (

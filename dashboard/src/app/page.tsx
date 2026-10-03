@@ -19,8 +19,22 @@ export default function Home() {
   const [currentView, setCurrentView] = useState<string>('modules');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('004');
 
-  // Data live dari scripts/fleet-monitor.py (poll 5s).
-  const { snapshot, events, online, error, refresh } = useFleet();
+  const [refreshMs, setRefreshMs] = useState(() => {
+    try {
+      return Number(localStorage.getItem('soar:refreshMs')) || 5000;
+    } catch {
+      return 5000;
+    }
+  });
+  const updateRefreshMs = (ms: number) => {
+    setRefreshMs(ms);
+    try {
+      localStorage.setItem('soar:refreshMs', String(ms));
+    } catch {}
+  };
+
+  // Data live dari scripts/fleet-monitor.py (poll sesuai preferensi).
+  const { snapshot, events, online, error, refresh } = useFleet(refreshMs);
 
   const { stats, agents, health } = snapshot;
   // Fallback ke agent pertama bila id terpilih tak ada (misal default awal).
@@ -69,7 +83,10 @@ export default function Home() {
       ];
     }
     if (currentView === 'agents') {
-      return [{ label: 'Agents', onClick: () => setCurrentView('agents') }];
+      return [
+        { label: 'Modules', onClick: () => setCurrentView('modules') },
+        { label: 'Agents' },
+      ];
     }
     if (currentView === 'settings') {
       return [
@@ -79,6 +96,7 @@ export default function Home() {
     }
     if (currentView === 'agent-detail') {
       return [
+        { label: 'Modules', onClick: () => setCurrentView('modules') },
         { label: 'Agents', onClick: () => setCurrentView('agents') },
         { label: selectedAgent?.name || `Agent ${selectedAgentId}` },
       ];
@@ -125,6 +143,12 @@ export default function Home() {
             health={health}
             onNavigate={(modKey) => {
               if (modKey === 'agents') setCurrentView('agents');
+              else if (modKey === 'scan-on-demand') {
+                // Langsung ke detail agent Rust pertama supaya kartu scan on-demand terlihat.
+                const rust = agents.find((a) => a.type === 'rust') || agents[0];
+                if (rust) setSelectedAgentId(rust.id);
+                setCurrentView('agent-detail');
+              }
               else if (modKey === 'security-events') setCurrentView('security-events');
               else if (modKey === 'integrity-monitoring') setCurrentView('integrity-monitoring');
               else if (modKey === 'threat-intel') setCurrentView('threat-intel');
@@ -184,6 +208,8 @@ export default function Home() {
             stats={stats}
             generatedAt={snapshot.generated_at}
             online={online}
+            refreshMs={refreshMs}
+            onRefreshMsChange={updateRefreshMs}
           />
         )}
       </main>
