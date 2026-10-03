@@ -26,7 +26,7 @@ services:
     depends_on: [n8n]
 
   n8n:
-    image: n8nio/n8n:2.36.9
+    image: n8nio/n8n:2.40.0
     container_name: n8n
     restart: unless-stopped
     dns: ["8.8.8.8", "1.1.1.1"]
@@ -42,6 +42,9 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - N8N_RUNNERS_TASK_TIMEOUT=300
       - N8N_RUNNERS_MAX_CONCURRENCY=10
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
+
       # ponytail: Wazuh API 55000 self-signed. Fix bersih = mount CA Wazuh ke
       # /etc/ssl/certs & set NODE_EXTRA_CA_CERTS, bukan matikan verifikasi global.
       # - NODE_EXTRA_CA_CERTS=/run/secrets/wazuh-ca.pem

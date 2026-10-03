@@ -38,6 +38,8 @@ strip "$BIN" 2>/dev/null || true
 ls -la "$BIN"
 
 echo "[2/4] pasang ke /usr/local/bin + restart (agent 003 ravi-debian)"
+TOKEN_FILE="/etc/soar-agent/fleet.token"
+[ -s "$TOKEN_FILE" ] || { echo "[x] token agent belum ada: $TOKEN_FILE"; exit 1; }
 sudo install -m755 "$BIN" /usr/local/bin/soar-agent
 sudo systemctl restart soar-agent
 sleep 2

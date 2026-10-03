@@ -15,16 +15,14 @@ Reinstall agent dengan binary terbaru dari GitHub release.
 Stop-Service soar-agent -ErrorAction SilentlyContinue
 sc.exe delete soar-agent
 
-# 2. Download binary baru
-$url = "https://github.com/ravi-arnan/soar-project/releases/download/v0.2.0/soar-agent.exe"
-$out = "$env:TEMP\soar-agent.exe"
-Invoke-WebRequest -Uri $url -OutFile $out
+# 2. Set binary HTTPS yang sudah diverifikasi dan token polling agent 006
+$env:BINARY_URL = "<URL_HTTPS_BINARY_TERVERIFIKASI>"
+$env:SOAR_FLEET_POLL_TOKEN = "<TOKEN_POLLING_AGENT_006>"
 
 # 3. Install ulang dengan ID yang benar
 $env:AGENT_ID = "006"
 $env:AGENT_NAME = "ideapc"
 $env:SERVER = "100.73.91.17"
-$env:WATCH = "C:\Users\$env:USERNAME\Downloads;C:\Users\$env:USERNAME\Desktop"
 powershell -File install-agent-windows.ps1
 ```
 

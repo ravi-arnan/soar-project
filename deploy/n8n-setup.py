@@ -18,10 +18,12 @@ Pemakaian:
   python3 deploy/n8n-setup.py --dry-run          # tanpa API key: cetak rencana saja
 
 ponytail: idempoten — credential dengan nama sama di-reuse (update data kalau
-berubah), workflow dengan nama sama di-update (bukan duplikat).
+berubah), workflow dengan nama sama hanya di-update bila fingerprint sama.
+Workflow live yang lebih baru ditolak, kecuali --force-workflow-update.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -196,55 +198,104 @@ def remap_credentials(nodes, name_to_id):
     return remapped
 
 
-def import_workflows(base, key, name_to_id, dry=False):
-    results = []
+def workflow_fingerprint(workflow):
+    normalized = {
+        "name": workflow.get("name"),
+        "nodes": [],
+        "connections": workflow.get("connections", {}),
+        "settings": workflow.get("settings", {}),
+    }
+    for node in workflow.get("nodes", []):
+        item = json.loads(json.dumps(node))
+        item.pop("position", None)
+        credentials = item.get("credentials") or {}
+        for reference in credentials.values():
+            if isinstance(reference, dict):
+                reference.pop("id", None)
+        normalized["nodes"].append(item)
+    normalized["nodes"].sort(key=lambda item: item.get("name", ""))
+    encoded = json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def load_workflow_plan(wf, name_to_id):
+    path = os.path.join(REPO, "n8n-workflows", wf + ".json")
+    with open(path) as f:
+        raw = json.load(f)
+    if isinstance(raw, list):
+        raw = raw[0]
+    nodes = raw.get("nodes", [])
+    remapped = remap_credentials(nodes, name_to_id)
+    body = {
+        "name": raw.get("name", wf),
+        "nodes": nodes,
+        "connections": raw.get("connections", {}),
+        "settings": raw.get("settings", {"executionOrder": "v1"}),
+    }
+    return body, remapped, bool(raw.get("active"))
+
+
+def preflight_workflows(base, key, name_to_id, force=False):
+    existing = api(base, key, "GET", "/api/v1/workflows?limit=250")
+    existing_by_name = {item.get("name"): item for item in existing.get("data", [])}
+    drift = []
     for wf in WORKFLOWS:
-        path = os.path.join(REPO, "n8n-workflows", wf + ".json")
-        with open(path) as f:
-            raw = json.load(f)
+        body, _, _ = load_workflow_plan(wf, name_to_id)
+        match = existing_by_name.get(body["name"])
+        if match and not force:
+            current = api(base, key, "GET", f"/api/v1/workflows/{match['id']}")
+            if workflow_fingerprint(current) != workflow_fingerprint(body):
+                drift.append(body["name"])
+    if drift:
+        raise SystemExit(
+            "[x] workflow live berbeda dari snapshot; tidak ditimpa. "
+            "Jalankan ulang dengan --force-workflow-update hanya bila intentional: "
+            + ", ".join(drift)
+        )
 
-        # File repo kadang dibungkus list (export UI) — ambil objeknya.
-        if isinstance(raw, list):
-            raw = raw[0]
 
-        nodes = raw.get("nodes", [])
-        remapped = remap_credentials(nodes, name_to_id)
+def import_workflows(base, key, name_to_id, dry=False, force=False):
+    plans = []
+    results = []
+    if not dry:
+        existing = api(base, key, "GET", "/api/v1/workflows?limit=250")
+    else:
+        existing = {"data": []}
+    existing_by_name = {item.get("name"): item for item in existing.get("data", [])}
+    drift = []
 
-        body = {
-            "name": raw.get("name", wf),
-            "nodes": nodes,
-            "connections": raw.get("connections", {}),
-            "settings": raw.get("settings", {"executionOrder": "v1"}),
-        }
-        want_active = bool(raw.get("active"))
+    for wf in WORKFLOWS:
+        body, remapped, want_active = load_workflow_plan(wf, name_to_id)
+        match = existing_by_name.get(body["name"])
+        wid = match.get("id") if match else None
+        if match and not force:
+            current = api(base, key, "GET", f"/api/v1/workflows/{wid}")
+            if workflow_fingerprint(current) != workflow_fingerprint(body):
+                drift.append(body["name"])
+        plans.append((wf, body, remapped, want_active, wid))
 
-        # Idempoten: kalau workflow dengan nama sama sudah ada -> update.
-        # (dry-run: lewati lookup API, cukup rencana)
-        match = None
-        if not dry:
-            existing = api(base, key, "GET", "/api/v1/workflows?limit=250")
-            match = next(
-                (w for w in existing.get("data", []) if w.get("name") == body["name"]),
-                None,
-            )
-        if match:
-            wid = match["id"]
+    if drift:
+        raise SystemExit(
+            "[x] workflow live berbeda dari snapshot; tidak ditimpa. "
+            "Jalankan ulang dengan --force-workflow-update hanya bila Intentional: "
+            + ", ".join(drift)
+        )
+
+    for wf, body, remapped, want_active, wid in plans:
+        if wid:
             api(base, key, "PUT", f"/api/v1/workflows/{wid}", body)
             results.append((wf, "updated", remapped, wid))
+        elif dry:
+            results.append((wf, "create", remapped, None))
         else:
-            if dry:
-                results.append((wf, "create", remapped, None))
-            else:
-                created = api(base, key, "POST", "/api/v1/workflows", body)
-                wid = created.get("id")
-                results.append((wf, "created", remapped, wid))
+            created = api(base, key, "POST", "/api/v1/workflows", body)
+            wid = created.get("id")
+            results.append((wf, "created", remapped, wid))
 
-        # Aktifkan (trigger webhook/schedule butuh active)
         if not dry and want_active and wid:
             try:
                 cur = api(base, key, "GET", f"/api/v1/workflows/{wid}")
                 if not cur.get("active"):
-                    # PUT active butuh full object versi terbaru (versionId dsb.)
                     cur.update(body)
                     cur["active"] = True
                     cur.pop("shared", None)
@@ -314,6 +365,11 @@ def main():
     ap.add_argument(
         "--dry-run", action="store_true", help="tanpa N8N_OWNER_API_KEY: cetak rencana"
     )
+    ap.add_argument(
+        "--force-workflow-update",
+        action="store_true",
+        help="timpa workflow live yang berbeda dari snapshot",
+    )
     args = ap.parse_args()
 
     env = load_env()
@@ -327,6 +383,14 @@ def main():
 
     print(f"n8n: {base}  mode: {'DRY-RUN' if dry else 'LIVE'}")
     name_to_id = {}
+    if do_wfs and not dry:
+        listing = api(base, key, "GET", "/api/v1/credentials?limit=250")
+        for credential in listing.get("data", []):
+            name_to_id[credential["name"]] = (
+                credential.get("type", ""),
+                credential["id"],
+            )
+        preflight_workflows(base, key, name_to_id, force=args.force_workflow_update)
     if do_creds:
         print("== credentials ==")
         name_to_id = push_credentials(base, key, env, vt_key, dry=dry)
@@ -337,7 +401,13 @@ def main():
             listing = api(base, key, "GET", "/api/v1/credentials?limit=250")
             for c in listing.get("data", []):
                 name_to_id[c["name"]] = (c.get("type", ""), c["id"])
-        results = import_workflows(base, key, name_to_id, dry=dry)
+        results = import_workflows(
+            base,
+            key,
+            name_to_id,
+            dry=dry,
+            force=args.force_workflow_update,
+        )
         for wf, action, remapped, wid in results:
             print(f"  [{action}] {wf}  (remap {remapped} credential ref)")
         if dry:

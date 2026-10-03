@@ -9,7 +9,7 @@
 #   a) build di mesin ini:      agent-rs/build-deb.sh  (butuh rustc/cargo)
 #   b) scp dari mesin build:    scp agent-rs/target/x86_64-unknown-linux-musl/release/soar-agent target:/tmp/
 #      -> script ini otomatis pakai /tmp/soar-agent kalau ada
-#   c) .deb via package manager: sudo apt install ./soar-agent_0.1.0_amd64.deb
+#   c) .deb via package manager: sudo apt install ./soar-agent_0.3.0_amd64.deb
 #      -> tidak butuh script ini sama sekali (systemd unit sudah dibawa .deb)
 #
 # Env yang dipahami:
@@ -17,6 +17,8 @@
 #   AGENT_NAME  nama tampil di dashboard             [default: rust-agent-$HOSTNAME]
 #   SERVER      IP server SOAR (Tailscale/LAN)       [default: 100.95.198.108]
 #   WATCH       path dipantau, dipisah koma          [default: ~/Downloads,~/Desktop,/run/media]
+#   FLEET_AGENT_POLL_TOKEN  token polling dari server [wajib]
+#   BIN_URL     URL binary jika tidak ada BIN_SRC    [opsional]
 #
 # ponytail: satu binary musl statis + satu unit systemd, tanpa enroll/key/manager —
 # inilah klaim "setup lintas-device dipermudah" untuk 100 workstation.
@@ -27,11 +29,15 @@ AGENT_ID="${AGENT_ID:-}"
 AGENT_NAME="${AGENT_NAME:-rust-agent-$(hostname | tr 'A-Z' 'a-z' | cut -c1-20)}"
 SERVER="${SERVER:-100.73.91.17}"
 WATCH="${WATCH:-}"
+POLL_TOKEN="${FLEET_AGENT_POLL_TOKEN:-}"
 BIN_SRC="${BIN_SRC:-/tmp/soar-agent}"
+BIN_URL="${BIN_URL:-}"
 REPO_HINT="(clone repo SOAR, lihat agent-rs/README.md)"
 
 [ "$(id -u)" = 0 ] || { echo "[x] jalankan sebagai root (sudo)"; exit 1; }
 [ -n "$AGENT_ID" ] || { echo "[x] AGENT_ID wajib. Contoh: sudo AGENT_ID=004 SERVER=100.95.198.108 bash agent-install.sh"; exit 1; }
+[ "${#POLL_TOKEN}" -ge 32 ] || { echo "[x] FLEET_AGENT_POLL_TOKEN wajib diisi (minimal 32 karakter)"; exit 1; }
+[[ "$POLL_TOKEN" != *[[:space:]]* ]] || { echo "[x] FLEET_AGENT_POLL_TOKEN tidak boleh berisi whitespace"; exit 1; }
 
 echo "[1/5] cari binary soar-agent"
 if [ ! -f "$BIN_SRC" ]; then
@@ -40,11 +46,10 @@ if [ ! -f "$BIN_SRC" ]; then
     [ -f "$c" ] && BIN_SRC="$c" && break
   done
 fi
-# Kalau belum ada di lokal, download dari GitHub Release
-if [ ! -f "$BIN_SRC" ] && command -v curl >/dev/null 2>&1; then
-  echo "      tidak ada di lokal, download dari GitHub release..."
-  curl -fSL -o /tmp/soar-agent \
-    https://github.com/ravi-arnan/soar-project/releases/download/v0.2.0/soar-agent \
+# Kalau binary belum ada, hanya download dari URL yang ditentukan operator.
+if [ ! -f "$BIN_SRC" ] && [ -n "$BIN_URL" ] && command -v curl >/dev/null 2>&1; then
+  echo "      tidak ada di lokal, download dari BIN_URL..."
+  curl -fSL -o /tmp/soar-agent "$BIN_URL" \
     && BIN_SRC=/tmp/soar-agent
 fi
 if [ ! -f "$BIN_SRC" ]; then
@@ -59,6 +64,11 @@ mkdir -p /var/ossec/quarantine
 chmod 750 /var/ossec/quarantine
 
 echo "[3/5] tulis systemd unit (agent-id=$AGENT_ID name=$AGENT_NAME server=$SERVER)"
+install -d -m 700 /etc/soar-agent
+umask 077
+printf '%s\n' "$POLL_TOKEN" > /etc/soar-agent/fleet.token
+printf 'SOAR_FLEET_POLL_TOKEN_FILE=/etc/soar-agent/fleet.token\n' > /etc/soar-agent/fleet.env
+chmod 600 /etc/soar-agent/fleet.token /etc/soar-agent/fleet.env
 ARGS="--webhook http://${SERVER}:5678/webhook/wazuh-alert"
 ARGS+=" --agent-id ${AGENT_ID} --agent-name ${AGENT_NAME}"
 ARGS+=" --fleet-url http://${SERVER}:8080/api/heartbeat"
@@ -75,6 +85,7 @@ ExecStart=/usr/local/bin/soar-agent ${ARGS}
 Restart=always
 RestartSec=5
 Environment=RUST_LOG=info
+EnvironmentFile=/etc/soar-agent/fleet.env
 
 [Install]
 WantedBy=multi-user.target
@@ -101,5 +112,5 @@ cat <<EOF
 
 Selesai. Test:  printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}\$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!\$H+H*' > ~/Downloads/eicar.com
 Lihat:          journalctl -u soar-agent -f
-Uninstall:      systemctl disable --now soar-agent && rm -f /etc/systemd/system/soar-agent.service /usr/local/bin/soar-agent
+Uninstall:      systemctl disable --now soar-agent && rm -f /etc/systemd/system/soar-agent.service /usr/local/bin/soar-agent /etc/soar-agent/fleet.env /etc/soar-agent/fleet.token
 EOF

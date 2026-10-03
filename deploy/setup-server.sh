@@ -13,7 +13,7 @@
 #      Sisanya (encryption key, hash Caddy) digenerate otomatis.
 #      VirusTotal key TIDAK lewat .env — diambil di Step 7 oleh n8n-setup.py
 #      (dari VT_API_KEY env / prompt) langsung jadi credential n8n.
-#   3. Clone wazuh-docker v4.9.2 + generate sertifikat indexer (kalau belum ada)
+#   3. Clone wazuh-docker v4.10.5 + generate sertifikat indexer (kalau belum ada)
 #   4. docker compose up Wazuh stack (manager/indexer/dashboard) + tunggu sehat
 #   5. docker compose up stack inti (n8n + tg-callback-poller + health-monitor + fleet-monitor)
 #   6. Deploy integrasi ke Wazuh manager via Ansible (kalau ada) — kalau tidak,
@@ -39,7 +39,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 WAZUH_DIR="$REPO_ROOT/wazuh-docker"
-WAZUH_VERSION="v4.9.2"
+WAZUH_VERSION="v4.10.5"
 ENV_FILE="$REPO_ROOT/.env"
 ASSUME_YES=0
 SKIP_WAZUH=0
@@ -93,7 +93,7 @@ else
 fi
 
 : > "$ENV_FILE.tmp"
-grep -vE '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|GSB_API_KEY|URLSCAN_API_KEY|GEMINI_API_KEY|WAZUH_API_PASS|N8N_ENCRYPTION_KEY|CADDY_BASIC_AUTH_USER|CADDY_BASIC_AUTH_HASH)=' "$ENV_FILE" >> "$ENV_FILE.tmp" 2>/dev/null || true
+grep -vE '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|GSB_API_KEY|URLSCAN_API_KEY|GEMINI_API_KEY|WAZUH_API_PASS|N8N_ENCRYPTION_KEY|CADDY_BASIC_AUTH_USER|CADDY_BASIC_AUTH_HASH|FLEET_COMMAND_TOKEN|FLEET_AGENT_POLL_TOKENS_JSON|DASHBOARD_LOGIN_TOKEN|DASHBOARD_ALLOWED_ORIGINS)=' "$ENV_FILE" >> "$ENV_FILE.tmp" 2>/dev/null || true
 
 ask TELEGRAM_BOT_TOKEN "Token bot Telegram (dari @BotFather, format 123456:ABC-...)" ""
 ask TELEGRAM_CHAT_ID   "Chat ID tujuan alert (dari @get_id_bot; grup = -100...)" ""
@@ -123,6 +123,44 @@ if [ -z "$CUR_CADDY_HASH" ] || [[ "$CUR_CADDY_HASH" == *replace-with-caddy-hash*
 else
   printf 'CADDY_BASIC_AUTH_HASH=%s\n' "$CUR_CADDY_HASH" >> "$ENV_FILE.tmp"
 fi
+ensure_secret() {
+  local var="$1" current
+  current="$(grep -E "^${var}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+  case "$current" in
+    ""|your-*|isi-*|replace-*|generate-*) current="$(openssl rand -hex 32)" ;;
+  esac
+  if [ "${#current}" -lt 32 ]; then
+    current="$(openssl rand -hex 32)"
+  fi
+  printf '%s=%s\n' "$var" "$current" >> "$ENV_FILE.tmp"
+}
+ensure_secret FLEET_COMMAND_TOKEN
+ensure_secret DASHBOARD_LOGIN_TOKEN
+ensure_agent_tokens() {
+  local current ids
+  current="$(grep -E '^FLEET_AGENT_POLL_TOKENS_JSON=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+  if [[ -z "$current" || "$current" == *"your-"* || "$current" == *"isi-dengan"* || "$current" == *"replace-"* || "$current" == *"generate-"* ]]; then
+    ids="${FLEET_AGENT_IDS:-001 002 003 005 006 007 008 009 010}"
+    current="{"
+    local first=1
+    for id in $ids; do
+      case "$id" in
+        ""|*[!A-Za-z0-9._-]*) die "FLEET_AGENT_IDS tidak valid: $id" ;;
+      esac
+      if [ "$first" -eq 0 ]; then current+=","; fi
+      current+="\"$id\":\"$(openssl rand -hex 32)\""
+      first=0
+    done
+    current+="}"
+  fi
+  printf 'FLEET_AGENT_POLL_TOKENS_JSON=%s\n' "$current" >> "$ENV_FILE.tmp"
+}
+ensure_agent_tokens
+CUR_DASHBOARD_ORIGINS="$(grep -E '^DASHBOARD_ALLOWED_ORIGINS=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+if [ -z "$CUR_DASHBOARD_ORIGINS" ]; then
+  CUR_DASHBOARD_ORIGINS="http://localhost:3000,http://127.0.0.1:3000,https://soar.raviarnan.dev"
+fi
+printf 'DASHBOARD_ALLOWED_ORIGINS=%s\n' "$CUR_DASHBOARD_ORIGINS" >> "$ENV_FILE.tmp"
 mv "$ENV_FILE.tmp" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 log ".env siap (mode 600, gitignored)"
@@ -182,11 +220,11 @@ fi
 N8N_BASE="${N8N_URL:-http://127.0.0.1:5678}"
 if [ -n "${N8N_OWNER_API_KEY:-}" ]; then
   log "Step 7/7 — sinkron credentials + import workflow (deploy/n8n-setup.py)"
-  VT_ARG=""
-  [ -n "${VT_API_KEY:-}" ] && VT_ARG="--vt-key ${VT_API_KEY}"
-  if python3 "$REPO_ROOT/deploy/n8n-setup.py" --url "$N8N_BASE" --all $VT_ARG; then
-    log "  credentials (Telegram/Wazuh/GSB/urlscan/VT) + 4 workflow tersinkron,"
-    log "  credential ID di-remap by name -> node tidak merah, tanpa setup UI."
+  if python3 "$REPO_ROOT/deploy/n8n-setup.py" --url "$N8N_BASE" --all; then
+     log "  credentials (Telegram/Wazuh/GSB/urlscan/VT) + 4 workflow tersinkron,"
+     log "  credential ID di-remap by name -> node tidak merah, tanpa setup UI."
+     log "  Workflow live yang berbeda dari snapshot tidak ditimpa."
+
   else
     warn "  n8n-setup gagal — cek N8N_OWNER_API_KEY, lalu jalankan ulang:"
     warn "    N8N_OWNER_API_KEY=xxx python3 deploy/n8n-setup.py --all"
