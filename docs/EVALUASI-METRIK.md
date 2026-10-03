@@ -1,7 +1,7 @@
 # Evaluasi Kuantitatif Sistem SOAR
 
 Pengukuran **data nyata** dari sistem live untuk membuktikan klaim efektivitas — bukan estimasi.
-Proyek: *Implementasi Sistem SOAR Open-Source Berbasis n8n…* — Ravi Arnan Irianto (2305551076).
+Proyek: *Implementasi Sistem SOAR Open-Source Berbasis n8n… (Studi Kasus: CV Bali Handmade)* — Ravi Arnan Irianto (2305551076).
 
 ## 1. Tujuan & metrik
 

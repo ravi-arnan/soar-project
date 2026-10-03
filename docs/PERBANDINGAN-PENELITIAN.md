@@ -1,6 +1,6 @@
 # Tabel Perbandingan dengan Penelitian / Karya Sejenis
 
-**Karya ini:** *Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop* — Ravi Arnan Irianto (2305551076).
+**Karya ini:** *Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)* — Ravi Arnan Irianto (2305551076).
 
 > Legenda: ✔ = ada · ✘ = tidak ada · **1-arah** = notifikasi saja (bukan interaktif) · – = tidak disebutkan pada sumber publik.
 > Catatan: detail pada baris pembanding didasarkan pada deskripsi publik (jurnal/blog/repo) dan dapat berbeda dari implementasi aktual.

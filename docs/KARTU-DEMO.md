@@ -1,6 +1,6 @@
 # KARTU CONTEKAN DEMO — SOAR Open-Source
 
-**Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop**
+**Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)**
 
 Ravi Arnan Irianto (2305551076)
 

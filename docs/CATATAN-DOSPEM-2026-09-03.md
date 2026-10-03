@@ -2,7 +2,7 @@
 
 Dosen: I Nyoman Piarsa
 Mahasiswa: Ravi Arnan Irianto (2305551076) + Ezza Putra Wibawa + Chalimus Candra
-Judul: Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop
+Judul: Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)
 
 ## 1. Ringkasan alur yang disepakati (versi bahasa awam)
 
