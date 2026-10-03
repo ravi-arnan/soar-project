@@ -2,7 +2,7 @@
 
 # SOAR Open-Source (Wazuh + n8n + HITL)
 
-**Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop**
+**Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)**
 
 [![Status](https://img.shields.io/badge/status-active-success)](#)
 [![Wazuh](https://img.shields.io/badge/Wazuh-4.10.5-005792)](https://wazuh.com)
@@ -116,11 +116,13 @@ Agent memantau filesystem; setiap hash diperiksa ke sumber intel, dan keputusan 
 bash deploy/setup-server.sh
 
 # 2. Workstation — pilih salah satu jalur
-sudo apt install ./soar-agent_0.1.0_amd64.deb              # Linux, via .deb
-sudo AGENT_ID=004 AGENT_NAME=laptop-budi bash deploy/agent-install.sh
+sudo apt install ./soar-agent_0.3.0_amd64.deb              # Linux, via .deb
+sudo install -d -m 700 /etc/soar-agent
+sudo bash -c 'umask 077; read -rsp "Poll token: " t; printf "%s\\n" "$t" > /etc/soar-agent/fleet.token'
+sudo AGENT_ID=004 AGENT_NAME=laptop-budi FLEET_AGENT_POLL_TOKEN=... bash deploy/agent-install.sh
 ansible-playbook -i deploy/ansible/inventory-agents.ini \
   deploy/ansible/deploy-agents.yml                          # rollout fleet
-powershell -File deploy/install-agent-windows.ps1           # Windows
+powershell -File deploy/install-agent-windows.ps1           # set BINARY_URL HTTPS + SOAR_FLEET_POLL_TOKEN
 
 #    Inventory Ansible: salin `deploy/ansible/inventory-agents.ini.example`
 #    lalu isi daftar host dan agent_id-nya.
@@ -135,7 +137,10 @@ bash scripts/test-phishing.sh "https://www.google.com/"      # hasil: AMAN
 
 > **Konfigurasi:** salin `.env.example` ke `.env` dan isi API key; `deploy/n8n-setup.py`
 > mendaftarkannya sebagai credential n8n (ID credential di-remap by name, jadi tidak ada
-> node merah setelah import).
+> node merah setelah import). `FLEET_COMMAND_TOKEN` dan
+> `FLEET_AGENT_POLL_TOKENS_JSON` wajib diisi sebelum fleet-monitor menerima
+> command atau agent memollnya. `DASHBOARD_LOGIN_TOKEN` dipakai saat browser
+> meminta sesi dashboard sebelum mengirim command.
 >
 > **Active Response phishing:** `sudo bash scripts/deploy-block-domain.sh` (sekali).
 
@@ -145,7 +150,7 @@ bash scripts/test-phishing.sh "https://www.google.com/"      # hasil: AMAN
 
 | Cara | Alamat | Catatan |
 |------|--------|---------|
-| Dashboard web | `http://<server>:3000` | GUI utama (UI bergaya Wazuh): status agent, severity, event, detail agent |
+| Dashboard web | `http://127.0.0.1:3000` | GUI utama (UI bergaya Wazuh): status agent, severity, event, detail agent |
 | API monitoring | `http://<server>:8080` | `/api/fleet`, `/api/events`, `/api/scan-results`, `/api/vt-cache` |
 | TUI terminal | `python3 scripts/fleet-tui.py` | Kembaran dashboard untuk sesi SSH (stdlib curses) |
 
@@ -204,7 +209,7 @@ soar-project/
 
 | Layanan | URL |
 |---------|-----|
-| Dashboard SOAR | `http://<server>:3000` |
+| Dashboard SOAR | `http://127.0.0.1:3000` |
 | API fleet / monitoring | `http://<server>:8080` |
 | n8n editor | `http://<server>:5678` |
 | Webhook malware | `http://<server>:5678/webhook/wazuh-alert` |
