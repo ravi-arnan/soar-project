@@ -1,6 +1,6 @@
 [package]
 name = "soar-agent"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Agen ringan SOAR Rust - pantau file, hitung hash, POST ke n8n (alternatif Wazuh Agent)"
 license = "GPL-2.0"

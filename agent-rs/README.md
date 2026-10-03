@@ -6,8 +6,10 @@ Agen ringan SOAR alternatif Wazuh Agent. 1 binary **5.3 MB** (stripped, GNU) RSS
 
 ```bash
 ./build-deb.sh                                # build musl + bungkus .deb
-sudo apt install ./dist/soar-agent_0.1.0_amd64.deb   # di tiap workstation
+sudo apt install ./dist/soar-agent_0.3.0_amd64.deb   # di tiap workstation
 sudo nano /etc/default/soar-agent             # isi AGENT_ID, AGENT_NAME, SERVER
+sudo install -d -m 700 /etc/soar-agent
+sudo bash -c 'umask 077; read -rsp "Poll token: " t; printf "%s\\n" "$t" > /etc/soar-agent/fleet.token'
 sudo systemctl enable --now soar-agent
 ```
 
@@ -44,7 +46,8 @@ Catatan toolchain (kejadian 14 Sep, jangan diulang):
 
 ```bash
 # default watch ~/Downloads + ~/Desktop + USB /run/media/<user> (dynamic scan 2s, recursive), webhook Tailscale plan.md:5
-RUST_LOG=info ./target/release/soar-agent --webhook http://100.73.91.17:5678/webhook/wazuh-alert --agent-id 003 --agent-name rust-agent-ravi \
+printf '%s' 'token-min-32-karakter' > /tmp/soar-fleet-token && chmod 600 /tmp/soar-fleet-token
+SOAR_FLEET_POLL_TOKEN_FILE=/tmp/soar-fleet-token RUST_LOG=info ./target/release/soar-agent --webhook http://100.73.91.17:5678/webhook/wazuh-alert --agent-id 003 --agent-name rust-agent-ravi \
   --fleet-url http://100.73.91.17:8080/api/heartbeat --heartbeat-secs 60
 
 # custom watch
@@ -85,18 +88,25 @@ printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' 
 Agent listen `127.0.0.1:8787/quarantine` (alternatif Wazuh Active Response `docs/FLOW.md:299`):
 
 ```bash
-curl -X POST http://127.0.0.1:8787/quarantine -H 'Content-Type: application/json' -d '{"path":"/home/ravi/Downloads/eicar.com"}'
+curl -X POST http://127.0.0.1:8787/quarantine -H "Authorization: Bearer $(cat /etc/soar-agent/fleet.token)" -H 'Content-Type: application/json' -d '{"path":"/home/ravi/Downloads/eicar.com"}'
 ```
 
 n8n callback handler bisa panggil endpoint ini sebagai alternatif `PUT /active-response`.
 
 ## Systemd
 
+`SOAR_FLEET_POLL_TOKEN_FILE` wajib menunjuk file token mode 0600. Isi file
+harus cocok dengan entry agent_id di `FLEET_AGENT_POLL_TOKENS_JSON` server.
+Installer Linux, Ansible, NixOS, dan Windows sudah menyediakan jalur ini.
+
 Lihat `soar-agent.service` di repo.
 
 ```bash
 sudo cp target/release/soar-agent /usr/local/bin/soar-agent
 sudo cp soar-agent.service /etc/systemd/system/
+sudo cp dist/soar-agent.default /etc/default/soar-agent
+sudo install -d -m 700 /etc/soar-agent
+sudo bash -c 'umask 077; read -rsp "Poll token: " t; printf "%s\\n" "$t" > /etc/soar-agent/fleet.token'
 sudo systemctl daemon-reload
 sudo systemctl enable --now soar-agent
 journalctl -u soar-agent -f

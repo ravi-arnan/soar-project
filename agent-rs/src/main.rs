@@ -37,6 +37,9 @@ struct Args {
     #[arg(long, default_value = "http://100.73.91.17:8080/api/heartbeat")]
     fleet_url: String,
 
+    #[arg(long, default_value = "")]
+    fleet_poll_token_file: String,
+
     #[arg(long, default_value = "60")]
     heartbeat_secs: u64,
 }
@@ -351,6 +354,29 @@ fn count_dirs_bounded(root: &Path, limit: usize) -> usize {
 /// disk game/Wine (GamesRavi) ratusan ribu -> tolak dengan warn, bukan hang.
 const MAX_WATCH_DIRS: usize = 5000;
 
+fn command_target_allowed(target: &Path, roots: &[PathBuf], action: &str) -> bool {
+    let Ok(metadata) = std::fs::symlink_metadata(target) else {
+        return false;
+    };
+    if metadata.file_type().is_symlink() {
+        return false;
+    }
+    if action == "quarantine" && !metadata.is_file() {
+        return false;
+    }
+    if action == "scan" && !metadata.is_dir() {
+        return false;
+    }
+    let Ok(resolved_target) = std::fs::canonicalize(target) else {
+        return false;
+    };
+    roots.iter().any(|root| {
+        std::fs::canonicalize(root)
+            .map(|resolved_root| resolved_target.starts_with(resolved_root))
+            .unwrap_or(false)
+    })
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -483,9 +509,34 @@ async fn main() -> Result<()> {
     // Quarantine HTTP endpoint (alternatif Wazuh Active Response)
     // ponytail: minimal, tidak pakai axum dulu, pakai tokio mpsc sederhana
     // Untuk POC minggu ini cukup, nanti bisa ganti axum jika butuh.
+    let fleet_poll_token_file = if args.fleet_poll_token_file.is_empty() {
+        std::env::var("SOAR_FLEET_POLL_TOKEN_FILE")
+            .map_err(|_| anyhow::anyhow!("SOAR_FLEET_POLL_TOKEN_FILE wajib diisi"))?
+    } else {
+        args.fleet_poll_token_file.clone()
+    };
+    let fleet_poll_token = std::fs::read_to_string(&fleet_poll_token_file)
+        .map_err(|e| anyhow::anyhow!("gagal baca {}: {}", fleet_poll_token_file, e))?
+        .trim()
+        .to_string();
+    if fleet_poll_token.len() < 32 {
+        anyhow::bail!("SOAR_FLEET_POLL_TOKEN_FILE kosong atau terlalu pendek");
+    }
     let quarantine_port = args.listen_port;
+    let command_roots = watch_paths.clone();
+    let command_mounts = watched_mounts.clone();
+    let local_roots = command_roots.clone();
+    let local_mounts = command_mounts.clone();
+    let local_quarantine_token = fleet_poll_token.clone();
     tokio::spawn(async move {
-        if let Err(e) = quarantine_server(quarantine_port).await {
+        if let Err(e) = quarantine_server(
+            quarantine_port,
+            local_quarantine_token,
+            local_roots,
+            local_mounts,
+        )
+        .await
+        {
             warn!(error = %e, "quarantine server gagal bind (port sudah dipakai?), agent tetap jalan tanpa quarantine HTTP");
         }
     });
@@ -497,6 +548,7 @@ async fn main() -> Result<()> {
     let hb_name = args.agent_name.clone();
     let hb_interval = args.heartbeat_secs;
     tokio::spawn(async move {
+        let poll_token = fleet_poll_token.clone();
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(5))
             .build();
@@ -532,6 +584,10 @@ async fn main() -> Result<()> {
                 "version": env!("CARGO_PKG_VERSION"),
                 "os": os,
                 "ip": "",
+                "watch_paths": watch_paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>(),
                 "cpu_pct": (cpu_pct * 100.0).round() / 100.0,
                 "ram_gb": {
                     "total": (ram_total_gb * 100.0).round() / 100.0,
@@ -550,8 +606,16 @@ async fn main() -> Result<()> {
                 .trim_end_matches("/api/heartbeat")
                 .trim_end_matches('/');
             let commands_url = format!("{}/api/commands?agent_id={}", base, hb_id);
-            match client.get(&commands_url).send().await {
-                Ok(resp) => match resp.json::<serde_json::Value>().await {
+            match client
+                .get(&commands_url)
+                .bearer_auth(poll_token.as_str())
+                .send()
+                .await
+            {
+                Ok(resp) if resp.status() == reqwest::StatusCode::UNAUTHORIZED => {
+                    warn!("poll commands ditolak: token agent tidak valid")
+                }
+                Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
                     Ok(v) => {
                         if let Some(cmds) = v.get("commands").and_then(|c| c.as_array()) {
                             for cmd in cmds {
@@ -559,6 +623,14 @@ async fn main() -> Result<()> {
                                 let target = cmd.get("target").and_then(|t| t.as_str()).unwrap_or("");
                                 if target.is_empty() {
                                     continue;
+                                }
+                                if action == "quarantine" || action == "scan" {
+                                    let mut roots = command_roots.clone();
+                                    roots.extend(command_mounts.lock().unwrap().iter().cloned());
+                                    if !command_target_allowed(Path::new(target), &roots, action) {
+                                        warn!(action = %action, target = %target, "target di luar watch root");
+                                        continue;
+                                    }
                                 }
                                 match action {
                                     "quarantine" => match do_quarantine(target) {
@@ -570,9 +642,6 @@ async fn main() -> Result<()> {
                                         Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
                                     },
                                     "scan" => {
-                                        // Scan on-demand bisa lama (hash ribuan file):
-                                        // jalankan di task sendiri supaya heartbeat
-                                        // tetap tepat waktu (TTL 120 detik).
                                         let c = client.clone();
                                         let b = base.to_string();
                                         let id = hb_id.clone();
@@ -592,6 +661,7 @@ async fn main() -> Result<()> {
                     }
                     Err(e) => warn!(error = %e, "parse commands gagal"),
                 },
+                Ok(resp) => warn!(status = %resp.status(), "poll commands ditolak"),
                 Err(e) => warn!(error = %e, "poll commands gagal"),
             }
             tokio::time::sleep(Duration::from_secs(hb_interval)).await;
@@ -689,7 +759,12 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn quarantine_server(port: u16) -> Result<()> {
+async fn quarantine_server(
+    port: u16,
+    token: String,
+    allowed_roots: Vec<PathBuf>,
+    watched_mounts: Arc<Mutex<Vec<PathBuf>>>,
+) -> Result<()> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
@@ -699,6 +774,9 @@ async fn quarantine_server(port: u16) -> Result<()> {
 
     loop {
         let (mut socket, _) = listener.accept().await?;
+        let request_token = token.clone();
+        let request_roots = allowed_roots.clone();
+        let request_mounts = watched_mounts.clone();
         tokio::spawn(async move {
             let mut buf = vec![0u8; 4096];
             let n = match socket.read(&mut buf).await {
@@ -706,23 +784,37 @@ async fn quarantine_server(port: u16) -> Result<()> {
                 Err(_) => return,
             };
             let req = String::from_utf8_lossy(&buf[..n]);
-            // Cari path dari body JSON {"path": "..."}
-            let path_opt = extract_path(&req);
-            let (status, body) = match path_opt {
-                Some(p) => match do_quarantine(&p) {
-                    Ok(dest) => (
-                        "200 OK",
-                        serde_json::json!({"status": "quarantined", "dest": dest}).to_string(),
+            let (status, body) = if !request_has_bearer(&req, &request_token) {
+                (
+                    "401 Unauthorized",
+                    serde_json::json!({"error": "unauthorized"}).to_string(),
+                )
+            } else {
+                let path_opt = extract_path(&req);
+                match path_opt {
+                    Some(p) if {
+                        let mut roots = request_roots.clone();
+                        roots.extend(request_mounts.lock().unwrap().iter().cloned());
+                        command_target_allowed(Path::new(&p), &roots, "quarantine")
+                    } => match do_quarantine(&p) {
+                        Ok(dest) => (
+                            "200 OK",
+                            serde_json::json!({"status": "quarantined", "dest": dest}).to_string(),
+                        ),
+                        Err(e) => (
+                            "500 Internal Server Error",
+                            serde_json::json!({"error": e.to_string()}).to_string(),
+                        ),
+                    },
+                    Some(_) => (
+                        "400 Bad Request",
+                        serde_json::json!({"error": "target di luar watch root"}).to_string(),
                     ),
-                    Err(e) => (
-                        "500 Internal Server Error",
-                        serde_json::json!({"error": e.to_string()}).to_string(),
+                    None => (
+                        "400 Bad Request",
+                        serde_json::json!({"error": "need {\"path\": \"...\"}"}).to_string(),
                     ),
-                },
-                None => (
-                    "400 Bad Request",
-                    serde_json::json!({"error": "need {\"path\": \"...\"}"}).to_string(),
-                ),
+                }
             };
             let resp = format!(
                 "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
@@ -733,6 +825,15 @@ async fn quarantine_server(port: u16) -> Result<()> {
             let _ = socket.write_all(resp.as_bytes()).await;
         });
     }
+}
+
+fn request_has_bearer(request: &str, token: &str) -> bool {
+    request.lines().any(|line| {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        name.eq_ignore_ascii_case("authorization") && value.trim() == format!("Bearer {token}")
+    })
 }
 
 fn extract_path(req: &str) -> Option<String> {
@@ -750,6 +851,7 @@ fn do_sinkhole(domain: &str) -> Result<String> {
     if domain.is_empty()
         || domain.len() > 253
         || domain.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
+        || domain.parse::<std::net::IpAddr>().is_ok()
         || !domain.contains('.')
     {
         anyhow::bail!("domain tidak valid: {}", domain);
@@ -1081,5 +1183,38 @@ mod tests {
         assert!(none.is_empty());
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn local_quarantine_request_memerlukan_bearer() {
+        let request = "POST /quarantine HTTP/1.1\r\nAuthorization: Bearer token-123\r\n\r\n{}";
+        assert!(request_has_bearer(request, "token-123"));
+        assert!(!request_has_bearer(request, "token-456"));
+        assert!(!request_has_bearer("POST /quarantine HTTP/1.1\r\n\r\n{}", "token-123"));
+    }
+
+    #[test]
+    fn command_target_hanya_boleh_di_watch_root() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/soar-test-command-root");
+        let outside = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/soar-test-command-outside");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(&outside);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("sample.bin");
+        std::fs::write(&file, b"x").unwrap();
+        std::fs::write(&outside, b"x").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&file, root.join("link.bin")).ok();
+
+        let roots = vec![root.clone()];
+        assert!(command_target_allowed(&file, &roots, "quarantine"));
+        assert!(command_target_allowed(&root, &roots, "scan"));
+        assert!(!command_target_allowed(&outside, &roots, "quarantine"));
+        assert!(!command_target_allowed(&root, &roots, "quarantine"));
+        #[cfg(unix)]
+        assert!(!command_target_allowed(&root.join("link.bin"), &roots, "quarantine"));
+
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_file(&outside).ok();
     }
 }

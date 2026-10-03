@@ -5,7 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/soar-agent --webhook http://100.95.198.108:5678/webhook/wazuh-alert --agent-id 003 --agent-name rust-agent-ravi
+EnvironmentFile=/etc/default/soar-agent
+ExecStart=/usr/local/bin/soar-agent --webhook http://${SERVER}:5678/webhook/wazuh-alert --agent-id ${AGENT_ID} --agent-name ${AGENT_NAME} --fleet-url http://${SERVER}:8080/api/heartbeat $WATCH_ARGS
 Restart=always
 RestartSec=5
 # ponytail: tanpa Docker, footprint 2-5 MB, cocok untuk 100 workstation
