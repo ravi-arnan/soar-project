@@ -85,6 +85,72 @@ function ResourceChart({ agentId }: { agentId: string }) {
   );
 }
 
+function QuarantinePanel({ agentId, canQuarantine, events }: { agentId: string; canQuarantine: boolean; events: FleetEvent[] }) {
+  const [state, setState] = useState('');
+  const recentPaths = Array.from(new Set(events.filter((e) => e.path).map((e) => e.path))).slice(0, 8);
+  const [pick, setPick] = useState('');
+
+  async function run() {
+    if (!pick) {
+      setState('pilih file dulu');
+      return;
+    }
+    setState('mengirim...');
+    try {
+      const r = await postCommand({ agent_id: agentId, action: 'quarantine', target: pick });
+      const j = await r.json();
+      setState(
+        r.ok && j.status === 'queued'
+          ? 'diantrekan ✓ — menunggu agent poll (≤60 dtk)'
+          : `gagal: ${j.error || r.status}`
+      );
+    } catch {
+      setState('gagal: jaringan');
+    }
+  }
+
+  return (
+    <div className="space-y-3 text-[12px]">
+      <div className="flex flex-wrap items-center gap-2">
+        {recentPaths.length > 0 ? (
+          <select
+            value={pick}
+            onChange={(e) => setPick(e.target.value)}
+            className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[11px] bg-white max-w-[420px]"
+          >
+            <option value="">Pilih file dari event terakhir…</option>
+            {recentPaths.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-[11px] text-[#8A94A6]">Tidak ada path dari event; ketik manual di bawah.</span>
+        )}
+        <button
+          onClick={run}
+          disabled={!canQuarantine}
+          className={`px-3 py-1.5 rounded border text-[11px] font-medium transition-colors ${
+            canQuarantine
+              ? 'border-[#BD271E] text-[#BD271E] hover:bg-[#FDF3F2]'
+              : 'border-[#D3DAE6] text-[#98A2B3] cursor-not-allowed'
+          }`}
+        >
+          Karantina…
+        </button>
+        {state && <span className="text-[11px] text-[#5A626F]">{state}</span>}
+      </div>
+      <input
+        value={pick}
+        onChange={(e) => setPick(e.target.value)}
+        placeholder="/path/lengkap/ke/file"
+        className="w-full px-2 py-1.5 rounded border border-[#D3DAE6] text-[11px] bg-white"
+      />
+    </div>
+  );
+}
+
 /** Kartu scan on-demand: antre scan folder + ringkasan hasil terakhir. */
 function ScanPanel({ agentId, canScan, watchPaths }: { agentId: string; canScan: boolean; watchPaths?: string[] }) {
   const [scan, setScan] = useState<FleetScanResult | null>(null);
@@ -519,7 +585,12 @@ export function AgentDetailView({
       {/* On-demand scan: tutup blind spot file yang sudah ada di disk
           sebelum agent dipasang (agent reaktif hanya lihat create/modify). */}
       <ExpandableCard title="On-demand scan">
-        <ScanPanel agentId={agentId} canScan={agent?.type === 'rust'} />
+        <ScanPanel agentId={agentId} canScan={agent?.type === 'rust'} watchPaths={agent?.watch_paths} />
+      </ExpandableCard>
+
+      {/* Karantina manual: pindahkan file mencurigakan ke folder karantina. */}
+      <ExpandableCard title="Karantina file">
+        <QuarantinePanel agentId={agentId} canQuarantine={agent?.type === 'rust'} events={events} />
       </ExpandableCard>
     </div>
   );
