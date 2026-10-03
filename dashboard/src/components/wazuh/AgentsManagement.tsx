@@ -1,15 +1,12 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   PlusCircle,
   Download,
   Settings,
   Eye,
   RefreshCw,
-  Search,
-  Maximize2,
-  ChevronRight,
 } from 'lucide-react';
 import { agentStatus, formatWazuhTime, osType } from '@/lib/fleet';
 import type { FleetAgent } from '@/lib/fleet';
@@ -65,23 +62,18 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
   };
 
   // Petakan agent fleet -> bentuk tabel ala Wazuh Dashboard.
-  const agents = useMemo(
-    () =>
-      fleetAgents.map((a) => ({
-        id: a.id,
-        name: a.name,
-        ip: a.ip || 'any',
-        groups: ['default', a.type === 'rust' ? 'soar-agent' : 'wazuh'],
-        os: a.os && a.os !== 'unknown' ? a.os : '-',
-        osType: osType(a.os),
-        clusterNode: '-',
-        version: a.version || '-',
-        regDate: a.regDate && a.regDate !== '-' ? formatWazuhTime(a.regDate) : '-',
-        lastKeepAlive: formatWazuhTime(a.lastKeepAlive),
-        status: agentStatus(a.status),
-      })),
-    [fleetAgents]
-  );
+  const agents = fleetAgents.map((a) => ({
+    id: a.id,
+    name: a.name,
+    ip: a.ip || 'any',
+    groups: ['default', a.type === 'rust' ? 'soar-agent' : 'wazuh'],
+    os: a.os && a.os !== 'unknown' ? a.os : '-',
+    osType: osType(a.os),
+    version: a.version || '-',
+    regDate: a.regDate && a.regDate !== '-' ? formatWazuhTime(a.regDate) : '-',
+    lastKeepAlive: formatWazuhTime(a.lastKeepAlive),
+    status: agentStatus(a.status),
+  }));
 
   const total = agents.length;
   const activeCount = agents.filter((a) => a.status === 'active').length;
@@ -326,7 +318,6 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
                 <th className="py-2.5 px-3">IP</th>
                 <th className="py-2.5 px-3">Group(s)</th>
                 <th className="py-2.5 px-3">OS</th>
-                <th className="py-2.5 px-3">Cluster node</th>
                 <th className="py-2.5 px-3">Version</th>
                 <th className="py-2.5 px-3">Registration date</th>
                 <th className="py-2.5 px-3">Last keep alive</th>
@@ -357,7 +348,6 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
                     </div>
                   </td>
                   <td className="py-2 px-3 text-[#1A1C21] whitespace-nowrap">{agent.os}</td>
-                  <td className="py-2 px-3 text-[#5A626F]">{agent.clusterNode}</td>
                   <td className="py-2 px-3 text-[#5A626F] font-mono">{agent.version}</td>
                   <td className="py-2 px-3 text-[#5A626F] whitespace-nowrap">{agent.regDate}</td>
                   <td className="py-2 px-3 text-[#5A626F] whitespace-nowrap">{agent.lastKeepAlive}</td>

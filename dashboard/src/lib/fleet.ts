@@ -29,9 +29,11 @@ export interface FleetAgent {
   cpu_pct?: number;
   ram_gb?: { total?: number; used?: number };
   regDate?: string;
+  watch_paths?: string[];
 }
 
 export interface FleetEvent {
+  id?: string;
   ts: string;
   agent: string;
   agent_id: string;

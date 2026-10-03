@@ -2,18 +2,26 @@
   "name": "soar-fleet-dashboard",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Wazuh-style fleet dashboard untuk SOAR project (UI dari wazuh-dashboard-clone, data live dari scripts/fleet-monitor.py)",
+  "engines": {
+    "node": ">=22.6"
+  },
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
+    "test:commands": "node --test --test-concurrency=1 --experimental-strip-types src/app/api/commands/route.test.ts",
+    "test:session": "node --test --experimental-strip-types src/app/api/session/route.test.ts",
+    "test:session-rate": "node --test --experimental-strip-types src/app/api/session/rate-limit.test.ts",
+    "test:placeholder": "node --test --experimental-strip-types src/app/api/commands/placeholder.test.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build"
+    "check": "npm run test:commands && npm run test:placeholder && npm run test:session && npm run test:session-rate && npm run lint && npm run typecheck && npm run build"
   },
   "dependencies": {
     "lucide-react": "^1.6.0",
-    "next": "16.3.0",
+    "next": "16.3.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "shadcn": "^4.1.0",
