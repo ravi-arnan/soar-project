@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   n8n:
     image: n8nio/n8n:2.40.0
@@ -22,7 +20,10 @@ services:
       - NODE_TLS_REJECT_UNAUTHORIZED=0
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - ATRIA_API_KEY=${ATRIA_API_KEY}
+      - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+
+
       # Cegah Code node (Gemini/VT) mati di tengah lonjakan alert serentak
       - N8N_RUNNERS_TASK_TIMEOUT=300
       - N8N_RUNNERS_MAX_CONCURRENCY=10
@@ -91,7 +92,10 @@ services:
       - WAZUH_API_URL=https://127.0.0.1:55000
       - N8N_HEALTH_URL=http://127.0.0.1:5678/healthz
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
+      - FLEET_AGENT_POLL_TOKENS_JSON=${FLEET_AGENT_POLL_TOKENS_JSON}
       # Roster heartbeat di-persist supaya agent yang sedang offline tidak
+
       # hilang dari daftar saat container/restart (scripts mount read-only).
       - FLEET_STATE_FILE=/state/fleet-state.json
     volumes:
@@ -113,10 +117,13 @@ services:
     container_name: fleet-dashboard
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
+      - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
+      - DASHBOARD_ALLOWED_ORIGINS=${DASHBOARD_ALLOWED_ORIGINS}
+      - DASHBOARD_LOGIN_TOKEN=${DASHBOARD_LOGIN_TOKEN}
       # fleet-monitor pakai network_mode: host, jadi dari container harus lewat
       # gateway host (127.0.0.1 di dalam container bukan host).
       - FLEET_API_URL=http://host.docker.internal:8080
