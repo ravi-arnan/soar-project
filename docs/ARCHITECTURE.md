@@ -547,3 +547,4 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 - [x] File quarantine via custom AR script (human-in-the-loop, lihat Section 4b)
 - [ ] Weekly SOC report generation
 - [x] Bersihkan node firewall-drop yatim di deteksi-malware.json (2026-06-03)
+- [x] Riwayat event per periode di dashboard (2026-10-04): event SOAR dipersist ke SQLite + digabung dengan alert Wazuh Indexer (`wazuh-alerts-*`) via `GET /api/events/history`; kontrol `PeriodFilter` di semua view event (lihat `docs/FLOW.md` bagian "Riwayat Event per Periode")

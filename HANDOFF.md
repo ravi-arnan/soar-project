@@ -1176,3 +1176,30 @@ literal adalah yang tanpa fallback (sidik jari bug ini).
   --api-key-file /tmp/n8n_api_key.txt` (tambah `--dry-run` untuk pratinjau).
 - Template live = `scripts/patch-n8n-chain.py` (`$json.*`); yang ini menggantinya
   dengan referensi `$('Build Payload')`.
+
+## Riwayat event per periode di dashboard (2026-10-04)
+
+Fitur: pilih periode (24j/7h/30h/90h/custom) + lihat semua alert/event di **semua
+view event**, bukan cuma 200 event RAM terakhir.
+
+- **Backend `scripts/fleet-monitor.py`**: event pipeline SOAR dipersist ke SQLite
+  (`FLEET_EVENTS_DB`, default `/state/events.db`; retensi `FLEET_EVENTS_RETENTION_DAYS`
+  =90 hari + cap `FLEET_EVENTS_MAX_ROWS`) + client **Wazuh Indexer** (`wazuh-alerts-*`).
+  Endpoint baru `GET /api/events/history` (gabung+dedup SOAR & Wazuh, paginasi server,
+  `stats` per hari/severity/top). `/api/events` lama tetap.
+- **Frontend**: `dashboard/src/lib/fleet.ts` (tipe + `rangeToWindow`/`buildHistoryQuery`
+  + `useEventHistory`), komponen `PeriodFilter.tsx` & `Pagination.tsx`; `SecurityEventsDashboard`,
+  `FimDashboard`, `ThreatIntelView`, `AgentDetailView` semua pakai `PeriodFilter` +
+  riwayat server. `formatWazuhTime` dipin ke `Asia/Makassar`.
+- **Config**: `docker-compose.yml` fleet-monitor + `.env.example` tambah
+  `FLEET_EVENTS_DB`, `FLEET_EVENTS_RETENTION_DAYS`, `FLEET_EVENTS_MAX_ROWS`,
+  `WAZUH_INDEXER_URL/USER/PASS` (default publik `admin/SecretPassword` — **rotasi**).
+- **Verifikasi (di nixbox)**: `python3 scripts/test_fleet_monitor.py` 25/25 hijau;
+  `npm run check` (dashboard) hijau (7 unit FE baru); E2E lokal buktikan durable
+  lintas-restart + filter `since`/`severity`.
+- ⚠️ **BELUM di-deploy ke server.** Tree `/home/ravi/Projects/soar-project` di
+  ravi-debian ternyata **lebih lama/divergen** (fleet-monitor.py & docker-compose.yml
+  beda dari repo; `git` server "No commits yet"). Jangan timpa mentah. Deploy aman:
+  sinkronkan dulu tree server yang konsisten (atau patch spesifik), isi
+  `FLEET_COMMAND_TOKEN` + `FLEET_AGENT_POLL_TOKENS_JSON` di `.env` (validasi runtime),
+  lalu `docker compose up -d --build dashboard` dan restart `fleet-monitor`.
