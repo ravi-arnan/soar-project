@@ -480,6 +480,10 @@ Tahapan desain *Active Response human-in-the-loop* dijelaskan sebagai berikut.
 
 Catatan penting pada desain ini adalah bahwa *node* `firewall-drop` lama (auto-Active Response berbasis pemblokiran IP otomatis) telah **dihapus** dari *workflow*. Alur aktif sepenuhnya memakai `quarantine-file` melalui persetujuan analis. Setiap insiden meninggalkan jejak audit lengkap di enam lokasi: *log* *agent* Wazuh (`ossec.log`), *log* *alert* Manager (`alerts.log`), *log* *Active Response* (`active-responses.log`), *log* integrasi (`integrations.log`), *log* eksekusi n8n (di antarmuka n8n), dan riwayat pesan Telegram. Jejak audit ini menjadi bukti verifikasi bahwa sistem berfungsi dan menjadi dasar analisis forensik.
 
+## 3.9 Perancangan Modul Riwayat dan Monitoring Event
+
+Selain notifikasi *real-time*, sistem menyediakan modul **riwayat event** pada dashboard agar analis dapat meninjau seluruh *event* pada rentang waktu tertentu (24 jam, 7, 30, atau 90 hari, maupun rentang tanggal *custom*) — bukan hanya sejumlah kecil *event* terbaru yang tersimpan di memori. Modul ini menggabungkan dua sumber: (1) *event* *pipeline* SOAR yang dipersist ke basis data **SQLite** oleh `fleet-monitor` (retensi bawaan 90 hari, dengan pemangkasan otomatis), dan (2) arsip *alert* historis dari **Wazuh Indexer** (indeks `wazuh-alerts-*`). Data dari kedua sumber digabung dan dideduplikasi berdasarkan `agent_id` serta hash/*path*, sehingga *event* yang telah diperkaya analisis LLM tidak tampil ganda dengan *alert* mentahnya. Riwayat disajikan melalui *endpoint* `GET /api/events/history` dengan paginasi di sisi server serta agregasi per hari dan per *severity* untuk grafik dashboard. Bila Indexer tidak terjangkau, endpoint tetap berfungsi dengan sumber SQLite saja (degradasi anggun).
+
 ```{=openxml}
 <w:p><w:r><w:br w:type="page"/></w:r></w:p>
 ```
