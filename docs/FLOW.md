@@ -517,3 +517,33 @@ Setiap event meninggalkan trail untuk forensic:
 6. **Telegram message history**: viewable di Telegram chat (persistent)
 
 Untuk thesis, screenshot dari semua log adalah bukti verifikasi sistem berfungsi.
+
+## Riwayat Event per Periode (dashboard)
+
+Dashboard bisa menampilkan alert/event untuk rentang waktu (24 jam, 7 hari,
+30 hari, 90 hari, atau rentang custom), bukan hanya 200 event terakhir di RAM.
+
+**Sumber (digabung + dedup):**
+
+1. **Pipeline SOAR (durable, SQLite).** Tiap event yang masuk `POST /webhook-log`
+   (node n8n "Log ke Fleet") dan event file dari heartbeat (`POST /api/heartbeat`)
+   dipersist ke SQLite (`FLEET_EVENTS_DB`, default `/state/events.db`; host
+   `./state/events.db`). Retensi `FLEET_EVENTS_RETENTION_DAYS` (default 90 hari)
+   + cap `FLEET_EVENTS_MAX_ROWS`. Ini menyimpan enrichment (`severity`, `ai`,
+   `url`, `verdict`, `rule`).
+2. **Wazuh Indexer (historis penuh).** Semua alert Wazuh pada index
+   `wazuh-alerts-*` dibaca via `_search` rentang `@timestamp` (basic auth,
+   self-signed → TLS verify off mengikuti preseden repo). Aktif bila
+   `WAZUH_INDEXER_PASS` di-set; kalau tidak, endpoint tetap jalan (SQLite saja,
+   `indexer_ok:false`).
+
+**Endpoint:** `GET /api/events/history?since=&until=&limit=&offset=&severity=&agent_id=&source=all|soar|wazuh&q=&dedup=`
+→ `{ events[], total, indexer_ok, sources{soar,wazuh}, stats{severity,daily,top_agents,top_paths} }`.
+Field terstruktur (path/hash/severity/rule) diambil dari kedua sumber; alert Wazuh
+yang sudah punya versi ter-enrich SOAR dibuang saat `dedup=true` (heuristik
+`agent_id` + `hash`/`path`). `/api/events` lama tetap untuk realtime.
+
+**UI:** kontrol `PeriodFilter` (preset + custom) dipakai seragam di view Security
+events, FIM, Threat Intel, dan Agent detail; hook `useEventHistory` (paginasi
+server-side); `formatWazuhTime` dipin ke `Asia/Makassar` agar riwayat UTC/WITA
+konsisten. Lihat `dashboard/src/lib/fleet.ts` + `dashboard/src/components/wazuh/PeriodFilter.tsx`.
