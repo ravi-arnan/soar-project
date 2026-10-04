@@ -1061,26 +1061,31 @@ def _db():
 
 
 def _event_store_init():
-    os.makedirs(os.path.dirname(EVENTS_DB) or ".", exist_ok=True)
-    with closing(_db()) as conn, conn:
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS events (
-                id TEXT PRIMARY KEY,
-                ts TEXT NOT NULL,
-                agent TEXT, agent_id TEXT, path TEXT, hash TEXT,
-                severity TEXT, status TEXT, ai TEXT, url TEXT, verdict TEXT,
-                rule_id TEXT, rule_level INTEGER, rule_desc TEXT,
-                source TEXT NOT NULL DEFAULT 'soar'
-            )"""
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id, ts)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity, ts)"
-        )
-    print(f"event store siap: {EVENTS_DB}", flush=True)
+    # Fail-open: kalau path DB tak bisa ditulis (mis. /scripts read-only karena
+    # FLEET_EVENTS_DB belum di-set), jangan sampai mematikan fleet-monitor.
+    try:
+        os.makedirs(os.path.dirname(EVENTS_DB) or ".", exist_ok=True)
+        with closing(_db()) as conn, conn:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS events (
+                    id TEXT PRIMARY KEY,
+                    ts TEXT NOT NULL,
+                    agent TEXT, agent_id TEXT, path TEXT, hash TEXT,
+                    severity TEXT, status TEXT, ai TEXT, url TEXT, verdict TEXT,
+                    rule_id TEXT, rule_level INTEGER, rule_desc TEXT,
+                    source TEXT NOT NULL DEFAULT 'soar'
+                )"""
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id, ts)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity, ts)"
+            )
+        print(f"event store siap: {EVENTS_DB}", flush=True)
+    except Exception as e:
+        print(f"event store init gagal (riwayat nonaktif): {e}", flush=True)
 
 
 def _event_store_insert(ev):
@@ -1141,9 +1146,13 @@ def _event_store_query(since=None, until=None, severity=None, agent_id=None, q=N
         )
         params.extend([like] * 6)
     sql = "SELECT * FROM events WHERE " + " AND ".join(where) + " ORDER BY ts DESC"
-    with closing(_db()) as conn:
-        rows = conn.execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
+    try:
+        with closing(_db()) as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"event store query error: {e}", flush=True)
+        return []
 
 
 def _indexer_enabled():
