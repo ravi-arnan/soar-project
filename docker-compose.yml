@@ -94,6 +94,11 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
       - FLEET_AGENT_POLL_TOKENS_JSON=${FLEET_AGENT_POLL_TOKENS_JSON}
+      # Riwayat event durable (SQLite) + Wazuh Indexer untuk view minggu/bulan.
+      - FLEET_EVENTS_DB=/state/events.db
+      - WAZUH_INDEXER_URL=${WAZUH_INDEXER_URL:-https://127.0.0.1:9200}
+      - WAZUH_INDEXER_USER=${WAZUH_INDEXER_USER:-admin}
+      - WAZUH_INDEXER_PASS=${WAZUH_INDEXER_PASS}
       # Roster heartbeat di-persist supaya agent yang sedang offline tidak
 
       # hilang dari daftar saat container/restart (scripts mount read-only).

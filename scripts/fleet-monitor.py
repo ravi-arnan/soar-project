@@ -7,6 +7,7 @@ via POST /api/heartbeat. Serve HTML dashboard single-pane untuk 100 workstation.
 Endpoints:
   GET  /              -> HTML dashboard (auto-refresh 5s, Lucide icons, no emoji)
   GET  /api/fleet     -> JSON fleet status
+  GET  /api/events/history?since=&until=&source=all -> riwayat event (SQLite + Wazuh Indexer)
   POST /api/heartbeat -> {"id":"003","name":"rust-agent-ravi","ip":"100.95.198.108","version":"0.1.0"} -> 200
   GET  /healthz       -> 200 ok (untuk docker healthcheck)
 
@@ -23,11 +24,13 @@ import ipaddress
 import json
 import os
 import re
+import sqlite3
 import ssl
 import time
 import urllib.error
 import urllib.request
 import uuid
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import PurePosixPath, PureWindowsPath
@@ -84,6 +87,30 @@ HEARTBEAT_TTL = (
 # Ring buffer event (max 200): alert file dari agent / n8n webhook-log
 EVENTS = []
 EVENTS_MAX = 200
+
+# Riwayat event durable (SQLite) untuk view "minggu/bulan/custom" dashboard.
+# Ring EVENTS di atas hanya 200 & hilang saat restart; event pipeline SOAR
+# (dari /webhook-log + heartbeat) disimpan ke SQLite supaya bisa dikueri per
+# rentang waktu. ponytail: sqlite3 stdlib, satu file; tanpa ORM.
+EVENTS_DB = os.environ.get(
+    "FLEET_EVENTS_DB",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), ".fleet-events.db"),
+)
+EVENTS_RETENTION_DAYS = int(os.environ.get("FLEET_EVENTS_RETENTION_DAYS", "90") or 90)
+EVENTS_MAX_ROWS = int(os.environ.get("FLEET_EVENTS_MAX_ROWS", "200000") or 200000)
+EVENTS_PRUNE_EVERY = 100  # prune tiap N insert (hindari thread terpisah)
+_events_insert_count = 0
+
+# Wazuh Indexer (OpenSearch) untuk riwayat penuh alert Wazuh historis (semua
+# rule, bukan cuma yang lewat pipeline). Kosong = source indexer nonaktif
+# (endpoint tetap jalan, hanya SQLite). fleet-monitor host-net -> 127.0.0.1:9200.
+INDEXER_URL = os.environ.get("WAZUH_INDEXER_URL", "https://127.0.0.1:9200").rstrip("/")
+INDEXER_USER = os.environ.get("WAZUH_INDEXER_USER", "admin")
+INDEXER_PASS = os.environ.get("WAZUH_INDEXER_PASS", "").strip()
+INDEXER_INDEX = os.environ.get("WAZUH_INDEXER_INDEX", "wazuh-alerts-*")
+INDEXER_SEARCH_MAX = 1000
+HISTORY_DEFAULT_LIMIT = 100
+HISTORY_MAX_LIMIT = 1000
 
 # Command queue per agent (aksi dari dashboard, di-poll agent via GET):
 # id -> [{action: quarantine|sinkhole|scan, target, ts, by}]
@@ -977,6 +1004,355 @@ load();
 """
 
 
+def _to_utc_iso(value):
+    """Normalisasi ts apa pun (WITA +08:00, Z, Wazuh +0000, epoch) -> UTC 'Z'.
+
+    Penting: kolom `ts` di SQLite dibandingkan sebagai string, jadi semua
+    sumber harus format kanonik yang sama supaya urut & filter rentang benar.
+    """
+    if not value:
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    v = str(value).strip()
+    if re.fullmatch(r"\d{10,13}", v):
+        n = int(v)
+        if n > 10**12:
+            n /= 1000
+        return datetime.fromtimestamp(n, tz=timezone.utc).isoformat().replace(
+            "+00:00", "Z"
+        )
+    try:
+        s = v.replace("Z", "+00:00")
+        m = re.search(r"([+-]\d{2})(\d{2})$", s)  # Wazuh: +0000 tanpa colon
+        if m and ":" not in s[-6:]:
+            s = s[:-5] + m.group(1) + ":" + m.group(2)
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except Exception:
+        return v
+
+
+def _event_row(ev):
+    """Bentuk satu baris tabel events dari dict event (immutable, default aman)."""
+    return (
+        ev.get("id") or uuid.uuid4().hex,
+        _to_utc_iso(ev.get("ts")),
+        ev.get("agent", "-"),
+        str(ev.get("agent_id", "-")),
+        ev.get("path", "-"),
+        ev.get("hash", ""),
+        (ev.get("severity") or "INFO"),
+        ev.get("status", "alerted"),
+        ev.get("ai", ""),
+        ev.get("url", ""),
+        ev.get("verdict", ""),
+        str(ev.get("rule_id", "")),
+        ev.get("rule_level"),
+        ev.get("rule_desc", ""),
+        ev.get("source", "soar"),
+    )
+
+
+def _db():
+    conn = sqlite3.connect(EVENTS_DB, timeout=5)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _event_store_init():
+    os.makedirs(os.path.dirname(EVENTS_DB) or ".", exist_ok=True)
+    with closing(_db()) as conn, conn:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS events (
+                id TEXT PRIMARY KEY,
+                ts TEXT NOT NULL,
+                agent TEXT, agent_id TEXT, path TEXT, hash TEXT,
+                severity TEXT, status TEXT, ai TEXT, url TEXT, verdict TEXT,
+                rule_id TEXT, rule_level INTEGER, rule_desc TEXT,
+                source TEXT NOT NULL DEFAULT 'soar'
+            )"""
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id, ts)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity, ts)"
+        )
+    print(f"event store siap: {EVENTS_DB}", flush=True)
+
+
+def _event_store_insert(ev):
+    """Simpan event ke riwayat durable. Gagal DB tidak boleh mematikan ingest."""
+    global _events_insert_count
+    try:
+        with closing(_db()) as conn, conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO events
+                (id, ts, agent, agent_id, path, hash, severity, status, ai, url,
+                 verdict, rule_id, rule_level, rule_desc, source)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                _event_row(ev),
+            )
+        _events_insert_count += 1
+        if _events_insert_count % EVENTS_PRUNE_EVERY == 0:
+            _event_store_prune()
+    except Exception as e:
+        print(f"event store insert error: {e}", flush=True)
+
+
+def _event_store_prune(now=None):
+    """Buang event lebih tua dari retensi, lalu cap jumlah baris (terbaru menang)."""
+    cutoff = _to_utc_iso((now or datetime.now(WITA)) - timedelta(days=EVENTS_RETENTION_DAYS))
+    try:
+        with closing(_db()) as conn, conn:
+            conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
+            conn.execute(
+                "DELETE FROM events WHERE id IN ("
+                "SELECT id FROM events ORDER BY ts DESC LIMIT -1 OFFSET ?)",
+                (EVENTS_MAX_ROWS,),
+            )
+    except Exception as e:
+        print(f"event store prune error: {e}", flush=True)
+
+
+def _event_store_query(since=None, until=None, severity=None, agent_id=None, q=None):
+    """Ambil semua event SOAR dalam rentang (belum dipaginasi; volume SOAR kecil)."""
+    where = ["source = 'soar'"]
+    params = []
+    if since:
+        where.append("ts >= ?")
+        params.append(_to_utc_iso(since))
+    if until:
+        where.append("ts <= ?")
+        params.append(_to_utc_iso(until))
+    if agent_id:
+        where.append("agent_id = ?")
+        params.append(str(agent_id))
+    if severity:
+        where.append("severity IN (%s)" % ",".join("?" * len(severity)))
+        params.extend(severity)
+    for token in (q or []):
+        like = f"%{token}%"
+        where.append(
+            "(path LIKE ? OR hash LIKE ? OR url LIKE ? OR agent LIKE ?"
+            " OR ai LIKE ? OR rule_desc LIKE ?)"
+        )
+        params.extend([like] * 6)
+    sql = "SELECT * FROM events WHERE " + " AND ".join(where) + " ORDER BY ts DESC"
+    with closing(_db()) as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _indexer_enabled():
+    return bool(INDEXER_PASS)
+
+
+def _to_indexer_time(value):
+    if not value:
+        return None
+    v = str(value).strip()
+    if re.fullmatch(r"\d{10,13}", v):
+        return _to_utc_iso(v)
+    return v  # ISO; indexer paham
+
+
+def _indexer_search(since, until, size):
+    """POST _search rentang @timestamp. Kembalikan (hits, ok). Gagal -> ([], False)."""
+    auth = base64.b64encode(f"{INDEXER_USER}:{INDEXER_PASS}".encode()).decode()
+    body = {
+        "size": max(1, min(size, INDEXER_SEARCH_MAX)),
+        "sort": [{"@timestamp": {"order": "desc", "unmapped_type": "date"}}],
+        "query": {
+            "bool": {
+                "filter": [
+                    {"range": {"@timestamp": {"gte": since or "now-90d", "lte": until or "now"}}}
+                ]
+            }
+        },
+        "_source": [
+            "@timestamp", "timestamp", "rule", "agent", "syscheck", "data", "location",
+        ],
+    }
+    req = urllib.request.Request(
+        f"{INDEXER_URL}/{INDEXER_INDEX}/_search",
+        data=json.dumps(body).encode(),
+        method="POST",
+        headers={
+            "Authorization": f"Basic {auth}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15, context=_INSECURE) as r:
+            resp = json.load(r)
+        return resp.get("hits", {}).get("hits", []), True
+    except Exception as e:
+        print(f"indexer search error: {e}", flush=True)
+        return [], False
+
+
+def _indexer_map(hit):
+    """Petakan dokumen alert Wazuh -> bentuk FleetEvent (dengan rule_*)."""
+    s = hit.get("_source", {}) or {}
+    rule = s.get("rule", {}) or {}
+    agent = s.get("agent", {}) or {}
+    syscheck = s.get("syscheck", {}) or {}
+    data = s.get("data", {}) or {}
+    try:
+        level = int(rule.get("level", 0))
+    except (TypeError, ValueError):
+        level = 0
+    severity = (
+        "CRITICAL" if level >= 12
+        else "HIGH" if level >= 7
+        else "MEDIUM" if level >= 5
+        else "INFO"
+    )
+    h = (
+        syscheck.get("sha256_after")
+        or syscheck.get("sha256_before")
+        or data.get("sha256_after")
+        or data.get("sha256")
+        or syscheck.get("md5_after")
+        or data.get("md5")
+        or ""
+    )
+    return {
+        "id": str(hit.get("_id") or uuid.uuid4().hex),
+        "ts": _to_utc_iso(s.get("@timestamp") or s.get("timestamp") or ""),
+        "agent": agent.get("name", "-"),
+        "agent_id": str(agent.get("id", "-")),
+        "path": syscheck.get("path") or data.get("path") or "-",
+        "hash": h,
+        "severity": severity,
+        "status": syscheck.get("event") or rule.get("description", "-"),
+        "ai": "",
+        "url": data.get("url", ""),
+        "verdict": "",
+        "rule_id": str(rule.get("id", "")),
+        "rule_level": level,
+        "rule_desc": rule.get("description", ""),
+        "source": "wazuh",
+    }
+
+
+def _merge_history(soar_rows, wazuh_rows, dedup=True):
+    """Gabung event SOAR + alert Wazuh, buang Wazuh yang sudah ter-enrich SOAR."""
+    if not dedup:
+        return list(soar_rows) + list(wazuh_rows)
+    keys = set()
+    for e in soar_rows:
+        aid = e.get("agent_id")
+        if e.get("hash"):
+            keys.add((aid, "h", str(e["hash"]).lower()))
+        if e.get("path") and e["path"] not in ("", "-"):
+            keys.add((aid, "p", e["path"]))
+    kept = [
+        e for e in wazuh_rows
+        if not (e.get("hash") and (e.get("agent_id"), "h", str(e["hash"]).lower()) in keys)
+        and not (
+            e.get("path") and e["path"] not in ("", "-")
+            and (e.get("agent_id"), "p", e["path"]) in keys
+        )
+    ]
+    return list(soar_rows) + kept
+
+
+def _history_stats(events):
+    severity = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "UNVERIFIED": 0, "INFO": 0}
+    daily = {}
+    agents = {}
+    paths = {}
+    for e in events:
+        s = (e.get("severity") or "INFO").upper()
+        severity[s if s in severity else "INFO"] += 1
+        day = (e.get("ts") or "")[:10]
+        if day:
+            daily[day] = daily.get(day, 0) + 1
+        name = e.get("agent") or "-"
+        agents[name] = agents.get(name, 0) + 1
+        p = e.get("path")
+        if p and p != "-":
+            paths[p] = paths.get(p, 0) + 1
+
+    def top(counts):
+        pairs = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+        return [{"key": k, "count": n} for k, n in pairs]
+
+    return {
+        "severity": severity,
+        "daily": [{"date": k, "count": daily[k]} for k in sorted(daily)],
+        "top_agents": top(agents),
+        "top_paths": top(paths),
+    }
+
+
+def _parse_csv(value):
+    return [v.strip().upper() for v in (value or "").split(",") if v.strip()]
+
+
+def build_event_history(
+    since=None, until=None, limit=None, offset=0,
+    severity=None, agent_id=None, q=None, source="all", dedup=True,
+):
+    """Riwayat event gabungan (SOAR SQLite + Wazuh Indexer) untuk rentang waktu."""
+    started = time.time()
+    try:
+        limit = int(limit) if limit else HISTORY_DEFAULT_LIMIT
+    except (TypeError, ValueError):
+        limit = HISTORY_DEFAULT_LIMIT
+    limit = max(1, min(limit, HISTORY_MAX_LIMIT))
+    try:
+        offset = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        offset = 0
+    source = source if source in ("all", "soar", "wazuh") else "all"
+
+    soar_rows = []
+    if source in ("all", "soar"):
+        soar_rows = _event_store_query(since, until, severity, agent_id, q)
+
+    wazuh_rows = []
+    indexer_ok = None
+    if source in ("all", "wazuh") and _indexer_enabled():
+        hits, indexer_ok = _indexer_search(
+            _to_indexer_time(since), _to_indexer_time(until), INDEXER_SEARCH_MAX
+        )
+        wazuh_rows = [_indexer_map(h) for h in hits]
+        if agent_id:
+            wazuh_rows = [e for e in wazuh_rows if e.get("agent_id") == str(agent_id)]
+        if severity:
+            wazuh_rows = [e for e in wazuh_rows if e.get("severity") in severity]
+        tokens = [t.lower() for t in (q or [])]
+        if tokens:
+            wazuh_rows = [
+                e for e in wazuh_rows
+                if all(
+                    t in " ".join(
+                        str(e.get(k, ""))
+                        for k in ("path", "hash", "url", "agent", "rule_desc")
+                    ).lower()
+                    for t in tokens
+                )
+            ]
+
+    merged = _merge_history(soar_rows, wazuh_rows, dedup)
+    merged.sort(key=lambda e: e.get("ts") or "", reverse=True)
+    return {
+        "events": merged[offset: offset + limit],
+        "total": len(merged),
+        "limit": limit,
+        "offset": offset,
+        "took_ms": int((time.time() - started) * 1000),
+        "indexer_ok": indexer_ok,
+        "sources": {"soar": len(soar_rows), "wazuh": len(wazuh_rows)},
+        "stats": _history_stats(merged),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(f"{self.client_address[0]} {fmt % args}", flush=True)
@@ -1011,6 +1387,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(body)
+        elif parsed.path == "/api/events/history":
+            # Riwayat event per rentang waktu (SOAR SQLite + Wazuh Indexer).
+            # ?since&until&limit&offset&severity&agent_id&source&q&dedup
+            qs = parse_qs(parsed.query)
+
+            def _one(key, default=""):
+                return (qs.get(key, [default])[0] or "").strip()
+
+            self._json(
+                200,
+                build_event_history(
+                    since=_one("since") or None,
+                    until=_one("until") or None,
+                    limit=_one("limit", str(HISTORY_DEFAULT_LIMIT)) or None,
+                    offset=_one("offset", "0") or 0,
+                    severity=_parse_csv(_one("severity")) or None,
+                    agent_id=_one("agent_id") or None,
+                    q=[t for t in qs.get("q", []) if t.strip()] or None,
+                    source=(_one("source", "all") or "all").lower(),
+                    dedup=(_one("dedup", "true").lower() not in ("0", "false", "no")),
+                ),
+            )
         elif parsed.path == "/api/metrics":
             # History resource per agent untuk grafik: ?agent_id=003
             qs = parse_qs(parsed.query)
@@ -1158,18 +1556,18 @@ class Handler(BaseHTTPRequestHandler):
                     del hist[:-METRICS_MAX]
                 # Event file dari agent (kalau dikirim bersama heartbeat)
                 if j.get("last_hash") and j.get("last_path"):
-                    EVENTS.append(
-                        {
-                            "id": uuid.uuid4().hex,
-                            "ts": datetime.now(WITA).isoformat(),
-                            "agent": j.get("name", hid),
-                            "agent_id": hid,
-                            "path": j.get("last_path", ""),
-                            "hash": j.get("last_hash", ""),
-                            "status": j.get("last_status", "sent"),
-                        }
-                    )
+                    ev = {
+                        "id": uuid.uuid4().hex,
+                        "ts": datetime.now(WITA).isoformat(),
+                        "agent": j.get("name", hid),
+                        "agent_id": hid,
+                        "path": j.get("last_path", ""),
+                        "hash": j.get("last_hash", ""),
+                        "status": j.get("last_status", "sent"),
+                    }
+                    EVENTS.append(ev)
                     del EVENTS[:-EVENTS_MAX]
+                    _event_store_insert(ev)
                 resp = {"status": "ok", "id": hid}
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1201,6 +1599,7 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 EVENTS.append(ev)
                 del EVENTS[:-EVENTS_MAX]
+                _event_store_insert(ev)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -1465,6 +1864,8 @@ def main():
     port = cfg["port"]
     _load_state()
     _vt_cache_load()
+    _event_store_init()
+    _event_store_prune()
     # ponytail: bind 0.0.0.0 supaya bisa diakses dari Tailscale 100.95.198.108:8080 untuk 100 PC
     server = HTTPServer(("0.0.0.0", port), Handler)
     print(
