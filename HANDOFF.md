@@ -1153,3 +1153,26 @@ Semua **tanpa trailer co-author** (aturan taste).
 - `agent-rs/src/main.rs:858` (`do_sinkhole`) menulis ke
   `C:\Windows\System32\drivers\etc\hosts`; entri ditandai `# soar-sinkhole`
   (perintah hapus ada di `docs/KARTU-CONTEKAN-*`).
+
+## Fix notifikasi Telegram `undefined` (2026-10-04)
+
+Symptom: pesan alert **kadang** keluar dengan semua field `undefined`
+(`undefined undefined - undefined`, `📂 Path:` / `🖥️ Agent:` kosong). Akar:
+rantai live `Build Payload -> AI Generate -> Send Telegram Alert`. Node
+`AI Generate` (`onError: continueRegularOutput`) mengirim **item error** saat
+Atria API gagal (timeout/429/5xx/key kosong); `Send Telegram Alert` membaca
+SEMUA field dari `$json` → undefined. Muncul "kadang" karena hanya saat AI
+gagal. Field yang terlihat kosong adalah yang punya `?? ''`, yang `undefined`
+literal adalah yang tanpa fallback (sidik jari bug ini).
+
+- **Baru**: `scripts/patch-n8n-ai-failsafe.py` (idempoten, marker
+  `patch:aifailsafe:v1`, backup ke `backups/`). Lapis 1: `AI Generate` bungkus
+  HTTP try/catch → selalu `{ ...$json, ai_response, llm_error }`. Lapis 2:
+  template Telegram ambil field terstruktur dari `$('Build Payload')` +
+  fallback `?? ''`, ai_response dari `$json`.
+- **Baru**: `scripts/test_patch_n8n_aifailsafe.py` (8 test hijau).
+- Jalankan DI ravi-debian (belum dijalankan di sini):
+  `python3 scripts/patch-n8n-ai-failsafe.py --n8n-url http://127.0.0.1:5678
+  --api-key-file /tmp/n8n_api_key.txt` (tambah `--dry-run` untuk pratinjau).
+- Template live = `scripts/patch-n8n-chain.py` (`$json.*`); yang ini menggantinya
+  dengan referensi `$('Build Payload')`.
