@@ -29,6 +29,7 @@ scripts/.fleet-state.json
 scripts/.fleet-state.json.tmp
 scripts/.fleet-vt-cache.json
 scripts/.fleet-vt-cache.json.tmp
+scripts/.fleet-events.db*
 state/
 
 # Rust build artifacts (agent-rs)

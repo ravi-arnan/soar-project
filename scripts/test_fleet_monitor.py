@@ -4,7 +4,7 @@ import os
 import tempfile
 import threading
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import HTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -15,6 +15,11 @@ from urllib.request import Request, urlopen
 os.environ.setdefault(
     "FLEET_STATE_FILE",
     os.path.join(tempfile.mkdtemp(prefix="fleet-test-"), "fleet-state.json"),
+)
+# Riwayat event (SQLite) juga ke temp agar test tidak mengotori scripts/.
+os.environ.setdefault(
+    "FLEET_EVENTS_DB",
+    os.path.join(tempfile.mkdtemp(prefix="fleet-events-"), "events.db"),
 )
 os.environ["FLEET_COMMAND_TOKEN"] = "command-" + "a" * 48
 os.environ["FLEET_AGENT_POLL_TOKENS_JSON"] = json.dumps(
@@ -29,6 +34,7 @@ SPEC = importlib.util.spec_from_file_location("fleet_monitor", MODULE_PATH)
 assert SPEC and SPEC.loader
 fleet_monitor = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(fleet_monitor)
+fleet_monitor._event_store_init()
 
 
 class _ApiTestCase(unittest.TestCase):
@@ -273,6 +279,177 @@ class RegistrationDateTests(_ApiTestCase):
         ).isoformat()
         self.assertNotEqual(agent["regDate"], "-")
         self.assertEqual(agent["regDate"], expected)
+
+
+def _clear_events():
+    conn = fleet_monitor._db()
+    try:
+        conn.execute("DELETE FROM events")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+class EventStoreTests(_ApiTestCase):
+    """Riwayat durable: insert/query rentang, retensi, cap baris (SQLite)."""
+
+    def setUp(self):
+        _clear_events()
+
+    def test_insert_dan_query_rentang(self):
+        now = datetime.now(fleet_monitor.WITA)
+        fleet_monitor._event_store_insert(
+            {"ts": (now - timedelta(days=40)).isoformat(), "agent_id": "009",
+             "path": "/old", "severity": "HIGH"}
+        )
+        fleet_monitor._event_store_insert(
+            {"ts": now.isoformat(), "agent_id": "009", "path": "/new",
+             "severity": "CRITICAL"}
+        )
+
+        rows = fleet_monitor._event_store_query(
+            since=(now - timedelta(days=1)).isoformat()
+        )
+
+        self.assertEqual([r["path"] for r in rows], ["/new"])
+        self.assertEqual(rows[0]["source"], "soar")
+
+    def test_normalisasi_ts_ke_utc(self):
+        self.assertEqual(
+            fleet_monitor._to_utc_iso("2026-09-30T10:00:00+08:00"),
+            fleet_monitor._to_utc_iso("2026-09-30T02:00:00Z"),
+        )
+        self.assertTrue(fleet_monitor._to_utc_iso("2026-09-30T10:00:00+08:00").endswith("Z"))
+        self.assertEqual(
+            fleet_monitor._to_utc_iso("2026-05-16T20:08:00.000+0000"),
+            fleet_monitor._to_utc_iso("2026-05-16T20:08:00.000Z"),
+        )
+
+    def test_prune_retensi(self):
+        now = datetime.now(fleet_monitor.WITA)
+        fleet_monitor._event_store_insert(
+            {"ts": (now - timedelta(days=fleet_monitor.EVENTS_RETENTION_DAYS + 5)).isoformat(),
+             "agent_id": "009", "path": "/stale"}
+        )
+        fleet_monitor._event_store_insert(
+            {"ts": now.isoformat(), "agent_id": "009", "path": "/fresh"}
+        )
+
+        fleet_monitor._event_store_prune(now)
+
+        rows = fleet_monitor._event_store_query()
+        self.assertEqual([r["path"] for r in rows], ["/fresh"])
+
+    def test_prune_cap_baris(self):
+        original = fleet_monitor.EVENTS_MAX_ROWS
+        fleet_monitor.EVENTS_MAX_ROWS = 3
+        try:
+            now = datetime.now(fleet_monitor.WITA)
+            for i in range(6):
+                fleet_monitor._event_store_insert(
+                    {"ts": (now + timedelta(seconds=i)).isoformat(),
+                     "agent_id": "009", "path": f"/f{i}"}
+                )
+            fleet_monitor._event_store_prune(now)
+            rows = fleet_monitor._event_store_query()
+        finally:
+            fleet_monitor.EVENTS_MAX_ROWS = original
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([r["path"] for r in rows], ["/f5", "/f4", "/f3"])
+
+
+class IndexerMappingTests(unittest.TestCase):
+    def test_map_alert_wazuh(self):
+        hit = {"_id": "abc", "_source": {
+            "@timestamp": "2026-09-30T03:17:59.883Z",
+            "rule": {"id": "110002", "level": 10, "description": "cmd->powershell"},
+            "agent": {"id": "007", "name": "bali-handmade"},
+            "data": {"sha256": "f" * 64, "path": "C:/x"},
+        }}
+
+        event = fleet_monitor._indexer_map(hit)
+
+        self.assertEqual(event["severity"], "HIGH")
+        self.assertEqual(event["agent_id"], "007")
+        self.assertEqual(event["rule_level"], 10)
+        self.assertEqual(event["source"], "wazuh")
+        self.assertEqual(event["hash"], "f" * 64)
+
+    def test_level_ke_severity(self):
+        cases = ((12, "CRITICAL"), (11, "HIGH"), (7, "HIGH"), (6, "MEDIUM"), (3, "INFO"))
+        for level, expected in cases:
+            hit = {"_source": {"rule": {"level": level}, "agent": {}}}
+            self.assertEqual(fleet_monitor._indexer_map(hit)["severity"], expected)
+
+
+class MergeTests(unittest.TestCase):
+    def test_dedup_buang_wazuh_yang_sudah_dienrich(self):
+        soar = [{"agent_id": "009", "hash": "A" * 64, "path": "/x", "source": "soar"}]
+        wazuh = [
+            {"agent_id": "009", "hash": "a" * 64, "path": "/x", "source": "wazuh"},
+            {"agent_id": "009", "hash": "b" * 64, "path": "/y", "source": "wazuh"},
+        ]
+
+        merged = fleet_monitor._merge_history(soar, wazuh, dedup=True)
+
+        self.assertEqual(len(merged), 2)
+        self.assertEqual({e["source"] for e in merged}, {"soar", "wazuh"})
+
+    def test_tanpa_dedup_semua_masuk(self):
+        merged = fleet_monitor._merge_history(
+            [{"agent_id": "009", "hash": "a" * 64, "source": "soar"}],
+            [{"agent_id": "009", "hash": "a" * 64, "source": "wazuh"}],
+            dedup=False,
+        )
+        self.assertEqual(len(merged), 2)
+
+
+class HistoryEndpointTests(_ApiTestCase):
+    def setUp(self):
+        _clear_events()
+
+    def test_endpoint_history_kembalikan_event_dan_stats(self):
+        payload = {
+            "agent": "agent-009", "agent_id": "009",
+            "path": "/home/ravi/Downloads/eicar.com", "hash": "a" * 64,
+            "severity": "CRITICAL",
+            "ts": datetime.now(fleet_monitor.WITA).isoformat(),
+        }
+        self.request("POST", "/webhook-log", payload)
+
+        status, _, body = self.request("GET", "/api/events/history?source=soar&limit=10")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(body["events"][0]["path"], payload["path"])
+        self.assertEqual(body["stats"]["severity"]["CRITICAL"], 1)
+        self.assertEqual(body["sources"]["wazuh"], 0)
+
+    def test_endpoint_history_filter_since_dan_severity(self):
+        now = datetime.now(fleet_monitor.WITA)
+        self.request("POST", "/webhook-log", {
+            "agent_id": "009", "path": "/old", "severity": "HIGH",
+            "ts": (now - timedelta(days=40)).isoformat(),
+        })
+        self.request("POST", "/webhook-log", {
+            "agent_id": "009", "path": "/new", "severity": "CRITICAL",
+            "ts": now.isoformat(),
+        })
+
+        status, _, body = self.request(
+            "GET", "/api/events/history?since=" + (now - timedelta(days=1)).isoformat()
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual([e["path"] for e in body["events"]], ["/new"])
+
+        _, _, body = self.request("GET", "/api/events/history?severity=CRITICAL")
+        self.assertEqual([e["path"] for e in body["events"]], ["/new"])
+
+    def test_endpoint_degradasi_tanpa_indexer(self):
+        status, _, body = self.request("GET", "/api/events/history")
+        self.assertEqual(status, 200)
+        self.assertIsNone(body["indexer_ok"])
 
 
 if __name__ == "__main__":
