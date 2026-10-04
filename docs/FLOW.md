@@ -362,19 +362,31 @@ Markdown sanitization penting karena Telegram `parse_mode: Markdown` reject unba
 
 **Step 20-21: Telegram message**
 
-Template:
+Template (field terstruktur diambil dari node `Build Payload`, dengan fallback
+`?? ''`, supaya pesan tetap utuh walau `$json` rusak):
 ```javascript
-text: expr(`={{ $json.severityIcon + " *" + $json.severityLabel + " - MALWARE TERDETEKSI*\\n\\n" +
-            "📁 File: " + $("Ekstrak Alert").first().json.filename + "\\n" +
-            "📂 Path: " + $("Ekstrak Alert").first().json.filepath + "\\n" +
-            "🔍 Hash: `" + $json.hash_display + "`\\n" +
-            "🛡️ Severity: " + $json.severity + " level " + $json.rule_level + "\\n" +
-            "📊 Deteksi: " + $json.detection_text + "\\n" +
-            "🖥️ Agent: " + $("Ekstrak Alert").first().json.agent_name + "\\n" +
-            "🕐 Waktu: " + $("Ekstrak Alert").first().json.timestamp + "\\n\\n" +
-            "🤖 *Analisis AI:*\\n" + $json.ai_response + "\\n\\n" +
-            $json.vt_footer }}`)
+text: expr(`={{ $('Build Payload').first().json.severityIcon + " *" +
+            $('Build Payload').first().json.severityLabel + " - " +
+            $('Build Payload').first().json.alert_title + "*\\n\\n" +
+            "📁 " + b.target_label + ": " + esc(b.filename) + "\\n" +
+            "📂 Path: " + esc(b.filepath) + "\\n" +
+            "🔍 Hash: `" + (b.hash_display ?? 'Tidak tersedia') + "`\\n" +
+            "🛡️ Severity: " + (b.severity ?? '') + " level " + (b.rule_level ?? '') + "\\n" +
+            "📊 Deteksi: " + (b.detection_text ?? '') + "\\n" +
+            "🖥️ Agent: " + esc(b.agent_name) + "\\n" +
+            "🕐 Waktu: " + (b.timestamp ?? '') + "\\n\\n" +
+            "🤖 *Analisis AI:*\\n" + esc($json.ai_response ?? 'Analisis AI tidak tersedia.') + "\\n\\n" +
+            (b.vt_footer ?? '') }}`)
+// b = $('Build Payload').first().json; esc = escape karakter Markdown
 ```
+
+**Failsafe AI (penting).** Rantai live `Build Payload -> AI Generate -> Send
+Telegram Alert`. Node `AI Generate` memanggil Atria API; kalau gagal
+(timeout/429/5xx/key kosong) node hanya boleh menghasilkan teks fallback, BUKAN
+melempar error. Sebelum `scripts/patch-n8n-ai-failsafe.py`, `onError:
+continueRegularOutput` membuat output berisi item error sehingga seluruh pesan
+jadi `undefined` ("kadang" muncul hanya saat AI gagal). Patch membungkus
+panggilan HTTP dengan try/catch dan selalu `return { ...$json, ai_response }`.
 
 Conditional silent untuk MEDIUM:
 ```javascript
