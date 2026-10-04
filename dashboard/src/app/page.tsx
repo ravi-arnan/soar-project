@@ -34,7 +34,7 @@ export default function Home() {
   };
 
   // Data live dari scripts/fleet-monitor.py (poll sesuai preferensi).
-  const { snapshot, events, online, error, refresh } = useFleet(refreshMs);
+  const { snapshot, online, error, refresh } = useFleet(refreshMs);
 
   const { stats, agents, health } = snapshot;
   // Fallback ke agent pertama bila id terpilih tak ada (misal default awal).
@@ -162,8 +162,6 @@ export default function Home() {
 
         {currentView === 'security-events' && (
           <SecurityEventsDashboard
-            events={events}
-            stats={stats}
             onSelectAgent={handleSelectAgent}
             onOpenAgents={() => setCurrentView('agents')}
             onRefresh={refresh}
@@ -183,7 +181,6 @@ export default function Home() {
           <AgentDetailView
             agentId={effectiveAgentId}
             agent={selectedAgent}
-            events={events}
             onNavigateTab={(tab) => {
               if (tab === 'Security events') setCurrentView('security-events');
               if (tab === 'Integrity monitoring') setCurrentView('integrity-monitoring');
@@ -192,7 +189,7 @@ export default function Home() {
           />
         )}
 
-        {currentView === 'integrity-monitoring' && <FimDashboard events={events} />}
+        {currentView === 'integrity-monitoring' && <FimDashboard />}
 
         {currentView === 'mitre' && <MitreAttackView />}
 
@@ -200,7 +197,7 @@ export default function Home() {
           <NetworkMapView agents={agents} onSelectAgent={handleSelectAgent} />
         )}
 
-        {currentView === 'threat-intel' && <ThreatIntelView events={events} />}
+        {currentView === 'threat-intel' && <ThreatIntelView />}
 
         {currentView === 'settings' && (
           <SettingsView
