@@ -1197,9 +1197,15 @@ view event**, bukan cuma 200 event RAM terakhir.
 - **Verifikasi (di nixbox)**: `python3 scripts/test_fleet_monitor.py` 25/25 hijau;
   `npm run check` (dashboard) hijau (7 unit FE baru); E2E lokal buktikan durable
   lintas-restart + filter `since`/`severity`.
-- ⚠️ **BELUM di-deploy ke server.** Tree `/home/ravi/Projects/soar-project` di
-  ravi-debian ternyata **lebih lama/divergen** (fleet-monitor.py & docker-compose.yml
-  beda dari repo; `git` server "No commits yet"). Jangan timpa mentah. Deploy aman:
-  sinkronkan dulu tree server yang konsisten (atau patch spesifik), isi
-  `FLEET_COMMAND_TOKEN` + `FLEET_AGENT_POLL_TOKENS_JSON` di `.env` (validasi runtime),
-  lalu `docker compose up -d --build dashboard` dan restart `fleet-monitor`.
+- ⚠️ **Deploy ke server 2026-10-04.** Tree ravi-debian **lebih lama/divergen**
+  (`fleet-monitor.py` & `docker-compose.yml` beda; `git` server "No commits yet").
+  Karena itu dipakai cara **bedah**, bukan timpa tree:
+  - `fleet-monitor.py`: blok fitur disisipkan ke salinan file server (skrip
+    `patch_server.py` lokal + smoke-test). Backup: `scripts/fleet-monitor.py.bak-20261004`.
+  - `.env` server ditambah `FLEET_EVENTS_DB=/state/events.db` + `WAZUH_INDEXER_*`
+    (backup `.env.bak-20261004`). Password indexer masih default publik
+    (`SecretPassword`) → **rotasi** sebelum produksi.
+  - Dashboard: file identik dgn base repo → disalin + `docker compose build dashboard`.
+  - **LIVE & terverifikasi**: fleet-monitor `event store siap: /state/events.db`,
+    healthz 200; `/api/events/history` via dashboard mengembalikan alert Wazuh
+    nyata (source wazuh) + event SOAR; ingest durable diuji lalu dibersihkan.
