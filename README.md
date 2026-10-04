@@ -53,7 +53,7 @@ Penjelasan awam dan diagram lain: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 2. **n8n** — menyaring noise, lalu memeriksa verdict: cache hash → VirusTotal → MalwareBazaar (bila perlu) → OTX bila VT rate-limit.
 3. **Klasifikasi** — severity ditentukan dari jumlah deteksi dan level rule Wazuh, bukan sekadar "ada berkas baru".
 4. **Respons** — kasus berkeyakinan tinggi dieksekusi otomatis; kasus ambigu memunculkan tombol keputusan di Telegram.
-5. **Jejak** — setiap event masuk `fleet-monitor` dan tampil di dashboard (status, severity, hash, tautan VirusTotal).
+5. **Jejak** — setiap event masuk `fleet-monitor` (dipersist ke SQLite) dan tampil di dashboard (status, severity, hash, tautan VirusTotal). Riwayat bisa ditelusuri per periode (24 jam–90 hari atau rentang custom), digabung dengan arsip alert Wazuh Indexer.
 
 ---
 
@@ -151,8 +151,10 @@ bash scripts/test-phishing.sh "https://www.google.com/"      # hasil: AMAN
 | Cara | Alamat | Catatan |
 |------|--------|---------|
 | Dashboard web | `http://127.0.0.1:3000` | GUI utama (UI bergaya Wazuh): status agent, severity, event, detail agent |
-| API monitoring | `http://<server>:8080` | `/api/fleet`, `/api/events`, `/api/scan-results`, `/api/vt-cache` |
+| API monitoring | `http://<server>:8080` | `/api/fleet`, `/api/events`, `/api/events/history`, `/api/scan-results`, `/api/vt-cache` |
 | TUI terminal | `python3 scripts/fleet-tui.py` | Kembaran dashboard untuk sesi SSH (stdlib curses) |
+
+Dashboard menyimpan event secara **durable** (SQLite) dan bisa menampilkan **riwayat per periode** (24 jam / 7 / 30 / 90 hari, atau rentang custom) di semua view event, menggabungkan event pipeline SOAR dengan arsip alert Wazuh Indexer (`wazuh-alerts-*`). Endpoint: `GET /api/events/history?since=&until=&source=all|soar|wazuh`.
 
 Fleet saat ini (bertambah sampai 100 workstation):
 

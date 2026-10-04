@@ -133,6 +133,27 @@ Tambahkan kunci penyedia LLM ke `.env` (mis. `ATRIA_API_KEY`) lalu jalankan
 API penyedia lewat HTTPS — tidak ada layanan inferensi lokal yang dijalankan,
 sehingga tidak ada port 11434 yang perlu dibuka.
 
+### 1.7 Riwayat event dashboard (durasi periode)
+
+`fleet-monitor` menyimpan event pipeline SOAR ke SQLite dan (opsional) membaca
+arsip alert dari Wazuh Indexer, agar dashboard bisa menampilkan riwayat per
+periode. Set di `.env`:
+
+```bash
+FLEET_EVENTS_DB=/state/events.db          # volume ./state di-mount rw
+FLEET_EVENTS_RETENTION_DAYS=90            # auto-prune
+FLEET_EVENTS_MAX_ROWS=200000
+WAZUH_INDEXER_URL=https://127.0.0.1:9200  # indexer dirakit di host loopback
+WAZUH_INDEXER_USER=admin
+WAZUH_INDEXER_PASS=change-me              # JANGAN pakai default publik
+```
+
+Lalu `docker compose up -d fleet-monitor` (agar env terbaca). Endpoint:
+`GET /api/events/history?since=&until=&limit=&offset=&severity=&agent_id=&source=all|soar|wazuh&q=`.
+Bila `WAZUH_INDEXER_PASS` kosong, endpoint tetap jalan dengan sumber SQLite saja.
+Catatan keamanan: kredensial indexer default Wazuh (`admin/SecretPassword`)
+bersifat publik — rotasi sebelum produksi.
+
 ## Step 2 — Setup Wazuh Integration
 
 ### 2.1 Deploy Custom Integration Script
