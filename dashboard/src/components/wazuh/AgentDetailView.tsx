@@ -1,20 +1,22 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { agentStatus, formatWazuhTime, formatClock, severityLevel } from '@/lib/fleet';
 import { postCommand } from '@/lib/commands';
 import { ExpandableCard } from './ExpandableCard';
-import type { FleetAgent, FleetEvent, FleetScanResult } from '@/lib/fleet';
+import { PeriodFilter } from './PeriodFilter';
+import { useEventHistory, periodToWindow } from '@/lib/fleet';
+import type { FleetAgent, FleetEvent, FleetScanResult, PeriodValue } from '@/lib/fleet';
 
 interface AgentDetailViewProps {
   agentId?: string;
   /** Agent terpilih dari /api/fleet. */
   agent?: FleetAgent;
-  /** Event live dari /api/events (dipakai untuk FIM: Recent events). */
-  events?: FleetEvent[];
   onNavigateTab?: (tab: string) => void;
 }
+
+const DEFAULT_PERIOD: PeriodValue = { preset: '7d', since: null, until: null };
 
 const STATUS_DOT: Record<string, string> = {
   active: '#00A389',
@@ -324,10 +326,16 @@ function ScanStat({
 export function AgentDetailView({
   agentId = '004',
   agent,
-  events = [],
   onNavigateTab,
 }: AgentDetailViewProps) {
   const [activeTab, setActiveTab] = useState<string | null>(null);
+  const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
+
+  const timeWindow = useMemo(() => periodToWindow(period), [period]);
+  const { events } = useEventHistory(
+    { since: timeWindow.since, until: timeWindow.until, agentId, source: 'all', limit: 500 },
+    30000
+  );
 
   const status = agentStatus(agent?.status || 'active');
   const allAgentEvents = events.filter((e) => e.agent_id === agentId);
@@ -399,6 +407,7 @@ export function AgentDetailView({
             </button>
           ))}
         </div>
+        <PeriodFilter value={period} onChange={setPeriod} />
       </div>
 
       {/* Agent Metadata Strip */}

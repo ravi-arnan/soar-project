@@ -7,24 +7,15 @@ interface WazuhFilterBarProps {
   onSearch?: (query: string, filters: string[]) => void;
   onRefresh?: () => void;
   initialFilters?: string[];
-  /** Rentang waktu dalam jam (null = semua). */
-  dateRange?: number | null;
-  onDateRange?: (hours: number | null) => void;
+  /** Slot kontrol periode (PeriodFilter) di baris kontrol. */
+  periodSlot?: React.ReactNode;
 }
-
-const RANGE_OPTIONS: Array<{ label: string; hours: number | null }> = [
-  { label: 'Semua waktu', hours: null },
-  { label: '24 jam terakhir', hours: 24 },
-  { label: '7 hari terakhir', hours: 7 * 24 },
-  { label: '30 hari terakhir', hours: 30 * 24 },
-];
 
 export function WazuhFilterBar({
   onSearch,
   onRefresh,
   initialFilters = [],
-  dateRange = null,
-  onDateRange,
+  periodSlot,
 }: WazuhFilterBarProps) {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<string[]>(initialFilters);
@@ -83,19 +74,8 @@ export function WazuhFilterBar({
           </div>
         </div>
 
-        {/* Date range picker */}
-        <select
-          value={dateRange === null ? '' : String(dateRange)}
-          onChange={(e) => onDateRange?.(e.target.value === '' ? null : Number(e.target.value))}
-          title="Rentang waktu event"
-          className="h-9 bg-white border border-[#D3DAE6] rounded px-2 text-[13px] text-[#1A1C21] outline-none cursor-pointer"
-        >
-          {RANGE_OPTIONS.map((o) => (
-            <option key={o.label} value={o.hours === null ? '' : String(o.hours)}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        {/* Kontrol periode (disuntik view) */}
+        {periodSlot}
 
         {/* Refresh button */}
         <button

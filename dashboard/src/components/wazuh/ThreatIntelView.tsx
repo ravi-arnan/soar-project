@@ -1,15 +1,21 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ShieldAlert, Fingerprint, AlertTriangle } from 'lucide-react';
-import type { FleetEvent } from '@/lib/fleet';
-import { formatWazuhTime } from '@/lib/fleet';
+import { formatWazuhTime, useEventHistory, periodToWindow } from '@/lib/fleet';
+import { PeriodFilter } from './PeriodFilter';
+import type { PeriodValue } from '@/lib/fleet';
 
-interface ThreatIntelViewProps {
-  events: FleetEvent[];
-}
+const DEFAULT_PERIOD: PeriodValue = { preset: '7d', since: null, until: null };
 
-export function ThreatIntelView({ events }: ThreatIntelViewProps) {
+export function ThreatIntelView() {
+  const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
+  const timeWindow = useMemo(() => periodToWindow(period), [period]);
+  const { events } = useEventHistory(
+    { since: timeWindow.since, until: timeWindow.until, source: 'all', limit: 500 },
+    30000
+  );
+
   const intel = useMemo(() => {
     const withHash = events.filter((e) => e.hash);
     const crit = withHash.filter((e) => e.severity === 'CRITICAL').length;
@@ -23,6 +29,11 @@ export function ThreatIntelView({ events }: ThreatIntelViewProps) {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-[14px] font-semibold">Threat Intel</h2>
+        <PeriodFilter value={period} onChange={setPeriod} />
+      </div>
+
       {/* Ringkasan verdict pipeline */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 bg-white border border-[#D3DAE6] rounded p-4 text-center">
         <div>

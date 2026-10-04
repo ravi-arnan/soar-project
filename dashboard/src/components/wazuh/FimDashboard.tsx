@@ -17,18 +17,23 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
-import { formatWazuhTime, severityLevel } from '@/lib/fleet';
-import type { FleetEvent } from '@/lib/fleet';
+import { formatWazuhTime, severityLevel, useEventHistory, periodToWindow } from '@/lib/fleet';
+import { PeriodFilter } from './PeriodFilter';
+import type { PeriodValue } from '@/lib/fleet';
 
-interface FimDashboardProps {
-  /** Event live dari /api/events — path unik dipakai sebagai daftar file termonitor. */
-  events?: FleetEvent[];
-}
+const DEFAULT_PERIOD: PeriodValue = { preset: '7d', since: null, until: null };
 
-export function FimDashboard({ events = [] }: FimDashboardProps) {
+export function FimDashboard() {
   const [activeSubtab, setActiveSubtab] = useState<'inventory' | 'dashboard' | 'events'>('inventory');
   const [selectedPath, setSelectedPath] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
+
+  const timeWindow = useMemo(() => periodToWindow(period), [period]);
+  const { events } = useEventHistory(
+    { since: timeWindow.since, until: timeWindow.until, source: 'all', limit: 500 },
+    30000
+  );
 
   /** Reset pilihan file + pencarian (tombol X di header detail). */
   const resetSelection = () => {
@@ -75,17 +80,20 @@ export function FimDashboard({ events = [] }: FimDashboardProps) {
 
   return (
     <div className="space-y-4">
-      {/* Sub-tabs */}
-      <div className="flex items-center gap-6 border-b border-[#D3DAE6] pb-2 text-[13px]">
-        <button onClick={() => setActiveSubtab('inventory')} className={subtabCls(activeSubtab === 'inventory')}>
-          Inventory
-        </button>
-        <button onClick={() => setActiveSubtab('dashboard')} className={subtabCls(activeSubtab === 'dashboard')}>
-          Dashboard
-        </button>
-        <button onClick={() => setActiveSubtab('events')} className={subtabCls(activeSubtab === 'events')}>
-          Events
-        </button>
+      {/* Sub-tabs + kontrol periode */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D3DAE6] pb-2 text-[13px]">
+        <div className="flex items-center gap-6">
+          <button onClick={() => setActiveSubtab('inventory')} className={subtabCls(activeSubtab === 'inventory')}>
+            Inventory
+          </button>
+          <button onClick={() => setActiveSubtab('dashboard')} className={subtabCls(activeSubtab === 'dashboard')}>
+            Dashboard
+          </button>
+          <button onClick={() => setActiveSubtab('events')} className={subtabCls(activeSubtab === 'events')}>
+            Events
+          </button>
+        </div>
+        <PeriodFilter value={period} onChange={setPeriod} />
       </div>
 
       {activeSubtab === 'dashboard' && (

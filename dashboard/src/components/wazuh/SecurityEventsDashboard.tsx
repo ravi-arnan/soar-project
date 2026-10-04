@@ -1,58 +1,84 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Radio,
-  FileText,
-  ChevronRight,
-  ChevronDown,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Radio, FileText, ChevronRight, ChevronDown } from 'lucide-react';
 import { WazuhFilterBar } from './WazuhFilterBar';
 import { ExpandableCard } from './ExpandableCard';
-import { formatWazuhTime, severityLevel } from '@/lib/fleet';
+import { PeriodFilter } from './PeriodFilter';
+import { Pagination } from './Pagination';
+import {
+  formatWazuhTime,
+  severityLevel,
+  useEventHistory,
+  periodToWindow,
+} from '@/lib/fleet';
 import { postCommand } from '@/lib/commands';
-import type { FleetEvent, FleetStats } from '@/lib/fleet';
+import type {
+  EventHistoryQuery,
+  FleetEvent,
+  HistorySource,
+  PeriodValue,
+} from '@/lib/fleet';
 
 interface SecurityEventsDashboardProps {
   onSelectAgent?: (agentId: string) => void;
   /** Buka view Agents (opsional; tombol Explore agent disembunyikan bila tak ada). */
   onOpenAgents?: () => void;
-  /** Event live dari /api/events (heartbeat agent + webhook n8n). */
-  events: FleetEvent[];
-  /** Ringkasan severity dari /api/fleet. */
-  stats: FleetStats;
   onRefresh?: () => void;
 }
 
-/** Warna seri untuk donut Top 5 agents, disamakan dengan desain Wazuh. */
+/** Warna seri untuk donut Top 5, disamakan dengan desain Wazuh. */
 const TOP_AGENT_COLORS = ['#D9381E', '#00A389', '#006BB4', '#9B51E0', '#E2B93B'];
 
-/** Keliling donut (r=38) pada CS5 lama: 60+50+40+30 = 180 dari skala 240. */
+/** Keliling donut (r=38) pada desain lama. */
 const DONUT_CIRCUMFERENCE = 240;
+
+const DEFAULT_PERIOD_VALUE: PeriodValue = { preset: '7d', since: null, until: null };
 
 export function SecurityEventsDashboard({
   onSelectAgent,
   onOpenAgents,
-  events,
-  stats,
   onRefresh,
 }: SecurityEventsDashboardProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>('dashboard');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
-  /** Rentang waktu event dalam jam (null = semua). */
-  const [rangeHours, setRangeHours] = useState<number | null>(null);
+  const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD_VALUE);
+  const [source, setSource] = useState<HistorySource>('all');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   /** Status antrean AR per baris: queued | gagal | mengirim. */
   const [arState, setArState] = useState<Record<string, string>>({});
-  const [now, setNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+  const timeWindow = useMemo(() => periodToWindow(period), [period]);
+  const tokens = useMemo(
+    () => [query, ...activeFilters].map((t) => t.trim()).filter(Boolean),
+    [query, activeFilters]
+  );
+
+  const historyQuery = useMemo<EventHistoryQuery>(
+    () => ({
+      since: timeWindow.since,
+      until: timeWindow.until,
+      q: tokens,
+      source,
+      limit: rowsPerPage,
+      offset: page * rowsPerPage,
+    }),
+    [timeWindow.since, timeWindow.until, tokens, source, rowsPerPage, page]
+  );
+
+  const {
+    events: historyEvents,
+    stats: historyStats,
+    total,
+    loading,
+    error,
+    indexerOk,
+    sources,
+    refresh: refreshHistory,
+  } = useEventHistory(historyQuery, 20000);
 
   /** Terima search + chip filter dari WazuhFilterBar, reset ke halaman 1. */
   const handleSearch = (q: string, filters: string[]) => {
@@ -61,31 +87,56 @@ export function SecurityEventsDashboard({
     setPage(0);
   };
 
-  const handleRange = (h: number | null) => {
-    setRangeHours(h);
+  const handlePeriod = (value: PeriodValue) => {
+    setPeriod(value);
     setPage(0);
   };
 
-  // Event dalam rentang waktu terpilih (berlaku untuk tabel + grafik).
-  const rangedEvents = useMemo(() => {
-    if (rangeHours === null) return events;
-    const cutoff = now - rangeHours * 3600 * 1000;
-    return events.filter((e) => {
-      const t = new Date(e.ts).getTime();
-      return !Number.isNaN(t) && t >= cutoff;
-    });
-  }, [events, now, rangeHours]);
+  const handleSource = (value: HistorySource) => {
+    setSource(value);
+    setPage(0);
+  };
 
-  /** Unduh event yang tampil (filter + rentang aktif) sebagai CSV. */
+  const refresh = () => {
+    refreshHistory();
+    onRefresh?.();
+  };
+
+  const pageCount = Math.max(1, Math.ceil(total / rowsPerPage));
+  const safePage = Math.min(page, pageCount - 1);
+
+  // Riwayat (sudah terfilter + terpaginasi di server) -> baris tabel ala Wazuh.
+  const visibleAlerts = useMemo(
+    () =>
+      historyEvents.map((e: FleetEvent) => ({
+        id: e.id || JSON.stringify([e.ts, e.agent_id, e.hash, e.path, e.url]),
+        time: formatWazuhTime(e.ts),
+        agentId: e.agent_id || '-',
+        agentName: e.agent || '-',
+        hash: e.hash || '',
+        rawPath: e.path && e.path !== '-' ? e.path : '',
+        rawUrl: e.url || '',
+        source: e.source || 'soar',
+        description: e.ai
+          ? `${e.path || '-'} — ${e.ai}`
+          : e.rule_desc || e.path || e.status || '-',
+        level: e.rule_level ?? severityLevel(e.severity),
+        ruleId: e.rule_id || (e.severity || 'INFO').toUpperCase(),
+      })),
+    [historyEvents]
+  );
+
+  /** Unduh event yang tampil (halaman + filter aktif) sebagai CSV. */
   const exportCsv = () => {
     const cell = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    const header = ['time', 'agent_id', 'agent_name', 'hash', 'description', 'level', 'rule', 'source'];
     const lines = visibleAlerts.map((r) =>
-      [r.time, r.agentId, r.agentName, r.hash, r.description, r.level, r.ruleId].map(cell).join(',')
+      [r.time, r.agentId, r.agentName, r.hash, r.description, r.level, r.ruleId, r.source]
+        .map(cell)
+        .join(',')
     );
-    const blob = new Blob(
-      [[['time', 'agent_id', 'agent_name', 'hash', 'description', 'level', 'rule'].join(','), ...lines].join('\n')],
-      { type: 'text/csv' }
-    );
+    const csv = [header.join(','), ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const el = document.createElement('a');
     el.href = url;
@@ -105,98 +156,40 @@ export function SecurityEventsDashboard({
   }
 
   /** Antrekan perintah ke agent via fleet-monitor (di-poll agent, keluar-saja). */
-  async function queueCommand(rowId: string, agentId: string, action: 'quarantine' | 'sinkhole', target: string) {
-    const label = action === 'quarantine' ? `karantina file ${target}` : `sinkhole domain ${target}`;
+  async function queueCommand(
+    rowId: string,
+    agentId: string,
+    action: 'quarantine' | 'sinkhole',
+    target: string
+  ) {
+    const label =
+      action === 'quarantine' ? `karantina file ${target}` : `sinkhole domain ${target}`;
     if (!window.confirm(`Antrekan ${label} di agent ${agentId}?`)) return;
     setArState((s) => ({ ...s, [rowId]: 'mengirim...' }));
     try {
       const r = await postCommand({ agent_id: agentId, action, target });
       const j = await r.json();
-      setArState((s) => ({ ...s, [rowId]: r.ok && j.status === 'queued' ? 'queued ✓' : `gagal: ${j.error || r.status}` }));
+      setArState((s) => ({
+        ...s,
+        [rowId]: r.ok && j.status === 'queued' ? 'queued ✓' : `gagal: ${j.error || r.status}`,
+      }));
     } catch {
       setArState((s) => ({ ...s, [rowId]: 'gagal: jaringan' }));
     }
   }
 
-  // Event live -> baris tabel ala Wazuh. `level` mengikuti bucket severity fleet
-  // (CRITICAL=12, HIGH=8, MEDIUM=5, UNVERIFIED=4, INFO=3).
-  const alertsData = useMemo(
-    () =>
-      rangedEvents.map((e) => ({
-        id: e.id || JSON.stringify([e.ts, e.agent_id, e.hash, e.path, e.url]),
-        time: formatWazuhTime(e.ts),
-        agentId: e.agent_id || '-',
-        agentName: e.agent || '-',
-        hash: e.hash || '',
-        rawPath: e.path && e.path !== '-' ? e.path : '',
-        rawUrl: e.url || '',
-        techniques: '-',
-        tactics: '-',
-        description: e.ai ? `${e.path || '-'} — ${e.ai}` : e.path || e.status || '-',
-        level: severityLevel(e.severity),
-        ruleId: (e.severity || 'INFO').toUpperCase(),
-      })),
-    [rangedEvents]
-  );
-
-  // Filter search + chip dari WazuhFilterBar: tiap token harus cocok (AND)
-  // ke deskripsi / agent / rule.
-  const tokens = [query, ...activeFilters]
-    .map((t) => t.trim().toLowerCase())
-    .filter(Boolean);
-  const visibleAlerts = tokens.length
-    ? alertsData.filter((r) => {
-        const hay = `${r.description} ${r.agentName} ${r.agentId} ${r.ruleId}`.toLowerCase();
-        return tokens.every((t) => hay.includes(t));
-      })
-    : alertsData;
-
-  // Pagination: potong hasil filter per halaman.
-  const pageCount = Math.max(1, Math.ceil(visibleAlerts.length / rowsPerPage));
-  const safePage = Math.min(page, pageCount - 1);
-  const pagedAlerts = visibleAlerts.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage);
-
-  // Top 5 agent menurut jumlah event (dalam rentang aktif).
-  const topAgents = useMemo(() => {
-    const counts = new Map<string, number>();
-    rangedEvents.forEach((e) => {
-      const key = e.agent || '-';
-      counts.set(key, (counts.get(key) || 0) + 1);
-    });
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [rangedEvents]);
-
-  // Top 5 path menurut jumlah event (dalam rentang aktif).
-  const topPaths = useMemo(() => {
-    const counts = new Map<string, number>();
-    rangedEvents.forEach((e) => {
-      if (e.path && e.path !== '-') counts.set(e.path, (counts.get(e.path) || 0) + 1);
-    });
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [rangedEvents]);
+  const sev = historyStats.severity;
+  const topAgents = historyStats.top_agents.map((a) => [a.key, a.count] as [string, number]);
+  const topPaths = historyStats.top_paths.map((p) => [p.key, p.count] as [string, number]);
   const topPathTotal = topPaths.reduce((sum, [, n]) => sum + n, 0) || 1;
   const topPathArcs = topPaths.map(([, n]) => Math.round((n / topPathTotal) * DONUT_CIRCUMFERENCE));
-
-  // Histogram event per hari, 14 hari terakhir (dalam rentang aktif).
-  const dailyHits = useMemo(() => {
-    const days: { label: string; count: number }[] = [];
-    const current = new Date(now);
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(current.getFullYear(), current.getMonth(), current.getDate() - i);
-      days.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, count: 0 });
-    }
-    rangedEvents.forEach((e) => {
-      const t = new Date(e.ts).getTime();
-      if (Number.isNaN(t)) return;
-      const idx = 13 - Math.floor((new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime() - new Date(new Date(t).getFullYear(), new Date(t).getMonth(), new Date(t).getDate()).getTime()) / 86400000);
-      if (idx >= 0 && idx < 14) days[idx].count += 1;
-    });
-    return days;
-  }, [now, rangedEvents]);
-  const dailyMax = Math.max(1, ...dailyHits.map((d) => d.count));
-
   const topTotal = topAgents.reduce((sum, [, n]) => sum + n, 0) || 1;
   const topArcs = topAgents.map(([, n]) => Math.round((n / topTotal) * DONUT_CIRCUMFERENCE));
+  const dailyHits = historyStats.daily.slice(-30).map((d) => ({
+    label: d.date.slice(5),
+    count: d.count,
+  }));
+  const dailyMax = Math.max(1, ...dailyHits.map((d) => d.count));
 
   return (
     <div className="space-y-4">
@@ -248,251 +241,264 @@ export function SecurityEventsDashboard({
 
       {/* Filter and Search Bar */}
       <WazuhFilterBar
-        onRefresh={onRefresh}
+        onRefresh={refresh}
         onSearch={handleSearch}
-        dateRange={rangeHours}
-        onDateRange={handleRange}
+        periodSlot={
+          <PeriodFilter
+            value={period}
+            onChange={handlePeriod}
+            source={source}
+            onSourceChange={handleSource}
+          />
+        }
       />
 
-      {activeTab === 'dashboard' && (
-      <>
-      {/* Top 4 Metric KPI Counters — angka live dari /api/fleet.
-          Bucket severity fleet dipetakan ke 4 tile Wazuh (CRITICAL / HIGH / MEDIUM). */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 bg-white border border-[#D3DAE6] rounded p-4 text-center">
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Total</div>
-          <div className="text-[32px] font-semibold text-[#006BB4] leading-tight mt-1">
-            {stats.events_total.toLocaleString('en-US')}
-          </div>
-        </div>
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Level 12 or above alerts</div>
-          <div className="text-[32px] font-semibold text-[#BD271E] leading-tight mt-1">
-            {stats.severity.CRITICAL.toLocaleString('en-US')}
-          </div>
-        </div>
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Authentication failure</div>
-          <div className="text-[32px] font-semibold text-[#D97706] leading-tight mt-1">
-            {stats.severity.HIGH.toLocaleString('en-US')}
-          </div>
-        </div>
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Authentication success</div>
-          <div className="text-[32px] font-semibold text-[#00A389] leading-tight mt-1">
-            {stats.severity.MEDIUM.toLocaleString('en-US')}
-          </div>
-        </div>
+      {/* Status sumber riwayat */}
+      <div className="text-[11px] text-[#8A94A6] -mt-2">
+        Riwayat: {total.toLocaleString('en-US')} event · pipeline SOAR {sources.soar} ·
+        Wazuh {sources.wazuh}
+        {indexerOk === false && <span className="text-[#BD271E]"> · indexer tidak terjangkau</span>}
+        {error && <span className="text-[#BD271E]"> · {error}</span>}
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Card 1: Severity breakdown donut */}
-        <ExpandableCard title="Severity breakdown">
+      {activeTab === 'dashboard' && (
+        <>
+          {/* Top 4 Metric KPI Counters — angka mengikuti rentang periode aktif. */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 bg-white border border-[#D3DAE6] rounded p-4 text-center">
+            <div>
+              <div className="text-[12px] text-[#5A626F] font-medium">Total</div>
+              <div className="text-[32px] font-semibold text-[#006BB4] leading-tight mt-1">
+                {total.toLocaleString('en-US')}
+              </div>
+            </div>
+            <div>
+              <div className="text-[12px] text-[#5A626F] font-medium">Level 12 or above alerts</div>
+              <div className="text-[32px] font-semibold text-[#BD271E] leading-tight mt-1">
+                {sev.CRITICAL.toLocaleString('en-US')}
+              </div>
+            </div>
+            <div>
+              <div className="text-[12px] text-[#5A626F] font-medium">Authentication failure</div>
+              <div className="text-[32px] font-semibold text-[#D97706] leading-tight mt-1">
+                {sev.HIGH.toLocaleString('en-US')}
+              </div>
+            </div>
+            <div>
+              <div className="text-[12px] text-[#5A626F] font-medium">Authentication success</div>
+              <div className="text-[32px] font-semibold text-[#00A389] leading-tight mt-1">
+                {sev.MEDIUM.toLocaleString('en-US')}
+              </div>
+            </div>
+          </div>
 
-          <div className="flex items-center justify-center gap-6 h-56">
-            <div className="relative w-40 h-40 flex items-center justify-center">
-              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#EBEFF5" strokeWidth="18" />
-                {(() => {
-                  const sev = stats.severity;
-                  const total = sev.CRITICAL + sev.HIGH + sev.MEDIUM + sev.UNVERIFIED || 1;
-                  const items = [
+          {/* Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Card 1: Severity breakdown donut */}
+            <ExpandableCard title="Severity breakdown">
+              <div className="flex items-center justify-center gap-6 h-56">
+                <div className="relative w-40 h-40 flex items-center justify-center">
+                  <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                    <circle cx="50" cy="50" r="38" fill="none" stroke="#EBEFF5" strokeWidth="18" />
+                    {(() => {
+                      const totalSev = sev.CRITICAL + sev.HIGH + sev.MEDIUM + sev.UNVERIFIED || 1;
+                      const items = [
+                        { label: 'CRITICAL', count: sev.CRITICAL, color: '#BD271E' },
+                        { label: 'HIGH', count: sev.HIGH, color: '#D97706' },
+                        { label: 'MEDIUM', count: sev.MEDIUM, color: '#F5A623' },
+                        { label: 'UNVERIFIED', count: sev.UNVERIFIED, color: '#64748B' },
+                      ];
+                      let offset = 0;
+                      const arcs: Array<{ label: string; color: string; len: number; offset: number }> = [];
+                      const circum = 238.76;
+                      for (const item of items) {
+                        const len = (item.count / totalSev) * circum;
+                        if (len > 0) arcs.push({ ...item, len, offset });
+                        offset += len;
+                      }
+                      return arcs.map((a) =>
+                        a.len >= 1 ? (
+                          <circle
+                            key={a.label}
+                            cx="50"
+                            cy="50"
+                            r="38"
+                            fill="none"
+                            stroke={a.color}
+                            strokeWidth="18"
+                            strokeDasharray={`${a.len} ${circum - a.len}`}
+                            strokeDashoffset={`-${a.offset}`}
+                          />
+                        ) : null
+                      );
+                    })()}
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[20px] font-bold text-[#1A1C21]">{total}</span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] space-y-1.5 text-[#5A626F]">
+                  {[
                     { label: 'CRITICAL', count: sev.CRITICAL, color: '#BD271E' },
                     { label: 'HIGH', count: sev.HIGH, color: '#D97706' },
                     { label: 'MEDIUM', count: sev.MEDIUM, color: '#F5A623' },
                     { label: 'UNVERIFIED', count: sev.UNVERIFIED, color: '#64748B' },
-                  ];
-                  let offset = 0;
-                  const arcs = [];
-                  const circum = 238.76;
-                  for (const item of items) {
-                    const len = (item.count / total) * circum;
-                    if (len > 0) {
-                      arcs.push({ ...item, len, offset, label: item.label });
-                    }
-                    offset += len;
-                  }
-                  return arcs.map((a) =>
-                    a.len >= 1 ? (
-                      <circle
-                        key={a.label}
-                        cx="50" cy="50" r="38"
-                        fill="none"
-                        stroke={a.color}
-                        strokeWidth="18"
-                        strokeDasharray={`${a.len} ${circum - a.len}`}
-                        strokeDashoffset={`-${a.offset}`}
-                      />
+                  ].map((s) =>
+                    s.count > 0 ? (
+                      <div key={s.label} className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                        <span>{s.label}</span>
+                        <span className="font-semibold">{s.count}</span>
+                      </div>
                     ) : null
-                  );
-                })()}
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[20px] font-bold text-[#1A1C21]">{stats.events_total}</span>
-              </div>
-            </div>
-
-            <div className="text-[11px] space-y-1.5 text-[#5A626F]">
-              {[
-                { label: 'CRITICAL', count: stats.severity.CRITICAL, color: '#BD271E' },
-                { label: 'HIGH', count: stats.severity.HIGH, color: '#D97706' },
-                { label: 'MEDIUM', count: stats.severity.MEDIUM, color: '#F5A623' },
-                { label: 'UNVERIFIED', count: stats.severity.UNVERIFIED, color: '#64748B' },
-              ].map((s) =>
-                s.count > 0 ? (
-                  <div key={s.label} className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                    <span>{s.label}</span>
-                    <span className="font-semibold">{s.count}</span>
-                  </div>
-                ) : null
-              )}
-            </div>
-          </div>
-        </ExpandableCard>
-
-        {/* Card 2: Top paths (live dari event) */}
-        <ExpandableCard title="Top paths">
-
-          <div className="flex items-center justify-center gap-6 h-56">
-            <div className="relative w-40 h-40 flex items-center justify-center">
-              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#EBEFF5" strokeWidth="18" />
-                {topPathArcs.map((len, i) => {
-                  const offset = topPathArcs.slice(0, i).reduce((a, b) => a + b, 0);
-                  return len > 0 ? (
-                    <circle
-                      key={i}
-                      cx="50"
-                      cy="50"
-                      r="38"
-                      fill="none"
-                      stroke={TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length]}
-                      strokeWidth="18"
-                      strokeDasharray={`${len} ${DONUT_CIRCUMFERENCE - len}`}
-                      strokeDashoffset={`-${offset}`}
-                    />
-                  ) : null;
-                })}
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[20px] font-bold text-[#1A1C21]">{topPaths.reduce((s, [, n]) => s + n, 0)}</span>
-              </div>
-            </div>
-
-            <div className="text-[11px] space-y-1 text-[#5A626F] overflow-y-auto max-h-48 pr-2">
-              {topPaths.length ? (
-                topPaths.map(([path, n], i) => (
-                  <div key={path} className="flex items-center gap-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length] }}
-                    ></span>
-                    <span className="truncate max-w-[160px] font-mono" title={path}>{path.split('/').pop()}</span>
-                    <span className="font-semibold">{n}</span>
-                  </div>
-                ))
-              ) : (
-                <span className="text-[#8A94A6]">belum ada event</span>
-              )}
-            </div>
-          </div>
-        </ExpandableCard>
-
-        {/* Card 3: Top 5 Agents */}
-        <ExpandableCard title="Top 5 agents">
-
-          <div className="flex items-center justify-center gap-6 h-56">
-            <div className="relative w-40 h-40 flex items-center justify-center">
-              <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#EBEFF5" strokeWidth="18" />
-                {topArcs.map((len, i) => {
-                  const offset = topArcs.slice(0, i).reduce((a, b) => a + b, 0);
-                  return (
-                    <circle
-                      key={i}
-                      cx="50"
-                      cy="50"
-                      r="38"
-                      fill="none"
-                      stroke={TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length]}
-                      strokeWidth="18"
-                      strokeDasharray={`${len} ${DONUT_CIRCUMFERENCE - len}`}
-                      strokeDashoffset={`-${offset}`}
-                    />
-                  );
-                })}
-              </svg>
-            </div>
-
-            <div className="text-[11px] space-y-1.5 text-[#5A626F]">
-              {topAgents.length ? (
-                topAgents.map(([name, count], i) => (
-                  <div key={name} className="flex items-center gap-2">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length] }}
-                    ></span>
-                    <span className="truncate max-w-[140px]" title={name}>{name}</span>
-                    <span className="font-semibold">{count}</span>
-                  </div>
-                ))
-              ) : (
-                <span className="text-[#8A94A6]">belum ada event</span>
-              )}
-            </div>
-          </div>
-        </ExpandableCard>
-
-        {/* Card 4: Alerts evolution (histogram per hari dari ts event asli) */}
-        <ExpandableCard title="Alerts evolution - 14 hari">
-
-          <div className="flex items-center justify-between gap-4 h-56">
-            <div className="flex-1 h-full flex flex-col justify-end">
-              <div className="h-44 flex items-end justify-between gap-1 border-b border-[#D3DAE6] pb-1">
-                {dailyHits.map((d) => (
-                  <div key={d.label} className="flex-1 flex flex-col justify-end items-center h-full" title={`${d.label}: ${d.count} event`}>
-                    <div
-                      style={{ height: `${Math.round((d.count / dailyMax) * 100)}%`, minHeight: d.count > 0 ? 4 : 0 }}
-                      className="bg-[#006BB4] w-full"
-                    ></div>
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-between text-[10px] text-[#8A94A6] mt-2">
-                <span>{dailyHits[0]?.label}</span>
-                <span>{dailyHits[6]?.label}</span>
-                <span>{dailyHits[13]?.label}</span>
-              </div>
-            </div>
-
-            <div className="w-24 text-[11px] space-y-1.5 text-[#5A626F] shrink-0 border-l border-[#EBEFF5] pl-3">
-              {topAgents.slice(0, 4).map(([name], i) => (
-                <div key={name} className="flex items-center gap-1.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full"
-                    style={{ backgroundColor: TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length] }}
-                  ></span>
-                  <span className="truncate" title={name}>{name}</span>
+                  )}
                 </div>
-              ))}
-            </div>
+              </div>
+            </ExpandableCard>
+
+            {/* Card 2: Top paths */}
+            <ExpandableCard title="Top paths">
+              <div className="flex items-center justify-center gap-6 h-56">
+                <div className="relative w-40 h-40 flex items-center justify-center">
+                  <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                    <circle cx="50" cy="50" r="38" fill="none" stroke="#EBEFF5" strokeWidth="18" />
+                    {topPathArcs.map((len, i) => {
+                      const offset = topPathArcs.slice(0, i).reduce((a, b) => a + b, 0);
+                      return len > 0 ? (
+                        <circle
+                          key={i}
+                          cx="50"
+                          cy="50"
+                          r="38"
+                          fill="none"
+                          stroke={TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length]}
+                          strokeWidth="18"
+                          strokeDasharray={`${len} ${DONUT_CIRCUMFERENCE - len}`}
+                          strokeDashoffset={`-${offset}`}
+                        />
+                      ) : null;
+                    })}
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[20px] font-bold text-[#1A1C21]">
+                      {topPaths.reduce((s, [, n]) => s + n, 0)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] space-y-1 text-[#5A626F] overflow-y-auto max-h-48 pr-2">
+                  {topPaths.length ? (
+                    topPaths.map(([path, n], i) => (
+                      <div key={path} className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length] }}
+                        ></span>
+                        <span className="truncate max-w-[160px] font-mono" title={path}>
+                          {path.split(/[/\\]/).pop()}
+                        </span>
+                        <span className="font-semibold">{n}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-[#8A94A6]">belum ada event</span>
+                  )}
+                </div>
+              </div>
+            </ExpandableCard>
+
+            {/* Card 3: Top 5 Agents */}
+            <ExpandableCard title="Top 5 agents">
+              <div className="flex items-center justify-center gap-6 h-56">
+                <div className="relative w-40 h-40 flex items-center justify-center">
+                  <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+                    <circle cx="50" cy="50" r="38" fill="none" stroke="#EBEFF5" strokeWidth="18" />
+                    {topArcs.map((len, i) => {
+                      const offset = topArcs.slice(0, i).reduce((a, b) => a + b, 0);
+                      return (
+                        <circle
+                          key={i}
+                          cx="50"
+                          cy="50"
+                          r="38"
+                          fill="none"
+                          stroke={TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length]}
+                          strokeWidth="18"
+                          strokeDasharray={`${len} ${DONUT_CIRCUMFERENCE - len}`}
+                          strokeDashoffset={`-${offset}`}
+                        />
+                      );
+                    })}
+                  </svg>
+                </div>
+
+                <div className="text-[11px] space-y-1.5 text-[#5A626F]">
+                  {topAgents.length ? (
+                    topAgents.map(([name, count], i) => (
+                      <div key={name} className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: TOP_AGENT_COLORS[i % TOP_AGENT_COLORS.length] }}
+                        ></span>
+                        <span className="truncate max-w-[140px]" title={name}>{name}</span>
+                        <span className="font-semibold">{count}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-[#8A94A6]">belum ada event</span>
+                  )}
+                </div>
+              </div>
+            </ExpandableCard>
+
+            {/* Card 4: Alerts evolution (histogram per hari, mengikuti rentang) */}
+            <ExpandableCard title="Alerts evolution">
+              <div className="flex items-center justify-between gap-4 h-56">
+                <div className="flex-1 h-full flex flex-col justify-end">
+                  <div className="h-44 flex items-end justify-between gap-1 border-b border-[#D3DAE6] pb-1">
+                    {dailyHits.length ? (
+                      dailyHits.map((d) => (
+                        <div
+                          key={d.label}
+                          className="flex-1 flex flex-col justify-end items-center h-full"
+                          title={`${d.label}: ${d.count} event`}
+                        >
+                          <div
+                            style={{
+                              height: `${Math.round((d.count / dailyMax) * 100)}%`,
+                              minHeight: d.count > 0 ? 4 : 0,
+                            }}
+                            className="bg-[#006BB4] w-full"
+                          ></div>
+                        </div>
+                      ))
+                    ) : (
+                      <span className="text-[11px] text-[#8A94A6] self-center">belum ada event</span>
+                    )}
+                  </div>
+                  {dailyHits.length > 0 && (
+                    <div className="flex justify-between text-[10px] text-[#8A94A6] mt-2">
+                      <span>{dailyHits[0]?.label}</span>
+                      <span>{dailyHits[Math.floor(dailyHits.length / 2)]?.label}</span>
+                      <span>{dailyHits[dailyHits.length - 1]?.label}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </ExpandableCard>
           </div>
-        </ExpandableCard>
-      </div>
-      </>
+        </>
       )}
 
       {/* Security Alerts Data Table Card */}
       <ExpandableCard title="Security Alerts">
-
         <div className="overflow-x-auto border border-[#EBEFF5] rounded">
           <table className="w-full text-left border-collapse text-[12px]">
             <thead>
               <tr className="bg-[#F8FAFC] border-b border-[#D3DAE6] text-[#5A626F] font-semibold select-none">
                 <th className="py-2.5 px-3 w-8"></th>
                 <th className="py-2.5 px-3">Time ↓</th>
+                <th className="py-2.5 px-3">Sumber</th>
                 <th className="py-2.5 px-3">Agent</th>
                 <th className="py-2.5 px-3">Agent name</th>
                 <th className="py-2.5 px-3">Hash (VT)</th>
@@ -506,13 +512,15 @@ export function SecurityEventsDashboard({
               {!visibleAlerts.length && (
                 <tr>
                   <td colSpan={10} className="py-6 text-center text-[#8A94A6]">
-                    {query || activeFilters.length
-                      ? `tidak ada event cocok "${[query, ...activeFilters].filter(Boolean).join(' + ')}"`
-                      : 'belum ada event — drop EICAR di folder yang diawasi agent'}
+                    {loading
+                      ? 'memuat riwayat…'
+                      : tokens.length
+                      ? `tidak ada event cocok "${tokens.join(' + ')}"`
+                      : 'belum ada event pada periode ini'}
                   </td>
                 </tr>
               )}
-              {pagedAlerts.map((row) => {
+              {visibleAlerts.map((row) => {
                 const isExpanded = expandedRow === row.id;
                 return (
                   <React.Fragment key={row.id}>
@@ -532,6 +540,17 @@ export function SecurityEventsDashboard({
                         </button>
                       </td>
                       <td className="py-2 px-3 text-[#5A626F] whitespace-nowrap">{row.time}</td>
+                      <td className="py-2 px-3">
+                        <span
+                          className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                            row.source === 'wazuh'
+                              ? 'bg-[#F0F4F8] text-[#5A626F]'
+                              : 'bg-[#EBF5FB] text-[#006BB4]'
+                          }`}
+                        >
+                          {row.source === 'wazuh' ? 'Wazuh' : 'SOAR'}
+                        </span>
+                      </td>
                       <td className="py-2 px-3 font-medium">
                         <button
                           onClick={() => onSelectAgent?.(row.agentId)}
@@ -584,8 +603,10 @@ export function SecurityEventsDashboard({
                               {row.rawPath && (
                                 <button
                                   type="button"
-                                  disabled={Boolean(st)}
-                                  onClick={() => queueCommand(row.id, row.agentId, 'quarantine', row.rawPath)}
+                                  disabled={Boolean(st) || row.agentId === '-'}
+                                  onClick={() =>
+                                    queueCommand(row.id, row.agentId, 'quarantine', row.rawPath)
+                                  }
                                   title={`Karantina ${row.rawPath} di agent ${row.agentId}`}
                                   className="text-[11px] font-medium text-[#BD271E] border border-[#F5C2C0] bg-[#FDF3F2] hover:bg-[#FDE8E8] px-1.5 py-0.5 rounded disabled:opacity-50"
                                 >
@@ -595,7 +616,7 @@ export function SecurityEventsDashboard({
                               {dom && (
                                 <button
                                   type="button"
-                                  disabled={Boolean(st)}
+                                  disabled={Boolean(st) || row.agentId === '-'}
                                   onClick={() => queueCommand(row.id, row.agentId, 'sinkhole', dom)}
                                   title={`Sinkhole ${dom} di agent ${row.agentId}`}
                                   className="text-[11px] font-medium text-[#B25E09] border border-[#F5D9A8] bg-[#FEF6E8] hover:bg-[#FDEFD4] px-1.5 py-0.5 rounded disabled:opacity-50"
@@ -603,7 +624,11 @@ export function SecurityEventsDashboard({
                                   Blokir
                                 </button>
                               )}
-                              {st && <span role="status" aria-live="polite" className="text-[11px] text-[#5A626F]">{st}</span>}
+                              {st && (
+                                <span role="status" aria-live="polite" className="text-[11px] text-[#5A626F]">
+                                  {st}
+                                </span>
+                              )}
                               {!row.rawPath && !dom && <span className="text-[#8A94A6]">-</span>}
                             </span>
                           );
@@ -624,9 +649,7 @@ export function SecurityEventsDashboard({
                             <div><strong>agent.name:</strong> &quot;{row.agentName}&quot;</div>
                             <div><strong>rule.level:</strong> {row.level}</div>
                             <div><strong>rule.description:</strong> &quot;{row.description}&quot;</div>
-                            <div><strong>mitre.technique:</strong> &quot;{row.techniques}&quot;</div>
-                            <div><strong>mitre.tactic:</strong> &quot;{row.tactics}&quot;</div>
-                            <div><strong>location:</strong> &quot;wazuh-alerts&quot;</div>
+                            <div><strong>location:</strong> &quot;{row.source === 'wazuh' ? 'wazuh-alerts (indexer)' : 'wazuh-alerts'}&quot;</div>
                           </div>
                         </td>
                       </tr>
@@ -638,52 +661,15 @@ export function SecurityEventsDashboard({
           </table>
         </div>
 
-        {/* Pagination bar */}
-        <div className="flex items-center justify-between mt-3 text-[12px] text-[#5A626F]">
-          <div className="flex items-center gap-2">
-            <span>Rows per page:</span>
-            <select
-              value={rowsPerPage}
-              onChange={(e) => {
-                setRowsPerPage(Number(e.target.value));
-                setPage(0);
-              }}
-              className="border border-[#D3DAE6] rounded px-1.5 py-0.5 bg-white text-[#1A1C21] outline-none"
-            >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-            </select>
-            <span>
-              {visibleAlerts.length === 0
-                ? '0'
-                : `${safePage * rowsPerPage + 1}-${Math.min(safePage * rowsPerPage + rowsPerPage, visibleAlerts.length)}`}{' '}
-              dari {visibleAlerts.length}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={safePage === 0}
-              className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent"
-              aria-label="Halaman sebelumnya"
-            >
-              ‹
-            </button>
-            <span className="font-semibold text-[#006BB4] px-1">
-              {safePage + 1} / {pageCount}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-              disabled={safePage >= pageCount - 1}
-              className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent"
-              aria-label="Halaman berikut"
-            >
-              ›
-            </button>
-          </div>
-        </div>
+        {/* Pagination bar (server-side) */}
+        <Pagination
+          page={safePage}
+          pageCount={pageCount}
+          total={total}
+          rowsPerPage={rowsPerPage}
+          onPageChange={setPage}
+          onRowsChange={setRowsPerPage}
+        />
       </ExpandableCard>
     </div>
   );
