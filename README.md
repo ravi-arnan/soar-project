@@ -22,7 +22,7 @@ Threat intelligence multi-sumber, respons berjenjang berbasis keyakinan, ringkas
 
 - **SOAR penuh dari komponen open-source** — setara kapabilitas Cortex XSOAR atau Splunk SOAR tanpa biaya lisensi.
 - **Respons berjenjang (confidence-based)** — sistem yakin bertindak otomatis; sistem ragu menyerahkan keputusan ke analis (human-in-the-loop).
-- **Threat intelligence multi-sumber** — VirusTotal + MalwareBazaar (ensemble malware), GSB + URLScan.io (phishing), AlienVault OTX sebagai fallback saat rate-limit.
+- **Threat intelligence multi-sumber** — VirusTotal + MalwareBazaar + **MISP** (feed OSINT komunitas) untuk malware, GSB + URLScan.io untuk phishing, AlienVault OTX sebagai fallback saat rate-limit.
 - **Hemat kuota & anti-noise** — filter noise pra-scan, cache verdict berbasis hash dengan TTL diferensial, dan dedup claim-check di sisi server.
 - **Agen ringan lintas OS** — `soar-agent` (Rust, ~5 MB) untuk Linux, Windows, dan macOS; mengirim metadata + hash saja, isi berkas tidak pernah keluar endpoint.
 - **Bukti yang bisa dipantau** — dashboard web (UI bergaya Wazuh), TUI terminal, dan API monitoring dengan heartbeat 60 detik.
@@ -67,6 +67,7 @@ Penjelasan awam dan diagram lain: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | **n8n** | Mesin orkestrasi playbook (otak SOAR) | 2.42.5 |
 | **soar-agent** | Agen endpoint Rust: FIM, hash, karantina, scan on-demand | - |
 | **fleet-monitor** | API monitoring (heartbeat, event, command queue, cache verdict) | stdlib Python |
+| **misp-index** | Sumber threat-intel MISP (feed CIRCL OSINT) + API lookup | stdlib Python |
 | **dashboard** | UI monitoring (gaya Wazuh) | Next.js |
 | **VirusTotal API** | Reputasi hash (70+ antivirus) | v3 |
 | **MalwareBazaar API** | Sumber intel kedua untuk malware | v1 |
