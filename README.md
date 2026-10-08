@@ -68,6 +68,7 @@ Penjelasan awam dan diagram lain: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | **soar-agent** | Agen endpoint Rust: FIM, hash, karantina, scan on-demand | - |
 | **fleet-monitor** | API monitoring (heartbeat, event, command queue, cache verdict) | stdlib Python |
 | **misp-index** | Sumber threat-intel MISP (feed CIRCL OSINT) + API lookup | stdlib Python |
+| **alert-log** | Pencatat alert Telegram keluar (observability) | stdlib Python |
 | **dashboard** | UI monitoring (gaya Wazuh) | Next.js |
 | **VirusTotal API** | Reputasi hash (70+ antivirus) | v3 |
 | **MalwareBazaar API** | Sumber intel kedua untuk malware | v1 |
