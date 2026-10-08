@@ -331,7 +331,7 @@ pdf.set_text_color(120, 120, 120)
 pdf.cell(0, 8, "raviarnankeren@gmail.com", align="C", new_x="LMARGIN", new_y="NEXT")
 
 # ─── Simpan ───
-output_path = "docs/BIMBINGAN-TA-SOAR.pdf"
+output_path = "docs/bimbingan/BIMBINGAN-TA-SOAR.pdf"
 pdf.output(output_path)
 print(f"PDF disimpan ke {output_path}")
 print(f"Total halaman: {pdf.pages_count}")

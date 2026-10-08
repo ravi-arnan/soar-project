@@ -1,7 +1,7 @@
 # Runbook Upgrade Versi — Oktober 2026
 
 Panduan upgrade **n8n** dan **Wazuh** untuk menutup CVE / mengejar versi stable.
-Dasar: riset [`RELEVANSI-2026.md`](RELEVANSI-2026.md) (2026-10-08).
+Dasar: riset [`docs/ilmiah/RELEVANSI-2026.md`](RELEVANSI-2026.md) (2026-10-08).
 
 **Status repo:** pin n8n **sudah** dipatch ke `2.42.5`. Wazuh **belum** dinaikkan —
 menunggu jendela eksekusi (server `ravi-debian` offline saat runbook ini ditulis).

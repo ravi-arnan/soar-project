@@ -66,7 +66,7 @@ sudo tail -5 /var/ossec/logs/active-responses.log
 | Notifikasi tak muncul | Cek workflow Active di n8n; `docker logs n8n --tail 20` |
 | Tombol diklik tak ada efek | `docker logs tg-callback-poller --tail 10` (harus "forwarded callback_query") |
 | Agent tak Active | `sudo systemctl restart wazuh-agent` |
-| **FIM rewel** → picu via webhook | lihat `docs/KARTU-DEMO.md` §6 |
+| **FIM rewel** → picu via webhook | lihat `docs/demo/KARTU-DEMO.md` §6 |
 
 ## 🧹 BERSIH-BERSIH SETELAH DEMO
 ```bash

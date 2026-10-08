@@ -322,7 +322,7 @@ add_text(slide, 1, 5.8, 11, 0.5, "raviarnankeren@gmail.com", 14, LGRAY, False, P
 
 
 # ─── Simpan ───
-output_path = "docs/BIMBINGAN-TA-SOAR.pptx"
+output_path = "docs/bimbingan/BIMBINGAN-TA-SOAR.pptx"
 prs.save(output_path)
 print(f"PPT disimpan ke {output_path}")
 print(f"Total slides: {len(prs.slides)}")

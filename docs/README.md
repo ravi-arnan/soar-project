@@ -1,24 +1,38 @@
 # Indeks Dokumentasi (`docs/`)
 
-Semua dokumen proyek. **Sumber utama = Markdown** (`.md`); PDF/DOCX adalah hasil ekspor
-untuk dibaca/dibagikan. Aset gambar ada di subfolder.
+Semua dokumen proyek, dikelompokkan per kategori. **Sumber utama = Markdown (`.md`)**;
+PDF/DOCX/PPTX adalah hasil ekspor untuk dibaca/dibagikan. Aset gambar ada di subfolder.
 
-## Arsitektur & desain
+```
+docs/
+  arsitektur/    arsitektur, alur, konsep mitigasi, perbandingan dgn antivirus
+  evaluasi/      metrik & data mentah benchmark
+  ilmiah/        perbandingan penelitian, n8n vs shuffle, MITRE, relevansi 2026
+  laporan/       draf & ekspor laporan TA
+  bimbingan/     laporan bimbingan, catatan dospem, materi        (+ lampiran/)
+  demo/          kartu demo & contekan
+  panduan/       panduan diagram, deployment, runbook upgrade
+  agen-ringan/   spesifikasi & roadmap agen Rust
+  diagrams/      sumber & hasil diagram
+  screenshots/   tangkapan layar
+  playbooks/     playbook RAG (anti-halusinasi)
+```
+
+## arsitektur/
 | Dokumen | Isi |
 |---|---|
 | `ARCHITECTURE.md` | Arsitektur & komponen, skema payload |
 | `FLOW.md` | Alur (sequence) deteksi → respons |
-| `KONSEP-MITIGASI.md` | Konsep mitigasi/Active Response |
+| `KONSEP-MITIGASI.md` | Konsep mitigasi / Active Response |
 | `VS-ANTIVIRUS.md` | Bedanya SOAR ini vs antivirus |
 
-## Evaluasi & bukti
+## evaluasi/
 | Dokumen | Isi |
 |---|---|
 | `EVALUASI-METRIK.md` | Metrik kuantitatif (MTTR, FP/FN, throughput, HITL, VT cache) |
 | `bench-*.json` | Data mentah hasil benchmark |
-| `screenshots/` | Tangkapan layar dashboard |
 
-## Perbandingan & kajian ilmiah
+## ilmiah/
 | Dokumen | Isi |
 |---|---|
 | `PERBANDINGAN-PENELITIAN.md` | Tabel perbandingan + referensi |
@@ -26,14 +40,14 @@ untuk dibaca/dibagikan. Aset gambar ada di subfolder.
 | `MITRE-ATTACK-MAPPING.md` | Pemetaan teknik MITRE ATT&CK |
 | `RELEVANSI-2026.md` | Kajian relevansi & lanskap 2026 |
 
-## Laporan Tugas Akhir
+## laporan/
 | Dokumen | Isi |
 |---|---|
 | `Laporan-SOAR.md` / `.docx` | Draf laporan TA |
 | `Laporan TA - SOAR.pdf` | Ekspor laporan TA |
 | `Laporan TA - Topik Khusus Network.pdf` | Laporan mata kuliah terkait (arsip) |
 
-## Bimbingan
+## bimbingan/
 | Dokumen | Isi |
 |---|---|
 | `CATATAN-DOSPEM-2026-09-03.md` | Catatan bimbingan 3 Sep 2026 |
@@ -41,24 +55,21 @@ untuk dibaca/dibagikan. Aset gambar ada di subfolder.
 | `BIMBINGAN-TA-SOAR.pptx` / `.pdf` | Materi bimbingan |
 | `lampiran/` | Gambar lampiran laporan bimbingan |
 
-## Demo & panduan
+## demo/
 | Dokumen | Isi |
 |---|---|
 | `KARTU-DEMO.md` / `.docx` / `.pdf`, `KARTU-CONTEKAN-*` | Skrip & contekan demo |
-| `PANDUAN-DIAGRAM.md` / `.docx` / `.pdf` | Cara render diagram |
 
-## Agen ringan (Rust)
+## panduan/
+| Dokumen | Isi |
+|---|---|
+| `PANDUAN-DIAGRAM.md` / `.docx` / `.pdf` | Cara render diagram |
+| `DEPLOYMENT.md` | Panduan penggelaran |
+| `UPGRADE-VERSI-2026-10.md` | Runbook upgrade n8n/Wazuh |
+
+## agen-ringan/
 | Dokumen | Isi |
 |---|---|
 | `AGENT-RINGAN.md`, `ROADMAP-AGEN-RINGAN.md` | Spesifikasi & roadmap agen ringan |
 
-## Operasional
-| Dokumen | Isi |
-|---|---|
-| `DEPLOYMENT.md` | Panduan penggelaran |
-| `UPGRADE-VERSI-2026-10.md` | Runbook upgrade n8n/Wazuh |
-
-## Aset
-`diagrams/` (diagram `.mmd`/`.png`), `screenshots/`, `lampiran/`, `playbooks/` (RAG), berkas `*.png`.
-
-> Catatan: status pekerjaan menonjol ada di `../ROADMAP.md`; jejak sesi di `../HANDOFF.md`.
+> Status pekerjaan menonjol: `../ROADMAP.md`. Jejak sesi: `../HANDOFF.md`.

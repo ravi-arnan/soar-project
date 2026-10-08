@@ -117,7 +117,7 @@ python3 scripts/benchmark-soar.py --mode all --n 30
 **Output:** JSON ke stdout + tabel ringkasan ke stderr.
 **Env vars:** `N8N_WEBHOOK_MALWARE`, `N8N_WEBHOOK_PHISHING`, `WAZUH_API`, `AGENT_ID`, `AGENT_NAME`.
 
-### 8.2 Pemetaan MITRE ATT&CK (`docs/MITRE-ATTACK-MAPPING.md`)
+### 8.2 Pemetaan MITRE ATT&CK (`docs/ilmiah/MITRE-ATTACK-MAPPING.md`)
 
 Pemetaan teknik ATT&CK ke setiap playbook:
 - **T1566.002** (Phishing Link) → Deteksi Phishing + Proaktif Phishing
@@ -131,9 +131,9 @@ Pemetaan teknik ATT&CK ke setiap playbook:
 - **T1070.004** (File Deletion) → quarantine remediation
 - **T1499** (Availability) → health monitor
 
-Total: **10 teknik unik** tercakup (lihat `docs/MITRE-ATTACK-MAPPING.md`).
+Total: **10 teknik unik** tercakup (lihat `docs/ilmiah/MITRE-ATTACK-MAPPING.md`).
 
-### 8.3 Justifikasi n8n vs Shuffle (`docs/N8N-VS-SHUFFLE.md`)
+### 8.3 Justifikasi n8n vs Shuffle (`docs/ilmiah/N8N-VS-SHUFFLE.md`)
 
 Perbandingan empiris 6 aspek: fleksibilitas code execution, state persistence, integrasi security, observability, deployment, HITL.
 - **n8n: 3.8/5** vs **Shuffle: 2.5/5** (rata-rata tertimbang)
@@ -202,10 +202,10 @@ Seluruh benchmark dijalankan via `scripts/benchmark-soar.py` terhadap sistem liv
 
 ### 9.6 File Hasil Benchmark
 
-- `docs/bench-mttr-malware.json` — detail 30 run MTTR malware
-- `docs/bench-mttr-phishing.json` — detail 10 run MTTR phishing
-- `docs/bench-load.json` — detail 20 run load test
-- `docs/bench-fn-rate.json` — detail 15 run FN rate
+- `docs/evaluasi/bench-mttr-malware.json` — detail 30 run MTTR malware
+- `docs/evaluasi/bench-mttr-phishing.json` — detail 10 run MTTR phishing
+- `docs/evaluasi/bench-load.json` — detail 20 run load test
+- `docs/evaluasi/bench-fn-rate.json` — detail 15 run FN rate
 
 ## 10. MTTR End-to-End via Fleet-Log (2026-09-15, N=30)
 
@@ -230,7 +230,7 @@ tanpa timeout). Rantai yang diukur sudah termasuk lookup VirusTotal live dan
 percabangan OTX fallback. Bandingkan: webhook saja 0,03 dtk (9.1) vs pipeline
 verdict 3,0 dtk — selisihnya adalah biaya intel lookup yang sebenarnya.
 
-- `docs/bench-mttr-fleet-20260915-N30.json` — detail 30 run
+- `docs/evaluasi/bench-mttr-fleet-20260915-N30.json` — detail 30 run
 
 ## 11. MTTR Human-in-the-Loop (2026-10-08)
 
@@ -254,7 +254,7 @@ di §10; selisih = biaya LLM). Setelah keputusan, perintah AR ter-dispatch <**0,
 **MTTR HITL total = 21 dtk (notif) + waktu berpikir analis (manual) + 0,07 dtk (AR)** —
 yang otomatis bisa diukur, waktu manusia dilaporkan terpisah.
 
-Detail: `docs/bench-mttr-hitl-20261008.json`
+Detail: `docs/evaluasi/bench-mttr-hitl-20261008.json`
 
 ## 12. VT Cold vs Cache — end-to-end (2026-10-08)
 
@@ -278,4 +278,4 @@ selisih dalam rentang noise). Penyebabnya latensi pipeline **didominasi tahap no
 (10 hit dari 14 store ≈ 10 panggilan VT dihindari), **bukan** kecepatan. Cache tetap
 krusial untuk burst 100 PC dengan hash sama (kuota VT free 4 req/menit).
 
-Detail: `docs/bench-vt-cold-vs-cache-20261008.json`
+Detail: `docs/evaluasi/bench-vt-cold-vs-cache-20261008.json`

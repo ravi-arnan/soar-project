@@ -679,7 +679,7 @@ async fn main() -> Result<()> {
             Err(_) => break,
         };
 
-        // Hanya proses Create / Modify, abaikan Remove (hindari loop deleted di docs/FLOW.md:198)
+        // Hanya proses Create / Modify, abaikan Remove (hindari loop deleted di docs/arsitektur/FLOW.md:198)
         match event.kind {
             EventKind::Create(_) | EventKind::Modify(_) => {}
             _ => continue,

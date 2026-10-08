@@ -169,7 +169,7 @@ Apply: `sudo bash deploy/nixos/install-soar-agent.sh`
 
 | File | Isi |
 |------|-----|
-| `docs/VS-ANTIVIRUS.md` | Jawaban dospem: beda SOAR vs antivirus (elevator pitch + tabel + paragraf siap laporan) |
+| `docs/arsitektur/VS-ANTIVIRUS.md` | Jawaban dospem: beda SOAR vs antivirus (elevator pitch + tabel + paragraf siap laporan) |
 | `deploy/setup-server.sh` | Bootstrap server 1-perintah idempoten: cek prereq → .env interaktif (tanya Telegram/GSB/URLScan/Gemini/Wazuh pass; generate encryption key + hash Caddy) → clone Wazuh v4.9.2 + certs → compose up 2 stack → integrasi Ansible (auto-detect docker gateway) → sinkron n8n (Step 7) → checklist manual. Flag: `--yes`, `--skip-wazuh`; `N8N_OWNER_API_KEY`/`VT_API_KEY` via env |
 | `deploy/n8n-setup.py` | Sinkron n8n via public API v1: buat/reuse 5 credentials dari .env (Telegram, Wazuh basic, GSB query, urlscan header, VT `x-apikey`) + **VT key via prompt/env, TIDAK ke .env** + import 4 workflow dengan **remap credential-ID by name** (15 ref — kelemahan import-UI: node merah di mesin baru → solved) + aktivasi. Idempoten (update bukan duplikat). `--dry-run` jalan tanpa API key |
 | `deploy/agent-install.sh` | Pasang soar-agent di 1 workstation: cari binary (/tmp atau repo) → install → systemd unit dengan `AGENT_ID/AGENT_NAME/SERVER/WATCH` → verifikasi fleet reachable |
@@ -185,7 +185,7 @@ Apply: `sudo bash deploy/nixos/install-soar-agent.sh`
 - `deploy/README.md` — quickstart setup 1-perintah + tabel 3 jalur workstation + bagian n8n-setup + GUI/TUI
 - `agent-rs/README.md` — bagian install via .deb di atas bagian Build
 - `ROADMAP.md` — 2 baris ✅ Sebagian baru (setup lintas-device, TUI) di tabel status + entri sesi di ✅ dikerjakan + baris prioritas #9
-- `docs/ROADMAP-AGEN-RINGAN.md` — checklist 11 Sep (malam) ✅
+- `docs/agen-ringan/ROADMAP-AGEN-RINGAN.md` — checklist 11 Sep (malam) ✅
 
 ## Keputusan desain sesi ini
 
@@ -211,7 +211,7 @@ Apply: `sudo bash deploy/nixos/install-soar-agent.sh`
 - [ ] fleet-monitor: tambah webhook-log POST dari n8n ke fleet biar Threat Events muncul
 - [ ] Update binary agent di GitHub release v0.2.0 dengan build terbaru (sudah include os field)
 - [ ] Screenshot dashboard + Telegram untuk laporan
-- [ ] `docs/PERBANDINGAN-PENELITIAN.md` kolom Agen Ringan
+- [ ] `docs/ilmiah/PERBANDINGAN-PENELITIAN.md` kolom Agen Ringan
 
 ## Catatan penting
 
@@ -243,7 +243,7 @@ Apply: `sudo bash deploy/nixos/install-soar-agent.sh`
 Yang sudah hijau malam ini: dashboard 500 sembuh, IP/OS 002+003 akurat,
 FP noise berhenti (agent + Filter lapis-2 + Telegram escape, T1/T2 hijau).
 MD yang diupdate: `agent-rs/README.md` (Noise filter + catatan toolchain),
-`docs/DEPLOYMENT.md` (troubleshooting Telegram + FP + gotcha n8n).
+`docs/panduan/DEPLOYMENT.md` (troubleshooting Telegram + FP + gotcha n8n).
 
 Resume besok (satu-satunya sisa): ps1 reinstall di 005/006
 (exe baru sudah di `http://100.73.91.17:8000/soar-agent.exe`, byte 7928320).
@@ -685,7 +685,7 @@ disimpan; marker `patch:cache-mb:v2`).
 - **Commit**: sudah dikerjakan (`aa0aa12` — lihat bagian Penutupan sesi).
 - Deploy binary agent baru ke **002/005/006/007/008** (kebanyakan offline).
 - Bukti laporan: screenshot dashboard + Telegram; kolom "Agen Ringan" di
-  `docs/PERBANDINGAN-PENELITIAN.md`.
+  `docs/ilmiah/PERBANDINGAN-PENELITIAN.md`.
 - Benchmark **VT cold-vs-cache** — sekarang bisa diukur (hit_rate sudah tersedia
   di `GET /api/vt-cache`).
 
@@ -728,7 +728,7 @@ agent), struktur repo, catatan bahwa `n8n-workflows/` hanyalah **snapshot**
 
 ## 3. Perbaikan laporan: Gambar 3.3 tertarik
 
-`docs/Laporan-SOAR.md` adalah XML Word (openxml) yang menempel PNG pada
+`docs/laporan/Laporan-SOAR.md` adalah XML Word (openxml) yang menempel PNG pada
 **extent tetap**. Gambar 3.3 dipasang `cx=5486400 cy=4489704` (rasio 1,22)
 padahal PNG-nya 1584x902 (rasio 1,76) → gambar tampil **tertarik vertikal**.
 Diperbaiki: `cy` → **3124200** (rasio 1,76, dua kemunculan: `<wp:extent>` dan
@@ -753,7 +753,7 @@ ditukar"). **Narasi laporan perlu diputuskan**: kalau tetap menyebut "AI lokal
 ## Sisa sesi ini
 
 - Keputusan narasi AI di laporan (hidupkan Ollama atau ubah teks).
-- Opsional: tambahkan baris diagram baru di `docs/PANDUAN-DIAGRAM.md`.
+- Opsional: tambahkan baris diagram baru di `docs/panduan/PANDUAN-DIAGRAM.md`.
 - ✅ **Sudah di-commit & push** (lihat bagian "Penutupan sesi" di bawah):
   fitur scan on-demand + cache/MB (`aa0aa12`), lalu hapus klaim AI lokal +
   revisi milestone (`7947d0c`).
@@ -766,7 +766,7 @@ Keputusan Ravi: **"AI Lokal itu hapus saja, menurut saya tidak relevan"** → AI
 digambarkan sebagai **analisis LLM via API penyedia** (malware: Atria
 `Atria-Dawn-Preview`; phishing: Gemini). Tidak ada model lokal.
 
-## 1. Laporan (`docs/Laporan-SOAR.md`)
+## 1. Laporan (`docs/laporan/Laporan-SOAR.md`)
 
 45 sebutan Ollama/AI-lokal diganti (bab 1–3, Daftar Isi, Daftar Pustaka):
 
@@ -782,12 +782,12 @@ digambarkan sebagai **analisis LLM via API penyedia** (malware: Atria
 
 ## 2. Dokumen repo + figur
 
-- `ARCHITECTURE.md` (diagram komponen/port/layer/rationale), `FLOW.md` (step AI,
-  blok historis Ollama dihapus, skenario 3), `DEPLOYMENT.md` (§1.6 "Setup Ollama"
-  → konfigurasi kunci API; port 11434 dihapus), `PERBANDINGAN-PENELITIAN.md`
-  (kolom AI → "LLM API"), `KARTU-DEMO.md`, `KARTU-CONTEKAN-DEMO.txt` (perintah
-  `ollama run` di preflight dihapus), `EVALUASI-METRIK.md`, `PANDUAN-DIAGRAM.md`,
-  `N8N-VS-SHUFFLE.md`, `ROADMAP.md` (judul + klaim aktif), `docker-compose.yml`,
+- `docs/arsitektur/ARCHITECTURE.md` (diagram komponen/port/layer/rationale), `docs/arsitektur/FLOW.md` (step AI,
+  blok historis Ollama dihapus, skenario 3), `docs/panduan/DEPLOYMENT.md` (§1.6 "Setup Ollama"
+  → konfigurasi kunci API; port 11434 dihapus), `docs/ilmiah/PERBANDINGAN-PENELITIAN.md`
+  (kolom AI → "LLM API"), `docs/demo/KARTU-DEMO.md`, `KARTU-CONTEKAN-DEMO.txt` (perintah
+  `ollama run` di preflight dihapus), `docs/evaluasi/EVALUASI-METRIK.md`, `docs/panduan/PANDUAN-DIAGRAM.md`,
+  `docs/ilmiah/N8N-VS-SHUFFLE.md`, `ROADMAP.md` (judul + klaim aktif), `docker-compose.yml`,
   docstring `health-monitor.py`, `create-ppt/pdf-bimbingan.py`.
 - Figur dirender ulang (gaya asli dipertahankan): `fig-3.1`, `fig-3.3`, `fig-3.4`,
   `overview-bernomor`, `demo-hybrid-flow`, `workflow-malware` (node Preload
@@ -808,7 +808,7 @@ error**, sampai Telegram (1 pesan).
 ## 4. Sengaja dibiarkan (alasan)
 
 - **Log historis**: `HANDOFF.md`, entri bertanggal di `ROADMAP.md` (13, 32),
-  checklist 09 Sep di `ROADMAP-AGEN-RINGAN.md`, notulen `CATATAN-DOSPEM-*`.
+  checklist 09 Sep di `docs/agen-ringan/ROADMAP-AGEN-RINGAN.md`, notulen `CATATAN-DOSPEM-*`.
 - **Artefak legacy/sudah dikumpulkan**: `docs/diagrams/*.drawio` + PNG legacy
   (tidak dirujuk dokumen mana pun), snapshot `n8n-workflows/*.json`, dan
   **`proposal/`** — keputusan Ravi (20 Sep): **dibiarkan** karena dokumen usulan
@@ -874,10 +874,10 @@ yang diubah (lint `create-*-bimbingan.py` tidak berubah dari HEAD = warisan).
 
 1. **Deploy binary agent** scan-on-demand ke 002/005/006/007/008 (kebanyakan offline).
 2. **Bukti laporan**: screenshot dashboard + Telegram; kolom "Agen Ringan" di
-   `docs/PERBANDINGAN-PENELITIAN.md`.
+   `docs/ilmiah/PERBANDINGAN-PENELITIAN.md`.
 3. **Benchmark VT cold-vs-cache** (§ hit_rate sudah tersedia di `GET /api/vt-cache`).
 4. Opsional: OTX key masih **inline** di node (bukan credential) — pindahkan ke
-   credential `OTX API Key` + rotasi; tambah baris diagram baru di `docs/PANDUAN-DIAGRAM.md`;
+   credential `OTX API Key` + rotasi; tambah baris diagram baru di `docs/panduan/PANDUAN-DIAGRAM.md`;
    `scripts/patch-n8n-ai-generate.py` bisa ditandai SUPERSEDED (node Ollama sudah dihapus).
 
 ## Catatan operasional
@@ -1129,7 +1129,7 @@ Semua **tanpa trailer co-author** (aturan taste).
 2. **Deploy regDate** — pilih 1 dari 2 jalur (patch minimal ke skrip lama, atau isi
    2 token lalu `docker compose up -d fleet-monitor`).
 3. **Bukti laporan** (prioritas #1 pengembangan): screenshot dashboard + Telegram,
-   kolom "Agen Ringan" di `docs/PERBANDINGAN-PENELITIAN.md`, sub-bab arsitektur.
+   kolom "Agen Ringan" di `docs/ilmiah/PERBANDINGAN-PENELITIAN.md`, sub-bab arsitektur.
 4. **Benchmark resmi N≥30 → simpan**, dan **ralat klaim ROADMAP** yang menyebut
    `result/bench-mttr-malware-n30.json` (folder `result/` tak ada; `.gitignore`
    juga meng-ignore `result`).

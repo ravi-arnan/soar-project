@@ -85,7 +85,7 @@ printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' 
 
 ## Quarantine
 
-Agent listen `127.0.0.1:8787/quarantine` (alternatif Wazuh Active Response `docs/FLOW.md:299`):
+Agent listen `127.0.0.1:8787/quarantine` (alternatif Wazuh Active Response `docs/arsitektur/FLOW.md:299`):
 
 ```bash
 curl -X POST http://127.0.0.1:8787/quarantine -H "Authorization: Bearer $(cat /etc/soar-agent/fleet.token)" -H 'Content-Type: application/json' -d '{"path":"/home/ravi/Downloads/eicar.com"}'
@@ -114,4 +114,4 @@ journalctl -u soar-agent -f
 
 ## Payload
 
-Kompatibel dengan `scripts/custom-n8n.py:170` dan lolos `docs/FLOW.md:198`. Lihat `src/main.rs:build_payload`.
+Kompatibel dengan `scripts/custom-n8n.py:170` dan lolos `docs/arsitektur/FLOW.md:198`. Lihat `src/main.rs:build_payload`.

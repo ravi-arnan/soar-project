@@ -232,7 +232,7 @@ Pertama kali akan minta create owner account (admin).
 Workflows tersimpan di JSON. Untuk import (lewat n8n UI):
 - Workflows → Import from File → pilih JSON dari `backups/`
 
-Atau create manually mengikuti diagram di `ARCHITECTURE.md`.
+Atau create manually mengikuti diagram di `docs/arsitektur/ARCHITECTURE.md`.
 
 ### 3.4 Update workflow dengan credentials
 

@@ -93,7 +93,7 @@ export function MitreAttackView() {
         <Grid className="w-4 h-4 text-[#006BB4] shrink-0 mt-0.5" />
         <div>
           Pemetaan teknik MITRE ATT&amp;CK ke playbook n8n. Coverage snapshot sesuai{' '}
-          <code className="text-[#BD271E]">docs/MITRE-ATTACK-MAPPING.md</code>.
+          <code className="text-[#BD271E]">docs/ilmiah/MITRE-ATTACK-MAPPING.md</code>.
           Bullet = jumlah playbook yang menyinggung teknik tersebut.
         </div>
       </div>

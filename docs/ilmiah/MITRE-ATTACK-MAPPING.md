@@ -150,4 +150,4 @@ Teknik ATT&CK yang **belum** ditangani oleh sistem ini (bukan kelemahan desain â
 ---
 
 *Pemetaan ini bersifat **snapshot** â€” perlu diupdate setiap kali playbook berubah atau teknik ATT&CK baru ditambahkan.*
-*Referensi lengkap: `docs/PERBANDINGAN-PENELITIAN.pdf`*
+*Referensi lengkap: `docs/ilmiah/PERBANDINGAN-PENELITIAN.pdf`*
