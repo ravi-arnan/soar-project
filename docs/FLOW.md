@@ -46,7 +46,7 @@ sequenceDiagram
     N8N->>VT: 13. GET /files/{sha256}
     VT-->>N8N: 14. Detection stats<br/>(malicious/total)
 
-    N8N->>N8N: 15. Rangkum Hasil + Severity Classifier<br/>(CRITICAL/HIGH/MEDIUM)
+    N8N->>N8N: 15. Rangkum Hasil + Severity Classifier<br/>(CRITICAL/HIGH/MEDIUM/INFO)
 
     Note over N8N: AR TIDAK otomatis. Severity hanya<br/>menentukan apakah pesan diberi tombol aksi.
 
@@ -256,14 +256,24 @@ Response:
 **Step 15: Severity Classifier (Code node di Rangkum Hasil)**
 
 ```javascript
-if (malicious >= 20 || ruleLevel >= 12) {
-  severity = 'CRITICAL'; severityIcon = '🆘'; silent = false;
-} else if (malicious >= 5 || ruleLevel >= 7) {
-  severity = 'HIGH'; severityIcon = '🚨'; silent = false;
+// Label MALWARE hanya bila ada indikator nyata (revisi 2026-10-06, patch:noindicator:v1).
+// rule_level FIM (550/554) TIDAK lagi menaikkan severity jalur file.
+const has_indicator = malicious >= 1 || suspicious >= 1 || mb_threat || otx_threat;
+const unknown_exec = !has_indicator && (is_risky_ext || is_exec);  // hash tak dikenal + eksekutabel
+
+if (is_system_file) {
+  severity = 'MEDIUM'; silent = false;                 // file konfigurasi sistem
+} else if (malicious >= 20 || (mb_threat && malicious >= 5)) {
+  severity = 'CRITICAL'; silent = false;
+} else if (mb_threat || otx_threat || malicious >= 5) {
+  severity = 'HIGH'; silent = false;
+} else if (has_indicator || vt_unverified || unknown_exec) {
+  severity = 'MEDIUM'; silent = true;                  // indikator lemah / perlu review
 } else {
-  severity = 'MEDIUM'; severityIcon = '⚠️'; silent = true;
+  severity = 'INFO'; silent = true;                    // tanpa indikator -> bukan malware
 }
-const should_active_response = severity !== 'MEDIUM';
+// notify=false: media/dokumen jinak tanpa indikator tidak dikirim ke Telegram.
+const should_active_response = !is_system_file && (severity === 'CRITICAL' || severity === 'HIGH');
 ```
 
 ### Phase 5: Decision & Response (human-in-the-loop)
@@ -427,16 +437,22 @@ setelah analis menekan tombol.
 
 ```
 VT response: 404 NotFoundError
-Workflow action: continue dengan malicious=0, severity berdasarkan rule_level
-Notification: "Belum dikenali VirusTotal" + footer "Hash belum disubmit ke VT"
+Workflow action: lanjut dengan malicious=0; TIDAK ada indikator ->
+  severity INFO. Bila media/dokumen jinak (mis. .mp4) notifikasi DIBATALKAN
+  (node "Perlu Notifikasi?"); bila eksekutabel -> MEDIUM "PERLU REVIEW".
+Notification: hanya "Belum dikenali VirusTotal" sebagai konteks (bila dikirim)
 ```
+
+> Sebelum revisi 2026-10-06, hash 404 apa pun jatuh ke cabang `else` = MEDIUM
+> "MALWARE TERDETEKSI" — itulah false positive `.mp4` di `~/Downloads`.
 
 ### Skenario 2: VirusTotal API down / timeout
 
 ```
-VT response: timeout / connection error
-Workflow action: error caught (neverError: true di node options)
-Notification: tetap kirim, severity berdasarkan rule_level only
+VT response: timeout / error (429/5xx)
+Workflow action: error ditandai `vt_unverified` -> severity MEDIUM (bukan INFO),
+  supaya kegagalan verifikasi transien tidak disenyapkan
+Notification: tetap kirim tanpa data deteksi
 ```
 
 ### Skenario 3: LLM API error / timeout

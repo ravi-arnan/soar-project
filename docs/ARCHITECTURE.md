@@ -205,14 +205,17 @@ graph TD
     C --> D[Scan VirusTotal<br/>tolerant 404]
     D --> E[Rangkum + Severity Classifier]
 
-    E --> F{Severity?}
-    F -->|malicious >= 20<br/>OR rule_level >= 12| G[CRITICAL 🆘]
-    F -->|malicious >= 5<br/>OR rule_level >= 7| H[HIGH 🚨]
-    F -->|else| I[MEDIUM ⚠️]
+    E --> F{Ada indikator<br/>threat intel?}
+    F -->|malicious >= 20<br/>OR MB+malicious >= 5| G[CRITICAL 🆘]
+    F -->|MB/OTX hit<br/>OR malicious >= 5| H[HIGH 🚨]
+    F -->|malicious 1-4 / suspicious<br/>OR eksekutabel hash tak dikenal| I[MEDIUM ⚠️]
+    F -->|tanpa indikator apa pun| I2[INFO ℹ️]
+    I2 -->|media/dokumen jinak| Z2[Diamkan<br/>tanpa notifikasi]
 
     G --> J[should_active_response = TRUE]
     H --> J
     I --> K[should_active_response = FALSE]
+    I2 --> K
 
     J --> P[Build Payload<br/>+ AI guidance per severity]
     K --> P
@@ -236,11 +239,28 @@ graph TD
 
 ### Severity Classification Rules
 
+> **Revisi 2026-10-06 (FP `.mp4`):** label "MALWARE" hanya diberikan bila ada
+> indikator nyata dari threat intel. Sebelumnya `MEDIUM` adalah cabang `else`,
+> sehingga file apa pun tanpa indikator (mis. `.mp4` di `~/Downloads`, VT 404,
+> MB/OTX kosong) otomatis divonis "MALWARE TERDETEKSI" hanya karena rule FIM 554
+> level 5. Sekarang:
+
 | Severity | Trigger | Telegram | Tombol Aksi (human-in-the-loop) |
 |----------|---------|----------|---------------------------------|
-| **CRITICAL** | `malicious >= 20` OR `rule_level >= 12` | 🆘 KRITIS, **sound on** | ✅ tombol Isolasi/Abaikan |
-| **HIGH** | `malicious >= 5` OR `rule_level >= 7` | 🚨 TINGGI, **sound on** | ✅ tombol Isolasi/Abaikan |
-| **MEDIUM** | (else) | ⚠️ SEDANG, **silent** | ❌ info polos, tanpa tombol |
+| **CRITICAL** | `malicious >= 20` OR (MB hit AND `malicious >= 5`) | 🆘 KRITIS, **sound on** | ✅ tombol Isolasi/Abaikan |
+| **HIGH** | MB/OTX hit OR `malicious >= 5` | 🚨 TINGGI, **sound on** | ✅ tombol Isolasi/Abaikan |
+| **MEDIUM** | `malicious` 1-4 / `suspicious` OR **eksekutabel dengan hash tak dikenal** OR VT error (tak terverifikasi) | ⚠️ SEDANG / **PERLU REVIEW**, silent | ❌ tanpa tombol |
+| **INFO** | Tanpa indikator apa pun | ℹ️ INFO, silent | ❌ tanpa tombol; **tidak dikirim** bila media/dokumen jinak |
+
+Catatan kebijakan:
+- **`rule_level` FIM (rule 550/554, level 5-7) TIDAK lagi menaikkan severity
+  jalur file.** Severity file murni dari threat intel (VT/MB/OTX) + status
+  eksekutabel; `rule_level` tetap ditampilkan di pesan.
+- **Media/dokumen jinak** (mp4, mp3, jpg, png, pdf, docx, ...) tanpa indikator
+  **tidak dinotifikasi sama sekali** (node "Perlu Notifikasi?" memblokir kirim).
+- **Eksekutabel hash tak dikenal** (exe/dll/sh/scr/js/msi/apk/... atau bit exec)
+  → MEDIUM judul "FILE PERLU REVIEW", bukan vonis malware.
+- AR otomatis (`should_active_response`) HANYA untuk CRITICAL/HIGH nyata.
 
 ### AI Prompt per Severity
 
@@ -248,7 +268,12 @@ graph TD
 |----------|-------------|
 | CRITICAL | "Berikan rekomendasi immediate response, isolasi sistem, eradikasi" |
 | HIGH | "Berikan rekomendasi tindakan dalam 24 jam, verifikasi dan kontainmen" |
-| MEDIUM | "Konteks informational, rekomendasi monitoring rutin" |
+| MEDIUM (weak) | "Konteks informational, rekomendasi monitoring rutin" |
+| MEDIUM (unknown exec) | "File eksekutabel hash belum dikenal; verifikasi asal sebelum dijalankan" |
+| INFO | "Tidak ada indikasi malware; nyatakan aman, jangan sebut malware/isolasi" |
+
+Implementasi: `scripts/patch-n8n-noindicator.py` (idempoten, marker
+`patch:noindicator:v1`), diuji `scripts/test_patch_n8n_noindicator.py`.
 
 ## 4b. Active Response Interaktif (Human-in-the-Loop)
 
