@@ -17,6 +17,12 @@ backups/
 .idea/
 *.swp
 *~
+.~lock.*#        # lock file LibreOffice
+
+# Tool cache
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
 
 # Logs / runtime data
 *.log
