@@ -137,6 +137,27 @@ services:
     depends_on:
       - fleet-monitor
 
+  # MISP feed consumer (sumber threat-intel ke-4): index feed CIRCL OSINT MISP
+  # + API lookup. network_mode host agar n8n (container) reach via host.docker.internal:8090.
+  misp-index:
+    image: python:3.12-alpine
+    container_name: misp-index
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - MISP_PORT=8090
+      - MISP_DB=/state/misp.db
+      - MISP_SYNC_HOURS=12
+    volumes:
+      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
+      - /home/ravi/Projects/soar-project/state:/state:rw
+    command: ["python3", "/scripts/misp-feed-sync.py", "--serve", "--db", "/state/misp.db"]
+
 volumes:
   n8n_data:
   health_state:
