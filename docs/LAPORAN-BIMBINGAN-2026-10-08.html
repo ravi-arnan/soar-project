@@ -37,8 +37,12 @@
     text-indent: 1.5cm;
   }
   p.noindent { text-indent: 0; }
-  ol.isi { margin: 0 0 6pt 0; padding-left: 1.5cm; }
-  ol.isi > li { text-align: justify; margin-bottom: 4pt; }
+  ol.isi { list-style: none; counter-reset: li; margin: 0 0 6pt 0; padding-left: 1.5cm; }
+  ol.isi > li { counter-increment: li; position: relative; text-align: justify; margin-bottom: 4pt; }
+  ol.isi > li::before {
+    content: counter(li) ".";
+    position: absolute; left: -1.15cm; width: 0.95cm; text-align: right;
+  }
   ul.isi { margin: 0 0 6pt 0; padding-left: 1.5cm; }
   ul.isi > li { text-align: justify; margin-bottom: 4pt; }
   table { border-collapse: collapse; width: 100%; margin-bottom: 6pt; }
@@ -199,6 +203,8 @@
 </table>
 
 <h2><span class="no">6.</span>Rencana Tindak Lanjut</h2>
+
+<p>Rencana tindak lanjut penyusunan Tugas Akhir setelah laporan ini adalah sebagai berikut.</p>
 
 <ol class="isi">
   <li>Menyusun dokumen matriks keyakinan terhadap aksi sebagai formalisasi respons berjenjang (melengkapi M3).</li>
