@@ -1209,3 +1209,48 @@ view event**, bukan cuma 200 event RAM terakhir.
   - **LIVE & terverifikasi**: fleet-monitor `event store siap: /state/events.db`,
     healthz 200; `/api/events/history` via dashboard mengembalikan alert Wazuh
     nyata (source wazuh) + event SOAR; ingest durable diuji lalu dibersihkan.
+
+# Handoff SOAR — 2026-10-08/09 (PENUTUPAN SESI)
+
+## Ringkasan
+Sesi panjang: riset relevansi & kebaruan, upgrade keamanan stack, metrik baru,
+integrasi MISP, observability Telegram, laporan bimbingan, rapikan repo, dan
+adopsi **diagram-design** untuk diagram.
+
+## LIVE & terverifikasi
+| Item | Bukti |
+|---|---|
+| **n8n 2.40.0 → 2.42.5** | tutup CVE Okt 2026; healthz ok, 5 workflow active, migrasi DB bersih, E2E hijau |
+| **Wazuh 4.10.5 → 4.14.8** | indexer GREEN + data terjaga, `analysisd -t` rc=0, rule kustom selamat, agent 001/002 Active, integratord → n8n 200 |
+| **Benchmark MTTR HITL + VT cold-vs-cache** | `docs/evaluasi/EVALUASI-METRIK.md §11–§12`; HITL notif mean 21,05 dtk, AR dispatch 0,07 dtk; VT cache TTL. **Temuan jujur**: cache VT hemat kuota, bukan latensi |
+| **MISP (feed CIRCL OSINT)** sumber intel ke-4 | `scripts/misp-feed-sync.py` + service `misp-index` (:8090) + node `MISP Lookup`; E2E: hash hanya-dikenal-MISP → severity HIGH |
+| **Observability alert Telegram** | service `alert-log` (:8091) + node `Log Telegram Alert` di 2 workflow; E2E: 1 alert CRITICAL tercatat |
+| **Laporan bimbingan** | `docs/bimbingan/LAPORAN-BIMBINGAN-2026-10-08.{html,pdf}` (gaya Milestone TA, 9 gambar) |
+| **Repo dirapikan** | `docs/` → subfolder (`arsitektur/evaluasi/ilmiah/laporan/bimbingan/demo/panduan/agen-ringan`), indeks `docs/README.md`, `plan.md` → `docs/panduan/TAILSCALE-SETUP.md`, `backups/` 121→21 |
+| **diagram-design** | sumber HTML+SVG di `docs/diagrams/src/`; 3 diagram di-redraw (sequence AR, overview-bernomor, arsitektur-soar) — `self_check` OK + `verify-geometry` 0 temuan |
+
+## Commit (sudah di-push ke origin/main; tanpa trailer co-author)
+`1bb90dd` n8n 2.42.5 · `803da98` no-indicator · `db162e7` riset relevansi · `2be129c` Wazuh 4.14.8 ·
+`99d31cd` bench HITL+VT · `8773121` MISP · `3a0a599` alert-log · `de55..` bimbingan report (3 commit) ·
+`8f990db`/`862b48f`/`1d13dff`/`e56b71c`/`7cdf73f` rapikan repo · `b3de6e5`/`5a4bfdb`/`a6e31ec` diagram-design.
+
+## Keputusan sesi ini
+- Cache verdict VT **server-side** (fleet-monitor) untuk hemat kuota; diukur end-to-end → tak mempercepat MTTR (didominasi MB+LLM).
+- MISP dipakai sebagai **feed OSINT** (tanpa instance/API key) — hemat RAM, data ter-update.
+- **Skin diagram** = default diagram-design (paper #f5f5f5, ink #2d3142, aksen #eb6c36).
+- Laporan bimbingan: hapus baris Semester + blok tanda tangan; caption tabel rata kiri 10pt; judul caption gambar **bold**; lampiran pakai bahasa awam + gambar bernomor.
+- Repo: bukti/lampiran tidak lagi merujuk path file (dosen tak paham) → bahasa awam + Gambar N.
+
+## Sisa untuk sesi berikutnya
+1. **12 diagram diagram-design** sisanya (`fig-3.3`, `fig-3.4`, `fig-3.6`, `fig-karyawan-flow`, `fig-karyawan-setup-vs-harian`, `demo-hybrid-flow`, `workflow-*`, `fig-3.1`, `fig-3.2`) — beberapa sumber >9 simpul → merge/split (fidelity ledger). Status: `docs/panduan/DIAGRAM-DESIGN.md`.
+2. **M3** — dokumen **matriks confidence → otonomi**.
+3. **M5** — firewall 1514/1515 + **ganti password default Wazuh** (masih `admin/SecretPassword`) + OTX key inline → credential + rotasi.
+4. **M4** — uji konsistensi keluaran LLM.
+5. Bukti laporan: screenshot dashboard/Telegram (kini bisa dari `alert-log`), kolom "Agen Ringan" di `docs/ilmiah/PERBANDINGAN-PENELITIAN.md`.
+6. **Drift `fleet-monitor`**: server masih versi lama + `.env` belum ada `FLEET_COMMAND_TOKEN`/`FLEET_AGENT_POLL_TOKENS_JSON` (kode `regDate` siap, belum deploy).
+
+## Catatan operasional
+- Layanan baru di `docker-compose.yml`: **`misp-index`** (:8090) & **`alert-log`** (:8091), `network_mode: host`, state di `state/` (gitignored).
+- `render-diagram.py` butuh **Chrome + internet** (font Google). Skill tersalin di `~/code/diagram-design`.
+- File `state/*` milik root (dibuat container) → edit/bersihkan via `docker exec`, bukan dari host.
+- `.commandcode/taste/...` termodifikasi & sengaja **tidak** di-commit (auto-managed).
