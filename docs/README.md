@@ -63,7 +63,8 @@ docs/
 ## panduan/
 | Dokumen | Isi |
 |---|---|
-| `PANDUAN-DIAGRAM.md` / `.docx` / `.pdf` | Cara render diagram |
+| `PANDUAN-DIAGRAM.md` / `.docx` / `.pdf` | Cara membaca diagram (versi awam) |
+| `DIAGRAM-DESIGN.md` | Alur kerja diagram (diagram-design: sumber HTML+SVG, render PNG) |
 | `DEPLOYMENT.md` | Panduan penggelaran |
 | `UPGRADE-VERSI-2026-10.md` | Runbook upgrade n8n/Wazuh |
 | `TAILSCALE-SETUP.md` | Setup akses remote via Tailscale (arsip rencana) |
