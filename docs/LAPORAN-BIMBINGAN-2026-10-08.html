@@ -116,13 +116,13 @@
     </tr>
   </thead>
   <tbody>
-    <tr><td>Revisi diagram: n8n sebagai mesin orkestrasi pusat dan alur yang eksplisit</td><td class="c">Selesai</td><td>docs/ARCHITECTURE.md, docs/FLOW.md, docs/diagrams/arsitektur-soar.png</td></tr>
-    <tr><td>Dokumentasi format pertukaran data JSON (skema disepakati)</td><td class="c">Selesai</td><td>docs/ARCHITECTURE.md (skema payload)</td></tr>
-    <tr><td>Perluasan cakupan pemantauan: perangkat USB dan perpindahan berkas</td><td class="c">Selesai</td><td>Agen Rust memantau Downloads, Desktop, dan /run/media (rekursif, auto-unwatch)</td></tr>
-    <tr><td>Purwarupa agen ringan (saran pembimbing: Go)</td><td class="c">Selesai</td><td>agent-rs/ (Rust, ~5,3 MB; RSS ~5,2 MB vs agen Wazuh ~50 MB); alasan pemilihan Rust pada docs/AGENT-RINGAN.md</td></tr>
-    <tr><td>Skenario laporan gaya bahasa awam (100 workstation + human-in-the-loop)</td><td class="c">Selesai</td><td>docs/diagrams/fig-karyawan-*, narasi bab 1 laporan</td></tr>
-    <tr><td>Pemeriksaan tata bahasa dan kejelasan laporan per paragraf</td><td class="c">Berjalan</td><td>docs/Laporan-SOAR.md (revisi berkelanjutan)</td></tr>
-    <tr><td>Progres mingguan dan demo (1 server + beberapa klien)</td><td class="c">Berjalan</td><td>Sistem live: siap 100 workstation, dashboard web + TUI, armada 7 endpoint</td></tr>
+    <tr><td>Revisi diagram: n8n sebagai mesin orkestrasi pusat dan alur yang eksplisit</td><td class="c">Selesai</td><td>Diagram arsitektur dan alur yang telah direvisi (Gambar 1)</td></tr>
+    <tr><td>Dokumentasi format pertukaran data JSON (skema disepakati)</td><td class="c">Selesai</td><td>Dokumentasi skema pertukaran data (payload) JSON yang disepakati</td></tr>
+    <tr><td>Perluasan cakupan pemantauan: perangkat USB dan perpindahan berkas</td><td class="c">Selesai</td><td>Agen memantau berkas di folder Unduhan, Desktop, dan perangkat USB secara rekursif</td></tr>
+    <tr><td>Purwarupa agen ringan (saran pembimbing: Go)</td><td class="c">Selesai</td><td>Agen ringan mandiri berukuran ±5 MB dan pemakaian memori ±5 MB (agen standar ±50 MB); alasan teknis pemilihan bahasa pemrograman terdokumentasi</td></tr>
+    <tr><td>Skenario laporan gaya bahasa awam (100 workstation + human-in-the-loop)</td><td class="c">Selesai</td><td>Diagram dan narasi alur dari sudut pandang orang awam (Gambar 2)</td></tr>
+    <tr><td>Pemeriksaan tata bahasa dan kejelasan laporan per paragraf</td><td class="c">Berjalan</td><td>Draf laporan Tugas Akhir yang terus direvisi (khususnya bab pendahuluan)</td></tr>
+    <tr><td>Progres mingguan dan demo (1 server + beberapa klien)</td><td class="c">Berjalan</td><td>Sistem berjalan (live) dengan dasbor pemantauan dan armada 7 perangkat</td></tr>
   </tbody>
 </table>
 
@@ -219,16 +219,26 @@
 
 <h2><span class="no">8.</span>Lampiran</h2>
 
-<p>Sebagai bukti pelaksanaan bimbingan, dilampirkan tangkapan layar sesi bimbingan bersama kedua dosen pembimbing.</p>
+<p>Lampiran memuat artefak pendukung pekerjaan (Gambar 1 dan Gambar 2) serta bukti pelaksanaan bimbingan bersama kedua dosen pembimbing (Gambar 3 dan Gambar 4).</p>
+
+<figure>
+  <img src="diagrams/arsitektur-soar.png" alt="Diagram arsitektur sistem">
+  <figcaption>Gambar 1 Diagram arsitektur sistem: agen di endpoint, n8n sebagai orkestrator, sumber intel, notifikasi Telegram, dan respons.</figcaption>
+</figure>
+
+<figure>
+  <img src="diagrams/fig-karyawan-setup-vs-harian.png" alt="Alur dari sudut pandang karyawan">
+  <figcaption>Gambar 2 Alur dari sudut pandang karyawan: pemasangan sekali oleh admin, operasional harian berjalan otomatis.</figcaption>
+</figure>
 
 <figure>
   <img src="lampiran/bukti-bimbingan-piarsa.jpg" alt="Bukti bimbingan dengan Pembimbing 1">
-  <figcaption>Gambar 1 Bimbingan Pembimbing 1 (Ir. I Nyoman Piarsa) via Zoom.</figcaption>
+  <figcaption>Gambar 3 Bimbingan Pembimbing 1 (Ir. I Nyoman Piarsa) via Zoom.</figcaption>
 </figure>
 
 <figure>
   <img src="lampiran/bukti-bimbingan-agung.jpg" alt="Bukti bimbingan dengan Pembimbing 2">
-  <figcaption>Gambar 2 Bimbingan Pembimbing 2 (A.A. Kt Agung Cahyawan Wiranatha) via Telegram.</figcaption>
+  <figcaption>Gambar 4 Bimbingan Pembimbing 2 (A.A. Kt Agung Cahyawan Wiranatha) via Telegram.</figcaption>
 </figure>
 
 </body>
