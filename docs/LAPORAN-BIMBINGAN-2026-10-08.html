@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Laporan Bimbingan Tugas Akhir - Ravi Arnan Irianto</title>
+<style>
+  @page {
+    size: 8.5in 11in;
+    margin: 3cm 3cm 3cm 4cm;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 12pt;
+    line-height: 1.5;
+    margin: 0;
+    color: #000;
+  }
+  h1.judul {
+    font-size: 12pt;
+    font-weight: bold;
+    text-align: center;
+    margin: 0 0 12pt 0;
+    line-height: 1.5;
+  }
+  h2 {
+    font-size: 12pt;
+    font-weight: bold;
+    margin: 12pt 0 6pt 0;
+    line-height: 1.5;
+    page-break-after: avoid;
+  }
+  h2 .no { display: inline-block; width: 0.9cm; }
+  p {
+    text-align: justify;
+    margin: 0 0 6pt 0;
+    text-indent: 1.5cm;
+  }
+  p.noindent { text-indent: 0; }
+  ol.isi { margin: 0 0 6pt 0; padding-left: 1.5cm; }
+  ol.isi > li { text-align: justify; margin-bottom: 4pt; }
+  ul.isi { margin: 0 0 6pt 0; padding-left: 1.5cm; }
+  ul.isi > li { text-align: justify; margin-bottom: 4pt; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 6pt; }
+  table.identitas td {
+    border: 1px solid #000;
+    padding: 3pt 5pt;
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  table.identitas td.label { width: 4.6cm; font-weight: bold; }
+  table.data { font-size: 10pt; }
+  table.data th, table.data td {
+    border: 1px solid #000;
+    padding: 3pt 4pt;
+    vertical-align: top;
+    line-height: 1.25;
+    text-align: left;
+  }
+  table.data th { font-weight: bold; text-align: center; background: #e8e8e8; }
+  table.data td.c { text-align: center; }
+  caption.tabelcap {
+    caption-side: top;
+    text-align: center;
+    font-size: 12pt;
+    padding-bottom: 4pt;
+    line-height: 1.5;
+  }
+  caption.tabelcap b { font-weight: bold; }
+  tr { page-break-inside: avoid; }
+  table.halbaru { page-break-before: always; }
+  table.utuh { page-break-inside: avoid; }
+  .ttd { margin-top: 18pt; page-break-inside: avoid; break-inside: avoid; }
+  .ttd p { text-align: left; text-indent: 0; }
+  .ttd .spasi { height: 42pt; }
+  .ttd .spasi-antar { height: 12pt; }
+</style>
+</head>
+<body>
+
+<h1 class="judul">Laporan Bimbingan Tugas Akhir</h1>
+
+<table class="identitas">
+  <tr><td class="label">NIM</td><td>2305551076</td></tr>
+  <tr><td class="label">Nama</td><td>Ravi Arnan Irianto</td></tr>
+  <tr><td class="label">Bidang Keahlian</td><td>Network and Cloud Computing</td></tr>
+  <tr><td class="label">Mata Kuliah</td><td>Proyek 1</td></tr>
+  <tr><td class="label">Semester</td><td>Ganjil 2026/2027 (Semester 7), Agustus 2026 sampai Januari 2027</td></tr>
+  <tr><td class="label">Judul</td><td style="text-align: justify;">Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)</td></tr>
+  <tr><td class="label">Dosen Pembimbing</td><td>1. Ir. I Nyoman Piarsa, ST., MT., IPM.<br>2. A.A. Kt Agung Cahyawan Wiranatha, S.T., M.T.</td></tr>
+</table>
+
+<h2><span class="no">1.</span>Pendahuluan</h2>
+
+<p>Dokumen ini merupakan laporan bimbingan Tugas Akhir yang memuat tiga hal: tindak lanjut atas arahan bimbingan pada tanggal 3 September 2026, perkembangan pelaksanaan pekerjaan sampai dengan 8 Oktober 2026, serta perbandingan capaian terhadap milestone yang telah disusun pada awal semester. Laporan ini dilampiri bukti pelaksanaan berupa kode, pengujian, dan hasil pengukuran pada sistem yang berjalan (live).</p>
+
+<p>Sistem telah dijalankan secara langsung pada lingkungan uji dan diuji secara menyeluruh dari hulu ke hilir (end-to-end). Seluruh milestone yang jatuh tempo pada periode ini telah diselesaikan, dan beberapa milestone berikutnya telah berjalan lebih awal dari jadwal.</p>
+
+<h2><span class="no">2.</span>Tindak Lanjut Arahan Bimbingan</h2>
+
+<p>Arahan yang diberikan pada bimbingan tanggal 3 September 2026 beserta tindak lanjutnya disajikan pada Tabel 1.</p>
+
+<table class="data utuh">
+  <caption class="tabelcap"><b>Tabel 1 </b>Tindak lanjut arahan bimbingan 3 September 2026</caption>
+  <thead>
+    <tr>
+      <th style="width: 32%;">Arahan</th>
+      <th style="width: 14%;">Status</th>
+      <th style="width: 54%;">Bukti</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Revisi diagram: n8n sebagai mesin orkestrasi pusat dan alur yang eksplisit</td><td class="c">Selesai</td><td>docs/ARCHITECTURE.md, docs/FLOW.md, docs/diagrams/arsitektur-soar.png</td></tr>
+    <tr><td>Dokumentasi format pertukaran data JSON (skema disepakati)</td><td class="c">Selesai</td><td>docs/ARCHITECTURE.md (skema payload)</td></tr>
+    <tr><td>Perluasan cakupan pemantauan: perangkat USB dan perpindahan berkas</td><td class="c">Selesai</td><td>Agen Rust memantau Downloads, Desktop, dan /run/media (rekursif, auto-unwatch)</td></tr>
+    <tr><td>Purwarupa agen ringan (saran pembimbing: Go)</td><td class="c">Selesai</td><td>agent-rs/ (Rust, ~5,3 MB; RSS ~5,2 MB vs agen Wazuh ~50 MB); alasan pemilihan Rust pada docs/AGENT-RINGAN.md</td></tr>
+    <tr><td>Skenario laporan gaya bahasa awam (100 workstation + human-in-the-loop)</td><td class="c">Selesai</td><td>docs/diagrams/fig-karyawan-*, narasi bab 1 laporan</td></tr>
+    <tr><td>Pemeriksaan tata bahasa dan kejelasan laporan per paragraf</td><td class="c">Berjalan</td><td>docs/Laporan-SOAR.md (revisi berkelanjutan)</td></tr>
+    <tr><td>Progres mingguan dan demo (1 server + beberapa klien)</td><td class="c">Berjalan</td><td>Sistem live: siap 100 workstation, dashboard web + TUI, armada 7 endpoint</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="no">3.</span>Perkembangan Pelaksanaan</h2>
+
+<p>Sejak bimbingan terakhir, pekerjaan difokuskan pada keandalan dan keamanan platform, perluasan sumber intel, serta penyediaan bukti kuantitatif. Perkembangan tersebut dirangkum sebagai berikut.</p>
+
+<p class="noindent"><b>a. Keandalan dan keamanan platform.</b></p>
+<ol class="isi">
+  <li>n8n dinaikkan dari versi 2.40.0 ke 2.42.5, menutup kumpulan kerentanan (CVE) yang dirilis Oktober 2026, termasuk dua kerentanan berkategori kritis (CVE-2026-103255 dan CVE-2026-103248).</li>
+  <li>Wazuh dinaikkan dari versi 4.10.5 ke 4.14.8. Proses dilakukan berurutan (indexer, manager, dashboard); cluster indexer kembali berstatus hijau, data dan identitas cluster tetap terjaga, aturan kustom tetap utuh, dan agen tetap terhubung.</li>
+</ol>
+
+<p class="noindent"><b>b. Perluasan sumber threat intelligence.</b></p>
+<ol class="isi">
+  <li>Cache verdict VirusTotal dengan masa berlaku (TTL) diferensial serta penggabungan sumber kedua (MalwareBazaar) telah aktif.</li>
+  <li>MISP ditambahkan sebagai sumber intel keempat melalui feed OSINT komunitas (format MISP) tanpa memerlukan kunci API. Pengujian end-to-end menunjukkan berkas yang hanya dikenal MISP (tidak dikenal VirusTotal maupun MalwareBazaar) berhasil dinaikkan tingkat keparahannya menjadi TINGGI, sehingga menutup celah luput deteksi (false-negative).</li>
+</ol>
+
+<p class="noindent"><b>c. Keterjelasan dan keteramatan (explainability dan observability).</b></p>
+<ol class="isi">
+  <li>Setiap notifikasi memuat alasan keputusan dan jejak audit, disertai penandaan saat deteksi berada dalam kondisi terdegradasi.</li>
+  <li>Ditambahkan pencatat notifikasi Telegram keluar, karena API Telegram tidak menyediakan riwayat pesan keluar; setiap notifikasi yang benar-benar terkirim dicatat lengkap (tingkat keparahan, agen, hash, dan identitas pesan).</li>
+</ol>
+
+<p class="noindent"><b>d. Perbaikan kualitas keputusan.</b> Keputusan "malware" kini berbasis indikator threat intelligence, bukan semata tingkat aturan FIM; berkas konfigurasi sistem dan berkas jinak tidak lagi memicu notifikasi keliru (false positive).</p>
+
+<h2><span class="no">4.</span>Capaian terhadap Milestone</h2>
+
+<p>Perbandingan capaian terhadap tujuh milestone Semester 7 disajikan pada Tabel 2. Bobot ketujuh milestone diasumsikan setara, dan angka capaian disusun berdasarkan bukti artefak (kode, pengujian, dan hasil pengukuran), bukan perkiraan.</p>
+
+<table class="data">
+  <caption class="tabelcap"><b>Tabel 2 </b>Capaian terhadap milestone Semester 7</caption>
+  <thead>
+    <tr>
+      <th style="width: 6%;">No</th>
+      <th style="width: 30%;">Milestone</th>
+      <th style="width: 12%;">Target</th>
+      <th style="width: 10%;">Capaian</th>
+      <th style="width: 42%;">Keterangan / Bukti</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td class="c">M1</td><td>Konsolidasi purwarupa dan lingkungan uji</td><td class="c">Agustus 2026</td><td class="c">100%</td><td>Selesai: perbaikan keandalan tuntas, konfigurasi ter-version-control, prosedur pengujian baku</td></tr>
+    <tr><td class="c">M2</td><td>Perluasan verifikasi ancaman multi-sumber</td><td class="c">September 2026</td><td class="c">100%</td><td>Selesai: MalwareBazaar, deteksi berkas eksekutabel, pemindaian ulang terjadwal, dan MISP aktif</td></tr>
+    <tr><td class="c">M3</td><td>Penyempurnaan respons berjenjang berbasis keyakinan</td><td class="c">Oktober 2026</td><td class="c">85%</td><td>Jalur human-in-the-loop berjalan; sisa: dokumen matriks keyakinan terhadap aksi</td></tr>
+    <tr><td class="c">M4</td><td>Integrasi analisis LLM dan explainability</td><td class="c">Oktober 2026</td><td class="c">80%</td><td>Integrasi LLM, keterjelasan, dan jejak audit berjalan; sisa: pengujian konsistensi keluaran LLM</td></tr>
+    <tr><td class="c">M5</td><td>Pengerasan keamanan dan reproduksibilitas</td><td class="c">November 2026</td><td class="c">60%</td><td>Infrastructure as Code dan penggelaran idempoten selesai; sisa: pembatasan firewall dan penggantian kredensial bawaan</td></tr>
+    <tr><td class="c">M6</td><td>Pengujian dan evaluasi kuantitatif</td><td class="c">Nov–Des 2026</td><td class="c">90%</td><td>N&ge;30, uji beban, laju false-negative, pemetaan MITRE ATT&amp;CK, serta MTTR human-in-the-loop dan cache telah diukur</td></tr>
+    <tr><td class="c">M7</td><td>Penyusunan laporan dan seminar Proyek 1</td><td class="c">Des 2026–Jan 2027</td><td class="c">50%</td><td>Draf laporan berjalan; seminar akhir belum dilaksanakan</td></tr>
+  </tbody>
+</table>
+
+<p>Rata-rata capaian ketujuh milestone adalah <b>sekitar 81%</b>. Dengan mengacu jadwal, pada awal Oktober seharusnya baru milestone M1 dan M2 yang tuntas serta M3 dan M4 sedang berjalan; kenyataannya M5 dan M6 telah berjalan lebih awal. Dengan demikian pelaksanaan berada <b>lebih cepat dari jadwal</b>.</p>
+
+<h2><span class="no">5.</span>Hasil Pengukuran</h2>
+
+<p>Ringkasan hasil pengukuran kuantitatif pada sistem disajikan pada Tabel 3. Seluruh angka diperoleh dari sistem yang berjalan, bukan estimasi.</p>
+
+<table class="data utuh">
+  <caption class="tabelcap"><b>Tabel 3 </b>Ringkasan hasil pengukuran</caption>
+  <thead>
+    <tr>
+      <th style="width: 40%;">Metrik</th>
+      <th style="width: 22%;">Hasil</th>
+      <th style="width: 38%;">Keterangan</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>MTTR malware (isolasi otomatis)</td><td class="c">1,68 detik (N=15)</td><td>Ujung ke ujung, cache VirusTotal hangat</td></tr>
+    <tr><td>MTTR ujung ke ujung (via fleet-log)</td><td class="c">3,00 detik (N=30)</td><td>Injeksi sampai verdict tercatat</td></tr>
+    <tr><td>MTTR human-in-the-loop, notifikasi</td><td class="c">21,05 detik (N=5)</td><td>Injeksi sampai notifikasi Telegram bertombol (~18 detik di antaranya biaya LLM)</td></tr>
+    <tr><td>MTTR human-in-the-loop, eksekusi AR</td><td class="c">0,07 detik (N=5)</td><td>Setelah keputusan sampai perintah Active Response</td></tr>
+    <tr><td>Throughput</td><td class="c">34 alert/detik (N=20)</td><td>Uji beban pada webhook</td></tr>
+    <tr><td>Laju false-negative</td><td class="c">0,0% (N=15)</td><td>Seluruh berkas berisiko berhasil terdeteksi</td></tr>
+    <tr><td>Penekanan false-positive</td><td class="c">100% (N=8)</td><td>Delapan alert dasar menjadi nol notifikasi</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="no">6.</span>Rencana Tindak Lanjut</h2>
+
+<ol class="isi">
+  <li>Menyusun dokumen matriks keyakinan terhadap aksi sebagai formalisasi respons berjenjang (melengkapi M3).</li>
+  <li>Melakukan pengujian konsistensi keluaran LLM pada alert yang identik (melengkapi M4).</li>
+  <li>Menyelesaikan pengerasan operasional: pembatasan firewall dan penggantian kredensial bawaan (melengkapi M5).</li>
+  <li>Menyiapkan bukti laporan berupa tangkapan layar dashboard dan notifikasi serta draf bab hasil (menuju M7).</li>
+</ol>
+
+<h2><span class="no">7.</span>Penutup</h2>
+
+<p>Demikian laporan bimbingan ini disampaikan. Sistem telah berjalan dan teruji, serta capaian pelaksanaan berada lebih cepat dari jadwal. Besar harapan atas koreksi dan arahan dari Bapak untuk penyempurnaan Tugas Akhir ini.</p>
+
+<div class="ttd">
+<p class="noindent">Denpasar, 8 Oktober 2026</p>
+<p class="noindent">Mahasiswa,</p>
+<div class="spasi"></div>
+<p class="noindent">(Ravi Arnan Irianto)</p>
+<div class="spasi-antar"></div>
+<p class="noindent">Dosen Pembimbing 1,</p>
+<div class="spasi"></div>
+<p class="noindent">(Ir. I Nyoman Piarsa, ST., MT., IPM.)</p>
+<div class="spasi-antar"></div>
+<p class="noindent">Dosen Pembimbing 2,</p>
+<div class="spasi"></div>
+<p class="noindent">(A.A. Kt Agung Cahyawan Wiranatha, S.T., M.T.)</p>
+</div>
+
+</body>
+</html>
