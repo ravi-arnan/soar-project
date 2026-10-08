@@ -158,6 +158,26 @@ services:
       - /home/ravi/Projects/soar-project/state:/state:rw
     command: ["python3", "/scripts/misp-feed-sync.py", "--serve", "--db", "/state/misp.db"]
 
+  # Pencatat alert Telegram keluar (observability): Bot API tak punya histori
+  # keluar, jadi n8n POST setiap alert terkirim ke sini (JSONL durable).
+  alert-log:
+    image: python:3.12-alpine
+    container_name: alert-log
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - ALERT_LOG_PORT=8091
+      - ALERT_LOG_FILE=/state/telegram-alerts.jsonl
+    volumes:
+      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
+      - /home/ravi/Projects/soar-project/state:/state:rw
+    command: ["python3", "/scripts/alert-log.py", "--serve"]
+
 volumes:
   n8n_data:
   health_state:
