@@ -5,7 +5,7 @@
 **Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)**
 
 [![Status](https://img.shields.io/badge/status-active-success)](#)
-[![Wazuh](https://img.shields.io/badge/Wazuh-4.10.5-005792)](https://wazuh.com)
+[![Wazuh](https://img.shields.io/badge/Wazuh-4.14.8-005792)](https://wazuh.com)
 [![n8n](https://img.shields.io/badge/n8n-2.42.5-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
 [![Agent](https://img.shields.io/badge/soar--agent-Rust-000000?logo=rust&logoColor=white)](agent-rs/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
@@ -61,9 +61,9 @@ Penjelasan awam dan diagram lain: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 | Komponen | Peran | Versi |
 |----------|-------|-------|
-| **Wazuh Manager** | SIEM, korelasi aturan, integratord, Active Response | 4.10.5 |
-| **Wazuh Indexer** | OpenSearch, penyimpanan dan pencarian log | 4.10.5 |
-| **Wazuh Dashboard** | Antarmuka bawaan Wazuh (opsional) | 4.10.5 |
+| **Wazuh Manager** | SIEM, korelasi aturan, integratord, Active Response | 4.14.8 |
+| **Wazuh Indexer** | OpenSearch, penyimpanan dan pencarian log | 4.14.8 |
+| **Wazuh Dashboard** | Antarmuka bawaan Wazuh (opsional) | 4.14.8 |
 | **n8n** | Mesin orkestrasi playbook (otak SOAR) | 2.42.5 |
 | **soar-agent** | Agen endpoint Rust: FIM, hash, karantina, scan on-demand | - |
 | **fleet-monitor** | API monitoring (heartbeat, event, command queue, cache verdict) | stdlib Python |

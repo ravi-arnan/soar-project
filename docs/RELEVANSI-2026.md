@@ -48,6 +48,10 @@ CVE-2026-0863, CVE-2026-92587/92588, CVE-2026-72762/72764/72767.
 
 ### 1.2 Wazuh — proyek memakai `4.10.5`
 
+> **Aksi 2026-10-08:** **sudah LIVE di ravi-debian** — `4.10.5 → 4.14.8`
+> (indexer→manager→dashboard). Indexer GREEN, agent Active, integrasi kustom aktif,
+> manager→n8n 200. Cert tidak diregenerasi (kompatibel 4.x).
+
 | Rilis | Status | Catatan |
 |-------|--------|---------|
 | **4.14.8** | **Stable terbaru** (23 Sep 2026) | Target upgrade. 4.14.7 (29 Jul 2026), 4.14.6 (1 Jul 2026) menyusul di bawahnya. |
@@ -131,7 +135,7 @@ path `/var/ossec` → `/var/wazuh-manager`. **Konsekuensi untuk proyek ini:** ru
 | # | Aksi | Kategori | Berat |
 |---|------|----------|-------|
 | 1 | **Patch n8n → `2.42.5`** (tutup CVE Okt 2026) — **SELESAI & LIVE (2026-10-08)** | D | kecil |
-| 2 | **Upgrade Wazuh → 4.14.8** (stable; tak ada CVE mendesak → jendela terjadwal, bukan darurat) | H | sedang |
+| 2 | **Upgrade Wazuh → 4.14.8** — **SELESAI & LIVE (2026-10-08)** | H | sedang |
 | 3 | **Pertajam klaim kebaruan**: posisikan kontribusi pada matriks confidence→otonomi + metrik + audit-trail di konteks UKM | C/F | kecil |
 | 4 | **Sitasi literatur 2025–2026** (Singh, Chhetri, Tariq, MDPI, OWASP Agentic) di bab landasan teori | C | kecil |
 | 5 | **Tambah seksi batasan**: prompt injection ke jalur LLM; sketsa migrasi Wazuh 5.0 sebagai future work | F | kecil |
