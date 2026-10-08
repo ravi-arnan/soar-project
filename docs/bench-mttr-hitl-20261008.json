@@ -1,0 +1,112 @@
+{
+  "mode": "mttr_hitl",
+  "notif": {
+    "label": "MTTR HITL — notifikasi (injeksi→Telegram)",
+    "n": 5,
+    "mean": 21.05,
+    "median": 19.57,
+    "min": 17.67,
+    "max": 27.58,
+    "stdev": 3.92,
+    "p95": 27.58,
+    "p99": 27.58,
+    "samples": [
+      17.67,
+      18.85,
+      19.57,
+      21.57,
+      27.58
+    ],
+    "unit": "detik",
+    "timeouts": 0
+  },
+  "ar_dispatch": {
+    "label": "MTTR HITL — AR dispatch (keputusan→perintah)",
+    "n": 5,
+    "mean": 0.07,
+    "median": 0.08,
+    "min": 0.05,
+    "max": 0.08,
+    "stdev": 0.01,
+    "p95": 0.08,
+    "p99": 0.08,
+    "samples": [
+      0.04976274199998443,
+      0.0733820180003022,
+      0.07553832000030525,
+      0.07669621800050663,
+      0.07747343699975318
+    ],
+    "unit": "detik"
+  },
+  "note": "Komponen otomatis saja. Waktu berpikir analis TIDAK termasuk (manual).",
+  "runs": {
+    "notif": [
+      {
+        "run": 1,
+        "latency_sec": 21.57,
+        "exec_id": "1867",
+        "path": "/home/ravi-zorin/Downloads/bench-hitlgzz3-000.bin"
+      },
+      {
+        "run": 2,
+        "latency_sec": 27.58,
+        "exec_id": "1868",
+        "path": "/home/ravi-zorin/Downloads/bench-hitlgzz3-001.bin"
+      },
+      {
+        "run": 3,
+        "latency_sec": 19.57,
+        "exec_id": "1869",
+        "path": "/home/ravi-zorin/Downloads/bench-hitlgzz3-002.bin"
+      },
+      {
+        "run": 4,
+        "latency_sec": 17.67,
+        "exec_id": "1870",
+        "path": "/home/ravi-zorin/Downloads/bench-hitlgzz3-003.bin"
+      },
+      {
+        "run": 5,
+        "latency_sec": 18.85,
+        "exec_id": "1871",
+        "path": "/home/ravi-zorin/Downloads/bench-hitlgzz3-004.bin"
+      }
+    ],
+    "ar": [
+      {
+        "run": 1,
+        "elapsed_sec": 0.0498,
+        "ok": true
+      },
+      {
+        "run": 2,
+        "elapsed_sec": 0.0775,
+        "ok": true
+      },
+      {
+        "run": 3,
+        "elapsed_sec": 0.0734,
+        "ok": true
+      },
+      {
+        "run": 4,
+        "elapsed_sec": 0.0767,
+        "ok": true
+      },
+      {
+        "run": 5,
+        "elapsed_sec": 0.0755,
+        "ok": true
+      }
+    ]
+  },
+  "metadata": {
+    "timestamp": "2026-10-08T12:45:17.704705+00:00",
+    "mode": "mttr-hitl",
+    "n": 5,
+    "agent": "ravi-zorin",
+    "n8n_webhook_malware": "http://localhost:5678/webhook/wazuh-alert",
+    "n8n_webhook_phishing": "http://localhost:5678/webhook/wazuh-phishing"
+  }
+}

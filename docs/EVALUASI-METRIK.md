@@ -84,8 +84,8 @@ Ketiga angka mendukung klaim keunggulan pada tabel perbandingan (respons berjenj
 
 ## 8. Pengukuran lanjutan (untuk bab evaluasi penuh)
 
-1. MTTR jalur **human-in-the-loop** (termasuk waktu keputusan analis) & jalur phishing **URLScan** (bukan hanya GSB).
-2. MTTR VT **cold** vs **cache** (kuantifikasi manfaat cache).
+1. MTTR jalur **human-in-the-loop** — ✅ **komponen otomatis diukur** (§11: notif 21,05 dtk, AR 0,07 dtk); *waktu keputusan analis* tetap manual. Jalur phishing **URLScan** belum.
+2. MTTR VT **cold** vs **cache** — ✅ **diukur** (§12): tidak ada percepatan end-to-end (latensi didominasi MB+LLM); manfaat = hemat kuota VT.
 3. **Uji beban**: N alert serentak → throughput, antrean, latensi LLM.
 4. **False-negative rate** atas korpus malware nyata + zero-day.
 5. Ulangi seluruh eksperimen dengan **N ≥ 30**.
@@ -231,3 +231,51 @@ percabangan OTX fallback. Bandingkan: webhook saja 0,03 dtk (9.1) vs pipeline
 verdict 3,0 dtk — selisihnya adalah biaya intel lookup yang sebenarnya.
 
 - `docs/bench-mttr-fleet-20260915-N30.json` — detail 30 run
+
+## 11. MTTR Human-in-the-Loop (2026-10-08)
+
+Mode baru `--mode mttr-hitl` mengukur **komponen OTOMATIS** jalur human-in-the-loop
+(waktu berpikir analis tidak termasuk — itu manual):
+
+1. **notif** — injeksi alert CRITICAL (EICAR) → eksekusi n8n selesai (termasuk
+   pengiriman pesan Telegram bertombol = serah-terima ke analis).
+2. **AR dispatch** — "setelah analis klik" → perintah Active Response ter-dispatch
+   ke agent (`PUT /active-response?wait_for_complete=true`). AR **no-op & aman**:
+   path sengaja tidak ada, jadi tidak ada berkas nyata yang dikarantina.
+
+| Komponen | N | Rata-rata | Median | Min – Maks |
+|----------|---|-----------|--------|------------|
+| Notifikasi (injeksi → Telegram) | 5 | **21,05 dtk** | 19,57 | 17,67 – 27,58 |
+| AR dispatch (keputusan → perintah) | 5 | **0,07 dtk** | 0,08 | 0,05 – 0,08 |
+
+**Interpretasi:** pesan HITL bertombol siap ≈**21 dtk** setelah alert — sekitar
+**18 dtk** di antaranya adalah ringkasan LLM (bandingkan pipeline pra-LLM **3,0 dtk**
+di §10; selisih = biaya LLM). Setelah keputusan, perintah AR ter-dispatch <**0,1 dtk**.
+**MTTR HITL total = 21 dtk (notif) + waktu berpikir analis (manual) + 0,07 dtk (AR)** —
+yang otomatis bisa diukur, waktu manusia dilaporkan terpisah.
+
+Detail: `docs/bench-mttr-hitl-20261008.json`
+
+## 12. VT Cold vs Cache — end-to-end (2026-10-08)
+
+Mode `--mode vt-cold` (**diperbaiki**; versi lama salah: hash "hot" di-generate baru
+sehingga selalu cold). Metode baru: **cold** = N hash acak → n8n memanggil VirusTotal;
+**hot** = hash **sama** dengan **path berbeda** (lolos dedup claim-check yang ber-key
+`agent|rule|hash|path`) → cache verdict **hit**, VT dilewati. Ukur injeksi → fleet-log.
+
+| Fase | N | Rata-rata | Median | Min – Maks | Timeout |
+|------|---|-----------|--------|------------|---------|
+| Cold (panggil VT) | 6 | 29,04 dtk | 22,12 | 20,56 – 44,21 | 0 |
+| Hot (cache hit) | 6 | 34,99 dtk | 28,15 | 22,13 – 63,26 | 0 |
+
+Cache verdict (`GET /api/vt-cache`): lookups 24, **hits 10**, misses 14, stores 14,
+**hit_rate 41,7%** (TTL malicious 7h/clean 24j/unknown 6j).
+
+**Temuan (jujur):** cache **tidak** mempercepat MTTR end-to-end (mean cold ≈ hot;
+selisih dalam rentang noise). Penyebabnya latensi pipeline **didominasi tahap non-VT**
+(MalwareBazaar + ringkasan LLM ≈18 dtk), sedangkan panggilan VT sendiri hanya
+≈0,5–2 dtk. → **Manfaat cache = penghematan kuota / perlindungan rate-limit VT**
+(10 hit dari 14 store ≈ 10 panggilan VT dihindari), **bukan** kecepatan. Cache tetap
+krusial untuk burst 100 PC dengan hash sama (kuota VT free 4 req/menit).
+
+Detail: `docs/bench-vt-cold-vs-cache-20261008.json`
