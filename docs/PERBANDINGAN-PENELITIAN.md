@@ -128,3 +128,17 @@ Prinsip: perlakukan VT/GSB/URLScan sebagai **corroboration multi-sinyal**, bukan
 20. *Implementasi dan Evaluasi Sistem Keamanan Siber Berbasis Wazuh, Shuffle, dan YARA pada Pusat Data Pemerintah Kota Tangerang*, Jurnal Router, APTII — https://journal.aptii.or.id/index.php/Router/article/download/752/716
 21. S. Singh, M. Tariq, et al., *LLMs in the SOC: An Empirical Study of Human-AI Collaboration in Security Operations Centres* (arXiv:2508.18947, 2025) — https://arxiv.org/abs/2508.18947
 22. H. R. Srinivas, S. Kirk, et al., *AI-Augmented SOC: A Survey of LLMs and Agents for Security Automation*, MDPI (2025) — https://www.mdpi.com/2624-800X/5/4/95
+23. Wazuh, *4.14.6 Release notes* (Jul 2026) + *Wazuh 5.0 (Beta 5)* — https://documentation.wazuh.com/current/release-notes/release-4-14-6.html ; https://www.initmax.com/wazuh-5-0/
+24. OpenCVE, *n8n CVEs and Security Vulnerabilities* (batch Okt 2026, fixed 2.40.1) — https://app.opencve.io/cve/?vendor=n8n
+25. Canadian Centre for Cyber Security, *n8n security advisory AV26-985* (1 Okt 2026) — https://www.cyber.gc.ca/en/alerts-advisories/n8n-security-advisory-av26-985
+26. Orca Security, *CVE-2026-1470: Critical n8n RCE & Sandbox Escape* — https://orca.security/resources/blog/cve-2026-1470-n8n-rce-sandbox-escape/
+27. UnderDefense, *AI Security Orchestration: The Guide to Replacing SOAR* (2026) — https://underdefense.com/blog/ai-security-orchestration/
+28. SecurityBoulevard, *Best SOAR Alternatives in 2026: Agentic Platforms* — https://securityboulevard.com/2026/07/best-soar-alternatives-in-2026-the-agentic-platforms-replacing-legacy-soar/
+29. Microsoft Security, *The agentic SOC — Rethinking SecOps* (Apr 2026) — https://www.microsoft.com/en-us/security/blog/2026/04/09/the-agentic-soc-rethinking-secops-for-the-next-decade/
+30. OWASP GenAI, *Top 10 for Agentic Applications 2026* — https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/
+31. *Systematic Literature Review: Challenges and Issues in the Adoption of SOAR Technology*, ICCWS (2026) — https://papers.academic-conferences.org/index.php/iccws/article/view/4422
+32. *AI-driven digital twin-based SOAR (SOAR4BC)*, Springer (2026) — https://link.springer.com/article/10.1007/s10515-026-00612-1
+33. *Hybrid SIEM + SOAR Ecosystem: Technical Implementation* (Wazuh + n8n + multi-agent LLM, 2026) — https://www.researchgate.net/publication/414511878_Hybrid_SIEM_SOAR_Ecosystem_Technical_Implementation_and_Documentation
+34. *SOAR Automation Platform for Cybersecurity Incident Response* (n8n + Groq AI), IJARSCT (2026) — https://www.ijarsct.co.in/Paper37895.pdf
+35. *A systematic literature review of large language models in phishing* (ScienceDirect, 2026) — https://www.sciencedirect.com/science/article/pii/S2590005626000986
+36. CyberSense, *The Autonomous SOC and Its Attack Surface* (2026) — https://cybersense.solutions/articles/2026/Jul/20260710-AutonomousSOC.html

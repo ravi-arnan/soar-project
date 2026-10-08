@@ -5,6 +5,22 @@ Konsolidasi **gap (kesenjangan/masalah)** dan **solusi** untuk proyek:
 
 Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) Keamanan platform, (E) Arsitektur, (F) Kontribusi terhadap masalah industri, (G) Perluasan cakupan deteksi (penguatan TA), (H) Pemeliharaan & modernisasi stack, (I) Agen Ringan.
 
+## Relevansi & Lanskap 2026 (riset 2026-10-08)
+
+Sweep penuh (versi komponen + CVE + tren industri + jurnal) → **`docs/RELEVANSI-2026.md`**.
+Ringkas: proyek **masih relevan**, arah tesis (confidence-based, transparan, sadar-degradasi,
+HITL) **divalidasi literatur 2025–2026**, tapi ada 2 aksi konkret + tekanan kebaruan:
+
+- **n8n 2.40.0 rentan** — batch CVE Okt 2026 (termasuk 2 Critical 9.0: CVE-2026-103255/103248)
+  menambal "2.40.0 before 2.40.1" → **wajib upgrade ke ≥ 2.40.1**. **Repo sudah dipatch ke 2.42.5**
+  (stable terbaru 2026-10-08); deploy live menunggu server online.
+- **Wazuh 4.10.5 tertinggal** — stable terbaru **4.14.6** (Jul 2026); **5.0 sudah Beta 5**
+  (bukan in-place upgrade: XML→Sigma, field/severity berubah, data tak dimigrasi).
+- **Tren industri**: pergeseran SOAR playbook → **agentic SOC** (Microsoft ISOC, Wazuh AI Assistant);
+  adopsi masih ~14%; risiko prompt injection → OWASP Top 10 Agentic Apps 2026.
+- **Tekanan kebaruan**: kombinasi Wazuh+n8n+LLM sudah jadi pola umum 2026 → posisikan kontribusi
+  pada **matriks confidence→otonomi + metrik terukur + audit-trail di konteks UKM**.
+
 ---
 
 ## Status ringkas (per 2026-09-28)
@@ -35,6 +51,7 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 
 - **Fix FP rundll32 System32 di rule chain (A/B, 2026-09-28, LIVE)** `scripts/process-chain-rules.xml` `110007`/`110017` memakai `<match>` yang diuji ke SELURUH log, sehingga alternatif `.dll.*\s*-` menelan `ParentCommandLine` → rundll32 maintenance Windows (StateRepository) naik **level 10 HIGH**. Fix: `<field ...commandLine>` + regex diketatkan (`.dll[,\s]+-\w`) + allowlist level 0 `110019`/`110020`. Bukti: `full_log` alert asli dari arsip manager, `wazuh-analysisd -t` rc=0. Live di manager v4.10.5.
 - **File konfigurasi sistem (`hosts`) bukan lagi "MALWARE HIGH" (A, 2026-09-28, LIVE)** Rule 550 (FIM checksum berubah, level 7) dipetakan HIGH + judul keras `MALWARE TERDETEKSI`, dan Active Response otomatis **mencoba karantina file OS**. Fix `scripts/patch-n8n-systemfile.py` (4 node): `is_system_file` → severity maks MEDIUM (tetap diberitakan), `should_active_response=false`, judul "PERUBAHAN FILE KONFIGURASI SISTEM", VT N/A, prompt AI sadar `soar-sinkhole`, + pengaman `Fleet Quarantine`. Test 8/8; E2E exec 1234 hijau.
+- **FP media jinak "MALWARE TERDETEKSI" (A, 2026-10-06)** `.mp4` di `~/Downloads/Telegram Desktop/` naik MEDIUM "MALWARE TERDETEKSI" padahal VirusTotal 404 + MalwareBazaar/OTX kosong; satu-satunya pemicu rule FIM 554 level 5. Akar: di `Rangkum Hasil`, `MEDIUM` adalah cabang `else` → setiap file tanpa indikator divonis malware. Fix `scripts/patch-n8n-noindicator.py` (Ekstrak/Rangkum/Build + gate "Perlu Notifikasi?"): severity jalur file murni dari threat intel (**rule FIM 550/554 tidak lagi menaikkan**), tanpa indikator → **INFO**; media/dokumen jinak (mp4/jpg/pdf/docx/...) tidak dikirim ke Telegram; eksekutabel hash tak dikenal (ekstensi berisiko / bit exec) → **MEDIUM "FILE PERLU REVIEW"**; VT error non-404 (429/5xx) → MEDIUM tak terverifikasi (bukan INFO); AR otomatis hanya CRITICAL/HIGH nyata. Test 13/13 (`scripts/test_patch_n8n_noindicator.py`).
 
 ### ⬜ BELUM dikerjakan (sisa)
 | Prioritas | Item | Kategori | Berat |
@@ -52,6 +69,8 @@ Kategori: (A) Bug keandalan, (B) Keandalan threat-intel, (C) Bukti ilmiah, (D) K
 | Menengah | **Registration date agent Rust (`first_seen`)** — kode **SIAP di repo, BELUM deploy** (lihat HANDOFF 2026-09-28): fleet-monitor simpan `first_seen` + emit `regDate`; `AgentDetailView` sudah di-wire. Tests 14/14 | I | kecil |
 | Tinggi (drift) | **`fleet-monitor` server = versi lama** (tanpa command API & `_validate_runtime_secrets`), sedangkan repo lebih baru — dan `.env` server **tak punya** `FLEET_COMMAND_TOKEN` / `FLEET_AGENT_POLL_TOKENS_JSON`. Deploy versi repo tanpa mengisi token → crash-loop. Isi 2 token dulu sebelum naikkan versi | D | kecil |
 | Menengah | **Rapikan logika Active Response** (temuan 2026-09-28): `Fleet Quarantine` selalu jalan + `!firewall-drop` srcip `0.0.0.0` untuk alert file. Pengaman file-sistem sudah live, jalur lain belum | A | sedang |
+| ✅ **LIVE (2026-10-08)** | **Patch n8n `2.40.0 → 2.42.5`** (riset 2026-10-08): batch CVE Okt 2026 menambal "2.40.0 before 2.40.1" — 2 Critical 9.0 (CVE-2026-103255/103248 Supabase) + beberapa High. Deploy nyata di ravi-debian: `pull` + `up -d n8n`, healthz ok, **5 workflow active**, migrasi DB bersih, **E2E hijau** (FIM 21 node, chain 8 node, 0 error). Backup: `docker-compose.yml.bak-20261008-183407` | D | kecil |
+| Menengah | **Upgrade Wazuh `4.10.5 → 4.14.8`** (stable terbaru 23 Sep 2026). Tak ada CVE mendesak → **jendela terjadwal**, bukan darurat. Manager ≥ agent (agent 4.10.x tetap jalan); urutan **indexer→manager→dashboard**; **pertahankan** `wazuh_manager.conf` kustom + rule chain + block-domain. **Runbook: `docs/UPGRADE-VERSI-2026-10.md` §B**. **5.0 ditunda pasca-TA** (bukan in-place: XML→Sigma, field/severity berubah, data tak dimigrasi) | H | sedang |
 
 **Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
 
@@ -141,8 +160,8 @@ Scope sekarang (per batasan masalah 1.5): **malware via FIM + reputasi hash** da
 
 | Status | Item | Catatan |
 |--------|------|---------|
-| ✅ **SELESAI** (2026-07-06, update 2026-09-02, update 2026-09-16) | **H1 — Update n8n & recreate** | `2.35.7 → 2.36.9` (2026-09-02, di atas semua CVE 2026) → **2.40.0** (2026-09-16). Image baru langsung `docker compose pull` + `up -d`; 4 workflow tetap active, healthz 200. |
-| ✅ **SELESAI** (2026-09-02) | **H2 — Pin versi n8n** | `image: n8nio/n8n` → `n8nio/n8n:2.36.9` (dulu) → `2.40.0` (sekarang) di compose. |
+| ✅ **SELESAI** (2026-07-06, update 2026-09-02, 2026-09-16, **2026-10-08 LIVE**) | **H1 — Update n8n & recreate** | `2.35.7 → 2.36.9` (2026-09-02) → `2.40.0` (2026-09-16) → **`2.42.5`** (2026-10-08, menutup batch CVE Okt 2026). Deploy live di ravi-debian: healthz 200, **5 workflow active**, E2E hijau. |
+| ✅ **SELESAI** (2026-09-02, **2026-10-08 LIVE**) | **H2 — Pin versi n8n** | `image: n8nio/n8n` → `2.36.9` → `2.40.0` → **`2.42.5`** di `docker-compose.yml` + `deploy/hardened/docker-compose.yml` (server + repo). |
 | ✅ **SELESAI** (2026-09-16) | **H3 — Upgrade Wazuh 4.9.2 → 4.10.5** | Pull image manager/indexer/dashboard (3 kontainer). Compose recreate. API 401 (auth normal), fleet health wazuh_api True. Pipeline end-to-end diverifikasi. 4.14.7 tetap ditunda pasca-TA karena breaking path cert/agent. |
 | ⬜ Jangan dikejar | **H4 — Wazuh 5.0** | Masih **beta** (beta5, 1 Sep 2026) & breaking besar: engine sendiri, hapus Filebeat, path `/var/wazuh-manager`, hapus agent ID 000 → berdampak integratord + AR path lama. Evaluasi pasca-TA |
 | Catatan | **H5 — Alternatif "lebih ringan"** | Tidak ada pengganti Wazuh setara yang lebih ringan: osquery/Falco/Velociraptor = fungsi lebih sedikit; Elastic/Graylog/Security Onion = selevel/lebih berat (Graylog SSPL). Resource sekarang sehat (~2,7 GB: indexer 1,5 GB, manager 0,5 GB, dashboard 0,2 GB, n8n 0,37 GB) |

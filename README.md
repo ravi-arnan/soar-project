@@ -6,7 +6,7 @@
 
 [![Status](https://img.shields.io/badge/status-active-success)](#)
 [![Wazuh](https://img.shields.io/badge/Wazuh-4.10.5-005792)](https://wazuh.com)
-[![n8n](https://img.shields.io/badge/n8n-2.40.0-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
+[![n8n](https://img.shields.io/badge/n8n-2.42.5-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
 [![Agent](https://img.shields.io/badge/soar--agent-Rust-000000?logo=rust&logoColor=white)](agent-rs/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org)
@@ -51,7 +51,7 @@ Penjelasan awam dan diagram lain: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 1. **Endpoint** — berkas baru terdeteksi; agent menghitung SHA-256 dan mengirim alert ringan (1-2 KB) ke webhook n8n. Isi berkas tidak dikirim.
 2. **n8n** — menyaring noise, lalu memeriksa verdict: cache hash → VirusTotal → MalwareBazaar (bila perlu) → OTX bila VT rate-limit.
-3. **Klasifikasi** — severity ditentukan dari jumlah deteksi dan level rule Wazuh, bukan sekadar "ada berkas baru".
+3. **Klasifikasi** — severity ditentukan dari verdict threat intel (VirusTotal/MalwareBazaar/OTX) dan status eksekutabel; level rule FIM saja tidak menjadikan berkas "malware".
 4. **Respons** — kasus berkeyakinan tinggi dieksekusi otomatis; kasus ambigu memunculkan tombol keputusan di Telegram.
 5. **Jejak** — setiap event masuk `fleet-monitor` (dipersist ke SQLite) dan tampil di dashboard (status, severity, hash, tautan VirusTotal). Riwayat bisa ditelusuri per periode (24 jam–90 hari atau rentang custom), digabung dengan arsip alert Wazuh Indexer.
 
@@ -64,7 +64,7 @@ Penjelasan awam dan diagram lain: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 | **Wazuh Manager** | SIEM, korelasi aturan, integratord, Active Response | 4.10.5 |
 | **Wazuh Indexer** | OpenSearch, penyimpanan dan pencarian log | 4.10.5 |
 | **Wazuh Dashboard** | Antarmuka bawaan Wazuh (opsional) | 4.10.5 |
-| **n8n** | Mesin orkestrasi playbook (otak SOAR) | 2.40.0 |
+| **n8n** | Mesin orkestrasi playbook (otak SOAR) | 2.42.5 |
 | **soar-agent** | Agen endpoint Rust: FIM, hash, karantina, scan on-demand | - |
 | **fleet-monitor** | API monitoring (heartbeat, event, command queue, cache verdict) | stdlib Python |
 | **dashboard** | UI monitoring (gaya Wazuh) | Next.js |
@@ -86,9 +86,10 @@ Agent memantau filesystem; setiap hash diperiksa ke sumber intel, dan keputusan 
 
 | Verdict | Severity | Tindakan |
 |---------|----------|----------|
-| Deteksi tinggi (`malicious >= 20`) atau rule level >= 12 | **KRITIS** | Karantina otomatis + notifikasi |
-| Terdeteksi sedang (`malicious >= 5`), atau dikenali MalwareBazaar/OTX | **TINGGI** | Tombol Telegram, analis memutuskan |
-| Bersih / tak dikenal tanpa sinyal lain (rule level rendah) | SEDANG | Disenyapkan (tanpa false positive) |
+| Deteksi tinggi (`malicious >= 20`) atau MB + `malicious >= 5` | **KRITIS** | Karantina otomatis + notifikasi |
+| Terdeteksi (`malicious >= 5`), atau dikenali MalwareBazaar/OTX | **TINGGI** | Tombol Telegram, analis memutuskan |
+| Indikator lemah (`malicious` 1-4/`suspicious`) atau eksekutabel dengan hash belum dikenal | **SEDANG / PERLU REVIEW** | Info silent, tanpa tombol |
+| Tanpa indikator apa pun (VT 0/404, MB/OTX kosong) | **INFO** | Media/dokumen jinak **tidak dinotifikasi**; selebihnya info silent |
 
 ### Phishing (berbasis reputasi URL)
 
