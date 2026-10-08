@@ -66,6 +66,7 @@ docs/
 | `PANDUAN-DIAGRAM.md` / `.docx` / `.pdf` | Cara render diagram |
 | `DEPLOYMENT.md` | Panduan penggelaran |
 | `UPGRADE-VERSI-2026-10.md` | Runbook upgrade n8n/Wazuh |
+| `TAILSCALE-SETUP.md` | Setup akses remote via Tailscale (arsip rencana) |
 
 ## agen-ringan/
 | Dokumen | Isi |
