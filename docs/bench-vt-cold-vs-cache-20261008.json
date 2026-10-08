@@ -1,0 +1,173 @@
+{
+  "mode": "vt_cold_vs_cache",
+  "cold": {
+    "label": "VT Cold (hash baru, panggil VT)",
+    "n": 6,
+    "mean": 29.04,
+    "median": 22.12,
+    "min": 20.56,
+    "max": 44.21,
+    "stdev": 11.76,
+    "p95": 44.21,
+    "p99": 44.21,
+    "samples": [
+      20.55971911300003,
+      21.09827866299929,
+      21.106679915000313,
+      23.12729805700019,
+      44.144298608999634,
+      44.20592390699949
+    ],
+    "unit": "detik",
+    "timeouts": 0
+  },
+  "hot": {
+    "label": "VT Cache Hit (hash sama, path beda)",
+    "n": 6,
+    "mean": 34.99,
+    "median": 28.15,
+    "min": 22.13,
+    "max": 63.26,
+    "stdev": 15.75,
+    "p95": 63.26,
+    "p99": 63.26,
+    "samples": [
+      22.129668038999625,
+      25.10164654899927,
+      25.177658881000752,
+      31.125366436999684,
+      43.16927562000001,
+      63.2603882250005
+    ],
+    "unit": "detik",
+    "timeouts": 0
+  },
+  "speedup": 0.83,
+  "vt_cache": {
+    "size": 15,
+    "max": 20000,
+    "ttl_secs": {
+      "malicious": 604800,
+      "clean": 86400,
+      "unknown": 21600
+    },
+    "stats": {
+      "lookups": 24,
+      "hits": 10,
+      "misses": 14,
+      "stores": 14
+    },
+    "hit_rate": 0.4167,
+    "file": "/state/.fleet-vt-cache.json"
+  },
+  "runs": {
+    "cold": [
+      {
+        "run": 1,
+        "phase": "cold",
+        "hash": "64d01d8b606ee80b9fabe3a323de5dcea5b04ebf01c87d910a0c7a26deb8ef45",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-000.bin",
+        "elapsed_sec": 23.13,
+        "status": "logged"
+      },
+      {
+        "run": 2,
+        "phase": "cold",
+        "hash": "62fb6f2122f67f3b8933142a5fb859be9f2e5ba7cecd34071ca075efa3b36c7f",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-001.bin",
+        "elapsed_sec": 44.14,
+        "status": "logged"
+      },
+      {
+        "run": 3,
+        "phase": "cold",
+        "hash": "912dac5ea789e9aeda59e90d8624924f807aa428caa997d707ed94311805cba1",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-002.bin",
+        "elapsed_sec": 21.1,
+        "status": "logged"
+      },
+      {
+        "run": 4,
+        "phase": "cold",
+        "hash": "1779d94667c7e7c67233b40eb4a548fd6312eb11018391683670a29b2ed6432b",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-003.bin",
+        "elapsed_sec": 44.21,
+        "status": "logged"
+      },
+      {
+        "run": 5,
+        "phase": "cold",
+        "hash": "65655d76e3fdc5161381adbacd84f258fbd78d26df735952ee3ac020259be5a1",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-004.bin",
+        "elapsed_sec": 20.56,
+        "status": "logged"
+      },
+      {
+        "run": 6,
+        "phase": "cold",
+        "hash": "7ab372dd0f5921ad273f4ae94a28ece069c29ea5417bcbede43d7447a31d38bf",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-005.bin",
+        "elapsed_sec": 21.11,
+        "status": "logged"
+      }
+    ],
+    "hot": [
+      {
+        "run": 1,
+        "phase": "hot",
+        "hash": "64d01d8b606ee80b9fabe3a323de5dcea5b04ebf01c87d910a0c7a26deb8ef45",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-hot-000.bin",
+        "elapsed_sec": 22.13,
+        "status": "logged"
+      },
+      {
+        "run": 2,
+        "phase": "hot",
+        "hash": "62fb6f2122f67f3b8933142a5fb859be9f2e5ba7cecd34071ca075efa3b36c7f",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-hot-001.bin",
+        "elapsed_sec": 63.26,
+        "status": "logged"
+      },
+      {
+        "run": 3,
+        "phase": "hot",
+        "hash": "912dac5ea789e9aeda59e90d8624924f807aa428caa997d707ed94311805cba1",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-hot-002.bin",
+        "elapsed_sec": 31.13,
+        "status": "logged"
+      },
+      {
+        "run": 4,
+        "phase": "hot",
+        "hash": "1779d94667c7e7c67233b40eb4a548fd6312eb11018391683670a29b2ed6432b",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-hot-003.bin",
+        "elapsed_sec": 25.18,
+        "status": "logged"
+      },
+      {
+        "run": 5,
+        "phase": "hot",
+        "hash": "65655d76e3fdc5161381adbacd84f258fbd78d26df735952ee3ac020259be5a1",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-hot-004.bin",
+        "elapsed_sec": 43.17,
+        "status": "logged"
+      },
+      {
+        "run": 6,
+        "phase": "hot",
+        "hash": "7ab372dd0f5921ad273f4ae94a28ece069c29ea5417bcbede43d7447a31d38bf",
+        "path": "/home/ravi-zorin/Downloads/bench-vckeu4-hot-005.bin",
+        "elapsed_sec": 25.1,
+        "status": "logged"
+      }
+    ]
+  },
+  "metadata": {
+    "timestamp": "2026-10-08T12:57:01.372211+00:00",
+    "mode": "vt-cold",
+    "n": 6,
+    "agent": "ravi-zorin",
+    "n8n_webhook_malware": "http://localhost:5678/webhook/wazuh-alert",
+    "n8n_webhook_phishing": "http://localhost:5678/webhook/wazuh-phishing"
+  }
+}

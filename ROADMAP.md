@@ -57,7 +57,7 @@ HITL) **divalidasi literatur 2025–2026**, tapi ada 2 aksi konkret + tekanan ke
 | Prioritas | Item | Kategori | Berat |
 |-----------|------|----------|-------|
 | — | **A#2** event pertama terlewat pasca-restart agent | A | dimitigasi (fix sejati = buffer/queue di E) |
-| Menengah | **Jalankan** benchmark N≥30 + load test + VT cold-vs-cache (script: `scripts/benchmark-soar.py`) | C | sedang |
+| ✅ **LIVE (2026-10-08)** | **Jalankan** benchmark N≥30 + load test + **MTTR HITL** + **VT cold-vs-cache** — mode baru `mttr-hitl` & `vt-cold` diperbaiki (end-to-end; versi lama salah). Hasil: `docs/EVALUASI-METRIK.md §11–§12`, JSON `docs/bench-mttr-hitl-20261008.json`, `docs/bench-vt-cold-vs-cache-20261008.json` | C | sedang |
 | ✅ Sebagian (2026-09-11) | **Setup lintas-device (arahan dospem)**: `deploy/setup-server.sh` (bootstrap server 1-perintah interaktif: .env + Wazuh certs + compose up + integrasi Ansible) · `deploy/n8n-setup.py` (sinkron credentials dari .env + VT key via prompt, import 4 workflow dengan remap credential-ID by name → tanpa setup UI merah) · jalur workstation: `.deb` (`agent-rs/build-deb.sh` + `apt install`), `deploy/agent-install.sh` (1 host), `deploy/ansible/deploy-agents.yml` (fleet N host) | I/D | sedang |
 | ✅ Sebagian (2026-09-11) | **Dashboard TUI** `scripts/fleet-tui.py` — kembaran terminal fleet-monitor (GUI), sumber data sama `/api/fleet` + `/api/events`, 4 view parity, cari/saring/simulasi, stdlib curses | I | kecil |
 | ✅ **LIVE (2026-09-20)** | **Jalankan** apply-b (MalwareBazaar + TTL re-scan) + credential MB di n8n | B | sedang |
@@ -74,7 +74,7 @@ HITL) **divalidasi literatur 2025–2026**, tapi ada 2 aksi konkret + tekanan ke
 
 **Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
 
-**Rekomendasi lanjut berikutnya:** **bukti laporan** (screenshot dashboard + Telegram, kolom "Agen Ringan" di `docs/PERBANDINGAN-PENELITIAN.md`), lalu **benchmark VT cold-vs-cache** (cache VT sudah live → sekarang bisa diukur: hit rate & penghematan kuota).
+**Rekomendasi lanjut berikutnya:** **bukti laporan** (screenshot dashboard + Telegram, kolom "Agen Ringan" di `docs/PERBANDINGAN-PENELITIAN.md`) dan **integrasi MISP (M2)**. ~~benchmark VT cold-vs-cache~~ ✅ **selesai 2026-10-08** (`§12`; hasil jujur: cache hemat kuota VT, bukan latensi).
 
 ---
 
@@ -110,7 +110,7 @@ VT andal sebagai **sinyal pendukung** (ancaman dikenal), **bukan ground truth**.
 | 🟢 **Terukur** (2026-07-02) | Klaim "unggul" belum terukur | **Data nyata (`docs/EVALUASI-METRIK.pdf`):** MTTR malware auto-isolate **1,68 dtk** (N=15, cache hangat); MTTR phishing auto-block **2,13 dtk** (N=5, jalur GSB); **reduksi false-positive 100%** (N=8: 8 alert FIM baseline → 0 notifikasi SOAR). **Lanjutan:** MTTR HITL & jalur URLScan, VT cold vs cache, uji beban, false-negative zero-day, ulangi N≥30 |
 | ✅ **Selesai** (2026-09-02) | Justifikasi empiris **n8n vs Shuffle** | **`docs/N8N-VS-SHUFFLE.md`:** perbandingan 6 aspek (code execution, state, integrasi, observability, deployment, HITL). n8n 3.8/5 vs Shuffle 2.5/5. Bukti dalam kode (staticData cache, Code node HTTP, SQLite)
 | ✅ **Selesai** (2026-09-02) | Pemetaan **MITRE ATT&CK** | **`docs/MITRE-ATTACK-MAPPING.md`:** 10 teknik unik (T1566.002, T1189, T1204.002, T1027, T1036, T1484, T1005, T1059, T1070.004, T1499). Visual matrix coverage + gap analysis
-| ✅ **Selesai** (2026-09-02) | Script benchmark (uji beban + N≥30) | **`scripts/benchmark-soar.py`:** 5 mode (mttr-malware, mttr-phishing, load, vt-cold, fn-rate). Output JSON + tabel. Tinggal jalankan dengan N≥30
+| ✅ **Selesai** (2026-09-02, **update 2026-10-08**) | Script benchmark (uji beban + N≥30) | **`scripts/benchmark-soar.py`:** 7 mode (mttr-malware, mttr-fleet, mttr-phishing, **mttr-hitl**, load, **vt-cold** [end-to-end, diperbaiki], fn-rate). Output JSON + tabel. **§11–§12 dijalankan 2026-10-08.**
 | ✅ **Selesai** (2026-09-02) | **Jalankan benchmark** | MTTR malware 0,03s webhook (N=30), MTTR phishing 0,03s (N=10), Load test 34,11 alert/detik (N=20), FN rate 0% (N=15). Detail di `docs/bench-*.json` + `docs/EVALUASI-METRIK.md §9`
 
 ## D. Gap keamanan platform SOAR itu sendiri — prioritas #3 🟢 SEBAGIAN (2026-07-06)
