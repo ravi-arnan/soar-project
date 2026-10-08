@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alur SOAR Bernomor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --color-paper:#f5f5f5; --color-ink:#2d3142; --color-muted:#4f5d75; --color-accent:#eb6c36;
+      --font-sans:'Geist', system-ui, sans-serif; --font-serif:'Instrument Serif','Noto Serif',serif;
+      --font-mono:'Geist Mono', ui-monospace, monospace; }
+    body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink);
+      min-height:100vh; display:flex; align-items:center; justify-content:center; padding:3rem 2rem; }
+    .frame { max-width:1100px; width:100%; }
+    .diagram-container { width:100%; overflow-x:auto; }
+    .eyebrow { font-family:var(--font-mono); font-size:.66rem; font-weight:500; letter-spacing:.18em;
+      text-transform:uppercase; color:var(--color-muted); margin-bottom:.5rem; }
+    h1 { font-family:var(--font-serif); font-size:clamp(1.5rem,2.4vw + .75rem,2rem); font-weight:400;
+      letter-spacing:-.02em; line-height:1.15; color:var(--color-ink); margin-bottom:1.5rem; }
+    svg { width:100%; min-width:900px; display:block; }
+    @media print { .diagram-container { overflow-x:visible; } svg { min-width:0; } }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Flowchart · Diagram Design</p>
+    <h1>Alur Sistem SOAR — Ikuti Nomornya</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 900 660" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-labelledby="ov-title ov-desc">
+        <title id="ov-title">Alur sistem SOAR dalam tujuh langkah bernomor</title>
+        <desc id="ov-desc">Berkas baru terdeteksi di endpoint, diteruskan lewat Wazuh Manager dan jembatan custom-n8n ke n8n, yang meminta verdict VirusTotal dan ringkasan LLM. Bila keyakinan tinggi, berkas dikarantina otomatis; bila ragu, analis ditanya lewat Telegram; apa pun jalurnya, analis menerima notifikasi.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Arrows first -->
+        <line x1="240" y1="112" x2="240" y2="144" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="240" y1="208" x2="240" y2="240" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="240" y1="304" x2="240" y2="336" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="240" y1="416" x2="240" y2="456" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 5 -> 6a (yakin) -->
+        <path d="M390,472 H462 Q470,472 470,464 V380 Q470,372 478,372 H520" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="398" y="446" width="66" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="431" y="455" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">VT &gt;= 20</text>
+        <!-- 5 -> 6b (ragu) -->
+        <path d="M390,504 H462 a8,8 0 0 0 8,8 a8,8 0 0 0 8,8 H520" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="398" y="486" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="428" y="495" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">VT = 0</text>
+        <!-- 6a -> 7 (kanan) -->
+        <path d="M820,372 H852 Q860,372 860,380 V612 Q860,620 852,620 H820" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 6b -> 7 -->
+        <line x1="670" y1="536" x2="670" y2="576" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 6b dashed -> 6a -->
+        <path d="M600,456 V408" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="608" y="420" width="84" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="650" y="429" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">KLIK ISOLASI</text>
+
+        <!-- Nodes -->
+        <!-- 1 -->
+        <rect x="90" y="48" width="300" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="90" y="48" width="300" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="240" y="74" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">1 · Endpoint</text>
+        <text x="240" y="92" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">soar-agent · pantau berkas (FIM)</text>
+        <!-- 2 -->
+        <rect x="90" y="144" width="300" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="90" y="144" width="300" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="240" y="170" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">2 · Wazuh Manager</text>
+        <text x="240" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">cocokkan aturan · buat alert</text>
+        <!-- 3 -->
+        <rect x="90" y="240" width="300" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="90" y="240" width="300" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="240" y="266" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">3 · Jembatan</text>
+        <text x="240" y="284" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">custom-n8n · saring noise</text>
+        <!-- 4 (focal) -->
+        <rect x="90" y="336" width="300" height="80" rx="6" fill="#f5f5f5"/>
+        <rect x="90" y="336" width="300" height="80" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="240" y="366" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">4 · n8n (otak SOAR)</text>
+        <text x="240" y="386" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">tanya VirusTotal + ringkasan LLM</text>
+        <!-- 5 (decision) -->
+        <rect x="90" y="456" width="300" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="90" y="456" width="300" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#4f5d75" stroke-width="1.2"/>
+        <text x="240" y="482" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">5 · Keputusan</text>
+        <text x="240" y="500" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">seberapa yakin ini malware?</text>
+        <!-- 6a -->
+        <rect x="520" y="336" width="300" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="520" y="336" width="300" height="72" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="670" y="364" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">6a · Karantina Otomatis</text>
+        <text x="670" y="382" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Wazuh isolasi berkas sendiri</text>
+        <!-- 6b -->
+        <rect x="520" y="456" width="300" height="80" rx="6" fill="#f5f5f5"/>
+        <rect x="520" y="456" width="300" height="80" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="670" y="486" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">6b · Tanya Analis</text>
+        <text x="670" y="504" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Telegram + tombol Isolasi/Abaikan</text>
+        <text x="670" y="520" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">(human-in-the-loop)</text>
+        <!-- 7 -->
+        <rect x="520" y="576" width="300" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="520" y="576" width="300" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="670" y="602" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">7 · Notifikasi Telegram</text>
+        <text x="670" y="620" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">analis terima laporan di HP</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
