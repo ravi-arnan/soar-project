@@ -104,7 +104,7 @@ Kedua jalur bisa diklaim di laporan: "sistem mendukung dua jenis agen: Wazuh age
 
 - [ ] inotify watch `~/Downloads` + `/media/*` (crate notify)
 - [ ] sha256 streaming + stat perm (sha2 + std::fs::metadata)
-- [ ] POST JSON kompatibel ke `http://100.95.198.108:5678/webhook/wazuh-alert` (Tailscale IP dari `plan.md:5`)
+- [ ] POST JSON kompatibel ke `http://100.95.198.108:5678/webhook/wazuh-alert` (Tailscale IP dari `docs/panduan/TAILSCALE-SETUP.md:5`)
 - [ ] systemd unit `soar-agent.service` (restart unless-stopped)
 - [ ] handler quarantine `POST /quarantine` lokal (dipanggil n8n callback handler sebagai alternatif `PUT /active-response`)
 - [ ] test: EICAR `275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f` harus muncul CRITICAL dengan tombol

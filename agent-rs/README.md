@@ -45,7 +45,7 @@ Catatan toolchain (kejadian 14 Sep, jangan diulang):
 ## Jalankan
 
 ```bash
-# default watch ~/Downloads + ~/Desktop + USB /run/media/<user> (dynamic scan 2s, recursive), webhook Tailscale plan.md:5
+# default watch ~/Downloads + ~/Desktop + USB /run/media/<user> (dynamic scan 2s, recursive), webhook Tailscale docs/panduan/TAILSCALE-SETUP.md:5
 printf '%s' 'token-min-32-karakter' > /tmp/soar-fleet-token && chmod 600 /tmp/soar-fleet-token
 SOAR_FLEET_POLL_TOKEN_FILE=/tmp/soar-fleet-token RUST_LOG=info ./target/release/soar-agent --webhook http://100.73.91.17:5678/webhook/wazuh-alert --agent-id 003 --agent-name rust-agent-ravi \
   --fleet-url http://100.73.91.17:8080/api/heartbeat --heartbeat-secs 60

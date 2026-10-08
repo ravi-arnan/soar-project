@@ -63,7 +63,7 @@ Kriteria selesai Fase 0: dospem bisa lihat diagram baru dan langsung paham alur 
 |------|--------|------|
 | Scaffold | Cargo init, `notify` watch `~/Downloads`, `/media/*`, `~/Desktop` | `agent-rs/src/main.rs` |
 | Hash | sha256 streaming via `sha2`, baca `perm_after` untuk exec-bit (`ROADMAP.md:112` G2) | `agent-rs/src/main.rs:sha256_file` |
-| Kirim | POST JSON kompatibel ke `http://100.95.198.108:5678/webhook/wazuh-alert` (Tailscale `plan.md:5`) | `agent-rs/src/main.rs:post_to_n8n` |
+| Kirim | POST JSON kompatibel ke `http://100.95.198.108:5678/webhook/wazuh-alert` (Tailscale `docs/panduan/TAILSCALE-SETUP.md:5`) | `agent-rs/src/main.rs:post_to_n8n` |
 | Config | `agent-rs/Cargo.toml` + clap args (`--webhook`, `--watch`, `--agent-id`) | `agent-rs/Cargo.toml` |
 
 Payload harus identik dengan `scripts/custom-n8n.py:170`:
@@ -114,7 +114,7 @@ Jangan kejar Fase Future sebelum Fase 1-3 hijau. Effort fork 2 minggu, risiko re
 
 ## Dependensi dan risiko
 
-- n8n harus reachable via Tailscale `100.95.198.108:5678` (`plan.md:5`). Kalau Tailscale down, agent retry dengan backoff.
+- n8n harus reachable via Tailscale `100.95.198.108:5678` (`docs/panduan/TAILSCALE-SETUP.md:5`). Kalau Tailscale down, agent retry dengan backoff.
 - VirusTotal rate limit 4 req/menit (`docs/arsitektur/ARCHITECTURE.md:524`). POC tetap pakai cache `staticData`, tidak boros quota.
 - Telegram poller `tg-callback-poller` (`docker-compose.yml:31`) tidak konflik dengan webhook baru karena pakai `getUpdates` keluar saja.
 
