@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arsitektur SOAR</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --color-paper:#f5f5f5; --color-ink:#2d3142; --color-muted:#4f5d75; --color-accent:#eb6c36;
+      --font-sans:'Geist', system-ui, sans-serif; --font-serif:'Instrument Serif','Noto Serif',serif;
+      --font-mono:'Geist Mono', ui-monospace, monospace; }
+    body { font-family:var(--font-sans); background:var(--color-paper); color:var(--color-ink);
+      min-height:100vh; display:flex; align-items:center; justify-content:center; padding:3rem 2rem; }
+    .frame { max-width:1200px; width:100%; }
+    .diagram-container { width:100%; overflow-x:auto; }
+    .eyebrow { font-family:var(--font-mono); font-size:.66rem; font-weight:500; letter-spacing:.18em;
+      text-transform:uppercase; color:var(--color-muted); margin-bottom:.5rem; }
+    h1 { font-family:var(--font-serif); font-size:clamp(1.5rem,2.4vw + .75rem,2rem); font-weight:400;
+      letter-spacing:-.02em; line-height:1.15; color:var(--color-ink); margin-bottom:1.5rem; }
+    svg { width:100%; min-width:1000px; display:block; }
+    @media print { .diagram-container { overflow-x:visible; } svg { min-width:0; } }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · Diagram Design</p>
+    <h1>Arsitektur Sistem SOAR</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 580" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-labelledby="ars-title ars-desc">
+        <title id="ars-title">Arsitektur sistem SOAR open-source</title>
+        <desc id="ars-desc">Agen ringan di endpoint mengirim hash ke n8n sebagai orkestrator, yang berkonsultasi dengan threat intelligence dan LLM lalu mengirim notifikasi ke Telegram untuk keputusan analis; n8n juga memerintahkan Wazuh Manager melakukan Active Response, dan mengirim event ke fleet-monitor.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Arrows -->
+        <!-- 1 Endpoint -> n8n -->
+        <line x1="222" y1="248" x2="286" y2="248" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="226" y="230" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="254" y="239" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HASH</text>
+        <!-- 2 n8n -> Threat Intel (hash) -->
+        <path d="M476,210 H504 Q512,210 512,202 V136 Q512,128 520,128 H548" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 3 n8n -> LLM -->
+        <line x1="476" y1="222" x2="548" y2="222" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 4 n8n -> Threat Intel (URL) -->
+        <path d="M476,258 H516 Q524,258 524,266 V308 Q524,316 532,316 H548" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 5 n8n -> Telegram -->
+        <path d="M431,190 V88 Q431,80 439,80 H872 Q880,80 880,88 V96" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="660" y="62" width="86" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="703" y="71" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NOTIFIKASI</text>
+        <!-- 6 Telegram -> Analis -->
+        <line x1="880" y1="160" x2="880" y2="190" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 7 Analis -> n8n (keputusan, dashed) -->
+        <path d="M880,254 V352 Q880,360 872,360 H372 Q364,360 364,352 V306" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="792" y="296" width="80" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="832" y="305" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">KEPUTUSAN</text>
+        <!-- 8 Wazuh -> n8n (alert) -->
+        <line x1="340" y1="420" x2="340" y2="306" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="346" y="322" width="46" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="369" y="331" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ALERT</text>
+        <!-- 9 n8n -> Wazuh (active response, accent) -->
+        <path d="M316,306 V420" fill="none" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <!-- 10 n8n -> fleet-monitor -->
+        <path d="M388,306 V372 Q388,380 396,380 H640 Q648,380 648,388 V420" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- 11 Endpoint -> fleet-monitor (heartbeat) -->
+        <path d="M127,296 V512 Q127,520 135,520 H640 Q648,520 648,512 V492" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="150" y="496" width="80" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="190" y="505" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HEARTBEAT</text>
+
+        <!-- Nodes -->
+        <!-- Endpoint (input) -->
+        <rect x="32" y="200" width="190" height="96" rx="6" fill="#f5f5f5"/>
+        <rect x="32" y="200" width="190" height="96" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="127" y="240" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">soar-agent</text>
+        <text x="127" y="258" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Rust · Windows/Linux/macOS</text>
+        <text x="127" y="274" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">hash SHA-256 · hash-only</text>
+        <!-- n8n (focal) -->
+        <rect x="286" y="190" width="190" height="116" rx="6" fill="#f5f5f5"/>
+        <rect x="286" y="190" width="190" height="116" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="381" y="238" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">n8n</text>
+        <text x="381" y="256" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">orkestrasi · 5 workflow</text>
+        <text x="381" y="272" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">severity · HITL · audit</text>
+        <!-- Wazuh Manager (backend) -->
+        <rect x="286" y="420" width="190" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="286" y="420" width="190" height="72" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="381" y="450" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Wazuh Manager</text>
+        <text x="381" y="468" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">rule · API :55000 · AR</text>
+        <!-- fleet-monitor (store) -->
+        <rect x="548" y="420" width="200" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="548" y="420" width="200" height="72" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="648" y="450" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">fleet-monitor</text>
+        <text x="648" y="468" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">dashboard :3000 · TUI</text>
+        <!-- Threat Intel hash (external) -->
+        <rect x="548" y="96" width="200" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="548" y="96" width="200" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="648" y="124" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Threat Intel · hash</text>
+        <text x="648" y="142" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">VT · MB · OTX · MISP</text>
+        <!-- LLM (external) -->
+        <rect x="548" y="190" width="200" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="548" y="190" width="200" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="648" y="218" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">LLM API</text>
+        <text x="648" y="236" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ringkasan + rekomendasi</text>
+        <!-- Threat Intel URL (external) -->
+        <rect x="548" y="284" width="200" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="548" y="284" width="200" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="648" y="312" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Threat Intel · URL</text>
+        <text x="648" y="330" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">GSB · URLScan.io</text>
+        <!-- Telegram (backend) -->
+        <rect x="800" y="96" width="160" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="800" y="96" width="160" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="880" y="124" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Telegram Bot</text>
+        <text x="880" y="142" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">notifikasi + tombol</text>
+        <!-- Analis (input) -->
+        <rect x="800" y="190" width="160" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="800" y="190" width="160" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="880" y="218" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Analis</text>
+        <text x="880" y="236" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">isolasi / blokir / abaikan</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>
