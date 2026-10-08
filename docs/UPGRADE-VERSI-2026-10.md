@@ -10,7 +10,12 @@ Verifikasi terakhir: `docker ps`, `curl localhost:5678/healthz`, `docker compose
 **Status eksekusi (2026-10-08):** §A n8n **SUDAH dijalankan & terverifikasi** di ravi-debian —
 `n8n --version` = 2.42.5, healthz ok, 5 workflow active, migrasi DB "Finished", **E2E hijau**
 (FIM 21 node, chain 8 node, 0 error). Backup compose: `docker-compose.yml.bak-20261008-183407`.
-§B Wazuh **belum** (dijadwalkan, tak ada CVE mendesak).
+
+§B Wazuh **SUDAH dijalankan & terverifikasi** — `4.10.5 → 4.14.8`. Urut indexer→manager→dashboard.
+Bukti: indexer cluster **GREEN** (data & cluster_uuid terjaga), manager `v4.14.8` + `analysisd -t` rc=0,
+rule kustom selamat, agent 001/002 **Active**, integratord aktifkan 3 integrasi kustom,
+**manager→n8n `healthz=200`**, fleet `wazuh_api: True`. Cert **tidak** diregenerasi (kompatibel 4.x).
+Backup: `~/wazuh-backup-20261008-184204`, `docker-compose.yml.bak-20261008-184154`.
 
 ---
 
