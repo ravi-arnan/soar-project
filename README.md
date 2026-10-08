@@ -43,7 +43,7 @@ Empat kelompok komponen:
 | **Threat Intelligence** | VirusTotal, MalwareBazaar, AlienVault OTX (hash); Google Safe Browsing, URLScan.io (URL). |
 | **Human-in-the-Loop** | Telegram Bot (notifikasi + tombol keputusan) dan Analis SOC. |
 
-Penjelasan awam dan diagram lain: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/FLOW.md`](docs/FLOW.md), [`docs/PANDUAN-DIAGRAM.md`](docs/PANDUAN-DIAGRAM.md).
+Penjelasan awam dan diagram lain: [`docs/arsitektur/ARCHITECTURE.md`](docs/arsitektur/ARCHITECTURE.md), [`docs/arsitektur/FLOW.md`](docs/arsitektur/FLOW.md), [`docs/panduan/PANDUAN-DIAGRAM.md`](docs/panduan/PANDUAN-DIAGRAM.md).
 
 ---
 

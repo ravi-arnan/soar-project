@@ -7,7 +7,7 @@ Ukur MTTR (Mean Time To Respond) untuk:
   3. Load test             (N alert serentak → throughput, antrean, latensi)
   4. False-negative rate   (zero-day / file tak-dikenal)
 
-Metodologi selaras dengan docs/EVALUASI-METRIK.md.
+Metodologi selaras dengan docs/evaluasi/EVALUASI-METRIK.md.
 
 Usage:
     python3 benchmark-soar.py --mode mttr-malware  --n 30 --delay 2

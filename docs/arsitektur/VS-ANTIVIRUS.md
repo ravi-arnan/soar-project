@@ -31,15 +31,15 @@ Keduanya **komplementer, bukan kompetitor**. Sistem ini mengonsumsi threat intel
 
 ## Angka pendukung (dari benchmark repo)
 
-- MTTR malware auto-isolate: **1,68 dtk** (N=15, cache hangat) — `docs/EVALUASI-METRIK.md`
-- Throughput load test: **34,11 alert/detik** — `docs/bench-load.json`
-- False-negative rate: **0%** (N=15) — `docs/bench-fn-rate.json`
+- MTTR malware auto-isolate: **1,68 dtk** (N=15, cache hangat) — `docs/evaluasi/EVALUASI-METRIK.md`
+- Throughput load test: **34,11 alert/detik** — `docs/evaluasi/bench-load.json`
+- False-negative rate: **0%** (N=15) — `docs/evaluasi/bench-fn-rate.json`
 - Agen Rust: **5,3 MB binary / 5,2 MB RSS** vs Wazuh agent ~50 MB — `docs/bench-rust-*.json`
-- Reduksi false-positive: **100%** (N=8) — `docs/EVALUASI-METRIK.md`
+- Reduksi false-positive: **100%** (N=8) — `docs/evaluasi/EVALUASI-METRIK.md`
 
 ## Referensi silang
 
 - `ROADMAP.md` — prinsip arah tesis: confidence-based, transparan, sadar-degradasi
-- `docs/ARCHITECTURE.md` — diagram pemisahan lapisan deteksi/orkestrasi/respons
-- `docs/N8N-VS-SHUFFLE.md` — contoh pola argumentasi serupa (justifikasi pemilihan tool)
-- `docs/PERBANDINGAN-PENELITIAN.md` — posisi terhadap penelitian sejenis
+- `docs/arsitektur/ARCHITECTURE.md` — diagram pemisahan lapisan deteksi/orkestrasi/respons
+- `docs/ilmiah/N8N-VS-SHUFFLE.md` — contoh pola argumentasi serupa (justifikasi pemilihan tool)
+- `docs/ilmiah/PERBANDINGAN-PENELITIAN.md` — posisi terhadap penelitian sejenis

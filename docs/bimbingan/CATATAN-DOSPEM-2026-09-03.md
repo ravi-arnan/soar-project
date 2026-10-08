@@ -18,14 +18,14 @@ Kalau bisa cerita itu ke orang awam dan orangnya paham, berarti kita paham siste
 - n8n sebagai otak orkestrasi. Wazuh agent hanya deteksi, semua keputusan di n8n (cek VT, cek AI, tentukan severity, kirim Telegram).
 - Human-in-the-loop: Telegram bot kirim inline keyboard `iso:<agentId>` / `ign:<agentId>`, eksekusi `quarantine-file` baru jalan setelah admin klik Isolasi. Model ini sudah disepakati dospem.
 
-Referensi: `docs/ARCHITECTURE.md:40` diagram utama, `docs/FLOW.md:6` sequence lengkap.
+Referensi: `docs/arsitektur/ARCHITECTURE.md:40` diagram utama, `docs/arsitektur/FLOW.md:6` sequence lengkap.
 
 ## 3. Feedback koreksi arsitektur
 
 1. **Diagram harus direvisi.** n8n harus digambar sebagai mesin orkestrasi pusat, bukan kotak biasa. Alur harus eksplisit: `Agent -> hash JSON -> n8n -> VirusTotal/AI -> Telegram -> callback -> Wazuh API -> agent action`.
-2. **Format pertukaran data adalah JSON** dengan skema yang disepakati n8n. Perlu didokumentasikan di `docs/ARCHITECTURE.md:349`.
-3. **Agen berat.** Dospem menangkap Wazuh butuh Docker di tiap klien jadi berat. Faktanya Wazuh agent native hanya ~50 MB (`docs/ARCHITECTURE.md:82`), yang pakai Docker itu manager di server (`wazuh-docker/single-node/docker-compose.yml:6`). Tapi persepsi tetap valid untuk 50-100 endpoint harus seringan mungkin.
-4. **Scope diperluas.** Jangan hanya `~/Downloads`. USB flashdisk (`/media/*`) dan perpindahan file antar folder juga perlu dipantau. Tambahkan ke `docs/ARCHITECTURE.md:313` FIM strategy.
+2. **Format pertukaran data adalah JSON** dengan skema yang disepakati n8n. Perlu didokumentasikan di `docs/arsitektur/ARCHITECTURE.md:349`.
+3. **Agen berat.** Dospem menangkap Wazuh butuh Docker di tiap klien jadi berat. Faktanya Wazuh agent native hanya ~50 MB (`docs/arsitektur/ARCHITECTURE.md:82`), yang pakai Docker itu manager di server (`wazuh-docker/single-node/docker-compose.yml:6`). Tapi persepsi tetap valid untuk 50-100 endpoint harus seringan mungkin.
+4. **Scope diperluas.** Jangan hanya `~/Downloads`. USB flashdisk (`/media/*`) dan perpindahan file antar folder juga perlu dipantau. Tambahkan ke `docs/arsitektur/ARCHITECTURE.md:313` FIM strategy.
 
 ## 4. Arahan agen ringan (minta dicoba minggu ini)
 
@@ -38,7 +38,7 @@ Dospem menyarankan dua opsi, preferensi: bikin sendiri pakai Golang dengan bantu
 
 **Opsi B - Diet Wazuh open-source:**
 - Wazuh itu open source (GPLv2), bisa di-fork dan di-trim. Matikan modul yang tidak dipakai (rootcheck, logcollector verbose, wodles tertentu), sisakan `wazuh-syscheckd` + `wazuh-execd`.
-- Lihat detail kelayakan di `docs/AGENT-RINGAN.md:3` (analisis fork vs agen baru).
+- Lihat detail kelayakan di `docs/agen-ringan/AGENT-RINGAN.md:3` (analisis fork vs agen baru).
 
 Dospem mencontohkan dia sendiri sudah pakai agen Go untuk monitor health 50 PC kantor (cek hardisk, RAM, suhu) dan work well.
 
@@ -50,8 +50,8 @@ Dospem mencontohkan dia sendiri sudah pakai agen Go untuk monitor health 50 PC k
 
 ## 6. To-do minggu ini
 
-- [ ] Revisi diagram `docs/ARCHITECTURE.md` dan `docs/FLOW.md` (tunjukkan n8n sebagai otak + hash-only + USB path)
-- [ ] Buat spec agen ringan `docs/AGENT-RINGAN.md` (JSON schema kompatibel dengan `POST /webhook/wazuh-alert`)
+- [ ] Revisi diagram `docs/arsitektur/ARCHITECTURE.md` dan `docs/arsitektur/FLOW.md` (tunjukkan n8n sebagai otak + hash-only + USB path)
+- [ ] Buat spec agen ringan `docs/agen-ringan/AGENT-RINGAN.md` (JSON schema kompatibel dengan `POST /webhook/wazuh-alert`)
 - [ ] POC agen ringan (Go atau Python dulu) tanpa Docker, kirim event ke n8n, tombol Telegram tetap jalan
 - [ ] Update skenario laporan: analogi 100 workstation admin IT + human-in-the-loop
 - [ ] Cek typo laporan per paragraf pakai AI

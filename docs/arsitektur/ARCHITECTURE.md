@@ -471,7 +471,7 @@ Content-Type: application/json
 | Wazuh Agent (`wazuh-syscheckd` + daemons) | ~50 MB | <1% | 50 MB + enroll + key | apt/dnf + enroll 1515 |
 | soar-agent Rust (`agent-rs/`, hash-only) | 2-5 MB | <1% | 1-3 MB musl static | scp + systemd, no deps |
 
-> Agen ringan kirim **hash-only JSON 1-2 KB**, bukan file utuh (1 GB tetap 1 KB). Cocok untuk 100 workstation. Lihat `docs/AGENT-RINGAN.md:42` dan `agent-rs/README.md`.
+> Agen ringan kirim **hash-only JSON 1-2 KB**, bukan file utuh (1 GB tetap 1 KB). Cocok untuk 100 workstation. Lihat `docs/agen-ringan/AGENT-RINGAN.md:42` dan `agent-rs/README.md`.
 
 ## 9. Multi-Agent Scenario (Implemented)
 
@@ -572,4 +572,4 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 - [x] File quarantine via custom AR script (human-in-the-loop, lihat Section 4b)
 - [ ] Weekly SOC report generation
 - [x] Bersihkan node firewall-drop yatim di deteksi-malware.json (2026-06-03)
-- [x] Riwayat event per periode di dashboard (2026-10-04): event SOAR dipersist ke SQLite + digabung dengan alert Wazuh Indexer (`wazuh-alerts-*`) via `GET /api/events/history`; kontrol `PeriodFilter` di semua view event (lihat `docs/FLOW.md` bagian "Riwayat Event per Periode")
+- [x] Riwayat event per periode di dashboard (2026-10-04): event SOAR dipersist ke SQLite + digabung dengan alert Wazuh Indexer (`wazuh-alerts-*`) via `GET /api/events/history`; kontrol `PeriodFilter` di semua view event (lihat `docs/arsitektur/FLOW.md` bagian "Riwayat Event per Periode")

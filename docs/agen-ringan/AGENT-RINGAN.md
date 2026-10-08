@@ -4,7 +4,7 @@
 
 ## 1. Jawaban singkat
 
-**Bisa, Wazuh itu GPLv2, boleh di-fork.** Tapi untuk TA ini, fork full Wazuh bukan jalur paling murah. Rekomendasi: **POC agen ringan greenfield Rust yang kirim JSON kompatibel ke n8n** (dipilih karena nilai teknis tertinggi, murni footprint dan security, bukan learning curve), sambil jadikan fork Wazuh sebagai opsi jangka panjang. Dua jalur ini tidak saling mengecualikan. Dospem sarankan Go (`docs/CATATAN-DOSPEM-2026-09-03.md:22`), tapi Rust unggul untuk klaim ultra ringan di sidang.
+**Bisa, Wazuh itu GPLv2, boleh di-fork.** Tapi untuk TA ini, fork full Wazuh bukan jalur paling murah. Rekomendasi: **POC agen ringan greenfield Rust yang kirim JSON kompatibel ke n8n** (dipilih karena nilai teknis tertinggi, murni footprint dan security, bukan learning curve), sambil jadikan fork Wazuh sebagai opsi jangka panjang. Dua jalur ini tidak saling mengecualikan. Dospem sarankan Go (`docs/bimbingan/CATATAN-DOSPEM-2026-09-03.md:22`), tapi Rust unggul untuk klaim ultra ringan di sidang.
 
 ## 2. Opsi B - Fork Wazuh (diet)
 
@@ -42,7 +42,7 @@ Kalau butuh tetap kompatibel protokol Wazuh (TCP 1514 + enroll 1515 + API 55000)
 
 ### Kenapa Rust, bukan Go (keputusan 2026-09-03)
 
-Dospem bilang bikin agen sendiri pakai Golang. Polanya sama seperti agen health 50 PC yang dia bikin: baca sensor, kirim JSON, server yang mikir. Untuk TA ini kita pilih **Rust** karena nilai teknis murni lebih tinggi (footprint 1-3 MB vs Go 5-10 MB, no GC, deterministik, lebih aman untuk proses root), bukan karena learning curve. `n8n` di `docs/FLOW.md:198` tidak peduli bahasa, yang penting JSON kompatibel.
+Dospem bilang bikin agen sendiri pakai Golang. Polanya sama seperti agen health 50 PC yang dia bikin: baca sensor, kirim JSON, server yang mikir. Untuk TA ini kita pilih **Rust** karena nilai teknis murni lebih tinggi (footprint 1-3 MB vs Go 5-10 MB, no GC, deterministik, lebih aman untuk proses root), bukan karena learning curve. `n8n` di `docs/arsitektur/FLOW.md:198` tidak peduli bahasa, yang penting JSON kompatibel.
 
 ### Spec minimal (kompatibel dengan pipeline kamu sekarang)
 
@@ -54,16 +54,16 @@ monitor:
   - ~/Desktop/**    (opsional)
 action:
   - hitung sha256_after (streaming via sha2 crate, tidak load full file ke RAM)
-  - baca size, perm_after (untuk magic-byte / exec-bit seperti di `docs/ROADMAP.md:112` G2)
+  - baca size, perm_after (untuk magic-byte / exec-bit seperti di `ROADMAP.md:112` G2)
   - POST JSON ke n8n webhook yang sama dengan Wazuh:
     POST http://<manager-tailnet-ip>:5678/webhook/wazuh-alert
 payload: reuse struktur `scripts/custom-n8n.py:build payload` (rule.id=554, level=5, syscheck.path, syscheck.sha256_after, agent.id/name)
 active-response:
   - HTTP lokal 127.0.0.1:8787/quarantine terima {"path": "..."} lalu mv -> /var/ossec/quarantine + chmod 000 (copy logic scripts/quarantine-file)
-  - n8n callback handler panggil endpoint ini sebagai alternatif PUT /active-response di docs/FLOW.md:299
+  - n8n callback handler panggil endpoint ini sebagai alternatif PUT /active-response di docs/arsitektur/FLOW.md:299
 ```
 
-Contoh payload JSON (harus lolos filter `docs/FLOW.md:198`):
+Contoh payload JSON (harus lolos filter `docs/arsitektur/FLOW.md:198`):
 
 ```json
 {
@@ -91,9 +91,9 @@ Contoh payload JSON (harus lolos filter `docs/FLOW.md:198`):
 ## 4. Rekomendasi strategi untuk TA
 
 **Minggu ini (kejar progres dospem):**
-1. Tetap pertahankan Wazuh sebagai baseline (2 agent aktif `ravi-zorin` + `rocky-server` di `docs/ARCHITECTURE.md:440`). Jangan bongkar yang sudah jalan.
+1. Tetap pertahankan Wazuh sebagai baseline (2 agent aktif `ravi-zorin` + `rocky-server` di `docs/arsitektur/ARCHITECTURE.md:440`). Jangan bongkar yang sudah jalan.
 2. Bikin POC Rust agent di satu endpoint baru (id 003) yang kirim ke webhook yang sama. Demo: download EICAR di folder pantauan -> Telegram muncul dengan tombol -> Isolasi work.
-3. Dokumentasikan hasil di `docs/CATATAN-DOSPEM-2026-09-03.md:6`.
+3. Dokumentasikan hasil di `docs/bimbingan/CATATAN-DOSPEM-2026-09-03.md:6`.
 
 **Pasca sidang / future work:**
 - Fork `wazuh/wazuh` branch `diet-syscheck-only`, build `.deb` custom, benchmark RAM/CPU vs Rust agent. Tulis di bab perbandingan.
@@ -112,6 +112,6 @@ Kedua jalur bisa diklaim di laporan: "sistem mendukung dua jenis agen: Wazuh age
 ## 6. Referensi
 
 - Wazuh agent source: https://github.com/wazuh/wazuh (GPLv2, `wazuh-docker/LICENSE`)
-- Agent footprint sekarang: ~50 MB RAM `docs/ARCHITECTURE.md:82`, bukan Docker per klien
+- Agent footprint sekarang: ~50 MB RAM `docs/arsitektur/ARCHITECTURE.md:82`, bukan Docker per klien
 - Manager Docker: `wazuh-docker/single-node/docker-compose.yml:6`
 - Roadmap diet vs queue-mode: `ROADMAP.md:5` kategori E dan H

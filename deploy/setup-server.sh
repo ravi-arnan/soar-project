@@ -58,7 +58,7 @@ warn() { printf '\033[1;33m[!\033[0m] %s\n' "$*"; }
 die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ----------------------------------------------------------------- 1. prereqs
-need() { command -v "$1" >/dev/null 2>&1 || die "butuh '$1' — install dulu (lihat docs/DEPLOYMENT.md Prerequisites)"; }
+need() { command -v "$1" >/dev/null 2>&1 || die "butuh '$1' — install dulu (lihat docs/panduan/DEPLOYMENT.md Prerequisites)"; }
 log "Step 1/7 — cek prerequisites"
 need docker; need git; need openssl; need curl
 docker compose version >/dev/null 2>&1 || die "docker compose plugin v2 belum ada (sudo apt install docker-compose-plugin)"
@@ -213,7 +213,7 @@ if command -v ansible-playbook >/dev/null 2>&1; then
 else
   warn "ansible tidak terpasang — deploy integrasi manual:"
   warn "  nix-shell -p ansible --run 'ansible-playbook -i deploy/ansible/inventory.ini deploy/ansible/deploy-integration.yml'"
-  warn "  atau ikuti docs/DEPLOYMENT.md Step 2 (docker cp + ossec.conf + restart)"
+  warn "  atau ikuti docs/panduan/DEPLOYMENT.md Step 2 (docker cp + ossec.conf + restart)"
 fi
 
 # ------------------------------------------------- 7. credentials + workflows
@@ -259,7 +259,7 @@ cat <<'EOF'
      beneran — pass acak untuk wazuh-wui sudah di .env, sinkronkan ke
      wazuh-docker/single-node/config/wazuh_indexer/wazuh1.internal_users.yml
      lalu `docker compose restart wazuh.indexer wazuh.dashboard`.
-  6. Firewall: allow 1514/1515 hanya dari subnet endpoint (docs/DEPLOYMENT.md 7.1).
+  6. Firewall: allow 1514/1515 hanya dari subnet endpoint (docs/panduan/DEPLOYMENT.md 7.1).
 
  URL (di server / via Tailscale IP):
   - n8n (otak):        http://127.0.0.1:5678
