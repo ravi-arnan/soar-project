@@ -37,7 +37,7 @@ python3 ~/code/diagram-design/scripts/verify-geometry.py <sumber.html>
 |---|---|---|
 | `fig-3.5-sequence-ar` | Sequence | ✅ selesai (pilot) |
 | `overview-bernomor` | Flowchart (bernomor) | ✅ selesai |
-| `arsitektur-soar` | Architecture | ⬜ |
+| `arsitektur-soar` | Architecture | ✅ selesai |
 | `fig-3.3-arsitektur` | Architecture | ⬜ |
 | `fig-3.4-pipeline` | Data flow | ⬜ |
 | `fig-3.6-telegram` | Sequence | ⬜ |
