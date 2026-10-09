@@ -157,7 +157,7 @@ def patch_ekstrak(js):
 RANGKUM_SEV_OLD = """let severity, severityIcon, severityLabel, silent;
 if (!is_system_file && (malicious >= 20 || ruleLevel >= 12 || (mb_threat && malicious >= 5))) {
   severity = 'CRITICAL'; severityIcon = '🆘'; severityLabel = 'KRITIS'; silent = false;
-} else if (!is_system_file && (otx_threat || mb_threat || malicious >= 5 || ruleLevel >= 7)) {
+} else if (!is_system_file && (otx_threat || mb_threat || misp_threat || malicious >= 5 || ruleLevel >= 7)) {
   severity = 'HIGH'; severityIcon = '🚨'; severityLabel = 'TINGGI'; silent = false;
 } else {
   // File sistem: tetap diberitakan (bukan silent-failure) tapi tidak "TINGGI".
@@ -187,7 +187,7 @@ const BENIGN_EXT = BENIGN_EXT_PLACEHOLDER;
 const is_risky_ext = RISKY_EXT.includes(_ext);
 const is_benign_ext = BENIGN_EXT.includes(_ext);
 
-const has_indicator = malicious >= 1 || suspicious >= 1 || mb_threat || otx_threat;
+const has_indicator = malicious >= 1 || suspicious >= 1 || mb_threat || otx_threat || misp_threat;
 const unknown_exec_review = !is_system_file && !has_indicator && !vt_known
   && !vt_unverified && (is_risky_ext || is_exec);
 
@@ -198,7 +198,7 @@ if (is_system_file) {
 } else if (malicious >= 20 || (mb_threat && malicious >= 5)) {
   severity = 'CRITICAL'; severityIcon = '🆘'; severityLabel = 'KRITIS';
   silent = false; decision = 'threat-critical';
-} else if (mb_threat || otx_threat || malicious >= 5) {
+} else if (mb_threat || otx_threat || misp_threat || malicious >= 5) {
   severity = 'HIGH'; severityIcon = '🚨'; severityLabel = 'TINGGI';
   silent = false; decision = 'threat-high';
 } else if (has_indicator) {
