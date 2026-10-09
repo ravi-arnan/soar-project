@@ -131,7 +131,7 @@ const is_system_file = !!alertData.is_system_file;"""
 RANGKUM_OLD_SEV = """let severity, severityIcon, severityLabel, silent;
 if (malicious >= 20 || ruleLevel >= 12 || (mb_threat && malicious >= 5)) {
   severity = 'CRITICAL'; severityIcon = '🆘'; severityLabel = 'KRITIS'; silent = false;
-} else if (otx_threat || mb_threat || malicious >= 5 || ruleLevel >= 7) {
+} else if (otx_threat || mb_threat || misp_threat || malicious >= 5 || ruleLevel >= 7) {
   severity = 'HIGH'; severityIcon = '🚨'; severityLabel = 'TINGGI'; silent = false;
 } else {
   severity = 'MEDIUM'; severityIcon = '⚠️'; severityLabel = 'SEDANG'; silent = true;
@@ -142,7 +142,7 @@ const should_active_response = severity !== 'MEDIUM';"""
 RANGKUM_NEW_SEV = """let severity, severityIcon, severityLabel, silent;
 if (!is_system_file && (malicious >= 20 || ruleLevel >= 12 || (mb_threat && malicious >= 5))) {
   severity = 'CRITICAL'; severityIcon = '🆘'; severityLabel = 'KRITIS'; silent = false;
-} else if (!is_system_file && (otx_threat || mb_threat || malicious >= 5 || ruleLevel >= 7)) {
+} else if (!is_system_file && (otx_threat || mb_threat || misp_threat || malicious >= 5 || ruleLevel >= 7)) {
   severity = 'HIGH'; severityIcon = '🚨'; severityLabel = 'TINGGI'; silent = false;
 } else {
   // File sistem: tetap diberitakan (bukan silent-failure) tapi tidak "TINGGI".

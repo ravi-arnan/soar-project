@@ -87,6 +87,9 @@ const stats = is_otx ? {} : (data?.data?.attributes?.last_analysis_stats || {});
 const otx_pulses = is_otx ? (otx_data.pulse_info?.count || 0) : 0;
 const otx_threat = is_otx && otx_pulses > 0;
 
+// MISP (sumber intel ke-4) -- di fixture ini dimatikan.
+const misp_threat = false;
+
 let mb_known = false;
 let mb_malicious = false;
 let mb_signature = '';
@@ -121,7 +124,7 @@ const ruleLevel = alertData.rule_level || 0;
 let severity, severityIcon, severityLabel, silent;
 if (malicious >= 20 || ruleLevel >= 12 || (mb_threat && malicious >= 5)) {
   severity = 'CRITICAL'; severityIcon = '🆘'; severityLabel = 'KRITIS'; silent = false;
-} else if (otx_threat || mb_threat || malicious >= 5 || ruleLevel >= 7) {
+} else if (otx_threat || mb_threat || misp_threat || malicious >= 5 || ruleLevel >= 7) {
   severity = 'HIGH'; severityIcon = '🚨'; severityLabel = 'TINGGI'; silent = false;
 } else {
   severity = 'MEDIUM'; severityIcon = '⚠️'; severityLabel = 'SEDANG'; silent = true;
