@@ -77,7 +77,7 @@ HITL) **divalidasi literatur 2025–2026**, tapi ada 2 aksi konkret + tekanan ke
 
 **Sisa hardening D di luar kode** (operasional, bukan artefak repo): firewall allow 1514/1515 dari subnet endpoint saja + **ganti password default Wazuh**.
 
-**Rekomendasi lanjut berikutnya:** **lanjutkan 12 diagram diagram-design** (`docs/panduan/DIAGRAM-DESIGN.md`), lalu **M3** (matriks confidence→otonomi), **M4** (uji konsistensi LLM), **M5** (firewall + ganti password default Wazuh + OTX key → credential), dan **bukti laporan** (screenshot dashboard/Telegram, kolom "Agen Ringan"). ~~benchmark VT cold-vs-cache~~ ✅ **2026-10-08** (`§12`). ~~integrasi MISP (M2)~~ ✅ **2026-10-08** (feed CIRCL OSINT + node `MISP Lookup`). ~~observability Telegram~~ ✅ **2026-10-08** (`alert-log`). Lihat penutupan sesi di `HANDOFF.md`.
+**Rekomendasi lanjut berikutnya:** ~~lanjutkan 12 diagram diagram-design~~ ✅ **2026-10-09** (14/14, lihat `docs/panduan/DIAGRAM-DESIGN.md`), lalu **M3** (matriks confidence→otonomi), **M4** (uji konsistensi LLM), **M5** (firewall + ganti password default Wazuh + OTX key → credential), dan **bukti laporan** (screenshot dashboard/Telegram, kolom "Agen Ringan"). ~~benchmark VT cold-vs-cache~~ ✅ **2026-10-08** (`§12`). ~~integrasi MISP (M2)~~ ✅ **2026-10-08** (feed CIRCL OSINT + node `MISP Lookup`). ~~observability Telegram~~ ✅ **2026-10-08** (`alert-log`). Lihat penutupan sesi di `HANDOFF.md`.
 
 ---
 

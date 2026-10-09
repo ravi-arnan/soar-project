@@ -1254,3 +1254,42 @@ adopsi **diagram-design** untuk diagram.
 - `render-diagram.py` butuh **Chrome + internet** (font Google). Skill tersalin di `~/code/diagram-design`.
 - File `state/*` milik root (dibuat container) → edit/bersihkan via `docker exec`, bukan dari host.
 - `.commandcode/taste/...` termodifikasi & sengaja **tidak** di-commit (auto-managed).
+
+---
+
+# Handoff SOAR — 2026-10-10 (PENUTUPAN SESI: diagram 14/14 + judul notifikasi)
+
+## LIVE & terverifikasi
+| Item | Bukti |
+|---|---|
+| **14/14 diagram diagram-design** | 11 diagram sisa digambar ulang (HTML+SVG editorial); semua `self_check` OK + `verify-geometry` 0 temuan; pilot `fig-3-5` diperbaiki (marka panah salah + warna di luar palet) |
+| **Judul notifikasi tak lagi vonis buta** | `patch-n8n-noindicator.py` v1 **LIVE** (workflow 25→26 node, +gerbang `Perlu Notifikasi?`); v2 **LIVE** (judul deteksi nyata `MALWARE TERDETEKSI` → `INDIKASI MALWARE`) |
+
+## Bukti uji
+- Test: noindicator **14/14**, systemfile **8/8**.
+- E2E live exec 1955: PDF jinak + hash tak dikenal → severity **INFO**; gerbang memblokir Telegram (`AI Generate`/`Send Telegram Alert` tidak jalan); `Log ke Fleet` tetap mencatat (dashboard INFO).
+- Read-back `Build Payload` live: RANTAI PROSES MENCURIGAKAN · PERUBAHAN FILE KONFIGURASI SISTEM · TANPA INDIKASI MALWARE · FILE PERLU REVIEW · INDIKASI MALWARE (tanpa `MALWARE TERDETEKSI`).
+- Backup apply: `backups/deteksi-malware-live-noindicator-20261010-002231.json` (v1) + `...-010439.json` (v2).
+
+## Commit (sudah di-push ke origin/main; tanpa trailer co-author)
+`36de94e` diagram (26 file) · `6260b9b` fix judul notifikasi v1 · `91e8306` docs Wazuh 5.0 RC1 · `5f90501` fix judul v2.
+
+## Temuan & keputusan
+- **Patch `noindicator` ternyata belum pernah di-deploy** meski tercatat "disetujui 2026-10-06" → FP "MALWARE TERDETEKSI" untuk PDF jinak masih hidup. Kini LIVE.
+- Pola script patch **drift** setelah MISP menambah `misp_threat` di `Rangkum Hasil` → `RANGKUM_SEV_OLD` disesuaikan; pola kembar `patch-n8n-systemfile.py` + fixture `test_patch_n8n_systemfile.py` ikut disamakan (fixture = bentuk live pra-patch).
+- **Wazuh 5.0 RC1** (Okt 2026): pra-GA, breaking menyentuh integratord/AR kita → **future work pasca-TA**, tidak dikejar untuk TA (ROADMAP H4).
+- Diagram workflow live >9 simpul diringkas ke overview ~8 simpul; zona arsitektur digambar rect **tanpa stroke** agar tak terhitung simpul oleh `verify-geometry`.
+
+## Sisa untuk sesi berikutnya
+1. **M3** — dokumen matriks confidence → otonomi.
+2. **M4** — uji konsistensi keluaran LLM.
+3. **M5** — firewall 1514/1515 + ganti password default Wazuh + OTX key inline → credential + rotasi.
+4. Bukti laporan: screenshot dashboard/Telegram (dari `alert-log`), kolom "Agen Ringan" di `docs/ilmiah/PERBANDINGAN-PENELITIAN.md`.
+5. **Drift `fleet-monitor`**: server versi lama + `.env` tanpa `FLEET_COMMAND_TOKEN`/`FLEET_AGENT_POLL_TOKENS_JSON` (kode `regDate` siap, belum deploy).
+6. Rapikan logika Active Response menyeluruh (temuan 2026-09-28): kondisi `ar.status !== 'isolated'` selalu true; `!firewall-drop` srcip `0.0.0.0` untuk alert file.
+
+## Catatan operasional
+- API key n8n diambil dari `/tmp/n8n_api_key.txt` server → dipakai lokal via file scratch, lalu **di-shred** setelah selesai.
+- Patch dijalankan dari nixbox dengan `--n8n-url http://100.73.91.17:5678` (Tailscale), bukan `127.0.0.1`.
+- `render-diagram.py` butuh **Chrome + internet** (font Google).
+- `.commandcode/taste/...` termodifikasi & sengaja **tidak** di-commit (auto-managed).
