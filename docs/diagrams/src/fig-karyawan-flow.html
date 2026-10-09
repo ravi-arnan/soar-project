@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alur Harian Karyawan</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --color-paper:#f5f5f5; --color-ink:#2d3142; --color-muted:#4f5d75; --color-accent:#eb6c36;
+      --font-sans:'Geist', system-ui, sans-serif; --font-serif:'Instrument Serif','Noto Serif',serif;
+      --font-mono:'Geist Mono', ui-monospace, monospace; }
+    body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink);
+      min-height:100vh; display:flex; align-items:center; justify-content:center; padding:3rem 2rem; }
+    .frame { max-width:1100px; width:100%; }
+    .diagram-container { width:100%; overflow-x:auto; }
+    .eyebrow { font-family:var(--font-mono); font-size:.66rem; font-weight:500; letter-spacing:.18em;
+      text-transform:uppercase; color:var(--color-muted); margin-bottom:.5rem; }
+    h1 { font-family:var(--font-serif); font-size:clamp(1.5rem,2.4vw + .75rem,2rem); font-weight:400;
+      letter-spacing:-.02em; line-height:1.15; color:var(--color-ink); margin-bottom:1.5rem; }
+    svg { width:100%; min-width:1000px; display:block; }
+    @media print { .diagram-container { overflow-x:visible; } svg { min-width:0; } }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Sequence · Diagram Design</p>
+    <h1>Alur Harian dari Sudut Pandang Karyawan</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-labelledby="kf-title kf-desc">
+        <title id="kf-title">Alur harian tanpa interaksi karyawan</title>
+        <desc id="kf-desc">Karyawan hanya mengunduh berkas; agen mendeteksi, menghitung hash, dan mengirim metadata ke n8n. n8n berkonsultasi ke threat intel dan LLM. Bila berkas berbahaya, admin menerima alert di Telegram, menekan Isolasi, dan berkas dikarantina di laptop karyawan tanpa mengganggu karyawan. Bila bersih, tidak ada notifikasi.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- Lifelines -->
+        <line x1="90" y1="88" x2="90" y2="600" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="250" y1="88" x2="250" y2="600" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="415" y1="88" x2="415" y2="600" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="580" y1="88" x2="580" y2="600" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="740" y1="88" x2="740" y2="600" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="900" y1="88" x2="900" y2="600" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+
+        <!-- ALT frame -->
+        <rect x="60" y="290" width="920" height="270" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <rect x="68" y="290" width="48" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <text x="92" y="302" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">ALT</text>
+        <text x="76" y="324" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.02em">[berkas berbahaya]</text>
+        <line x1="68" y1="532" x2="972" y2="532" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="76" y="550" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.02em">[else: berkas bersih — senyap, tanpa notifikasi]</text>
+
+        <!-- Messages -->
+        <line x1="90" y1="136" x2="250" y2="136" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="140" y="130" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="170" y="139" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">UNDUH FILE</text>
+
+        <line x1="250" y1="176" x2="415" y2="176" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="300" y="170" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="332" y="179" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POST JSON</text>
+
+        <line x1="415" y1="216" x2="580" y2="216" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="455" y="210" width="84" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="497" y="219" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LOOKUP + LLM</text>
+
+        <line x1="580" y1="256" x2="415" y2="256" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+        <rect x="447" y="250" width="100" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="497" y="259" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">VERDICT CRITICAL</text>
+
+        <line x1="415" y1="326" x2="740" y2="326" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="531" y="320" width="92" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="577" y="329" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ALERT + TOMBOL</text>
+
+        <line x1="740" y1="362" x2="900" y2="362" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="786" y="356" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="820" y="365" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NOTIFIKASI</text>
+
+        <line x1="900" y1="398" x2="740" y2="398" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="782" y="392" width="76" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="820" y="401" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">KLIK ISOLASI</text>
+
+        <line x1="740" y1="434" x2="415" y2="434" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="549" y="428" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="577" y="437" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CALLBACK</text>
+
+        <line x1="415" y1="470" x2="250" y2="470" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="294" y="464" width="76" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="332" y="473" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">!QUARANTINE</text>
+
+        <line x1="415" y1="506" x2="740" y2="506" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <rect x="527" y="500" width="100" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="577" y="509" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PESAN: DIISOLASI</text>
+
+        <!-- Actor boxes (painted last) -->
+        <rect x="15" y="44" width="150" height="44" rx="6" fill="#f5f5f5"/>
+        <rect x="15" y="44" width="150" height="44" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="90" y="70" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Karyawan (Sinta)</text>
+
+        <rect x="175" y="44" width="150" height="44" rx="6" fill="#f5f5f5"/>
+        <rect x="175" y="44" width="150" height="44" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="250" y="70" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">soar-agent</text>
+
+        <rect x="340" y="44" width="150" height="44" rx="6" fill="#f5f5f5"/>
+        <rect x="340" y="44" width="150" height="44" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="415" y="70" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">n8n</text>
+
+        <rect x="505" y="44" width="150" height="44" rx="6" fill="#f5f5f5"/>
+        <rect x="505" y="44" width="150" height="44" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="580" y="70" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Intel + LLM</text>
+
+        <rect x="665" y="44" width="150" height="44" rx="6" fill="#f5f5f5"/>
+        <rect x="665" y="44" width="150" height="44" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="740" y="70" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Telegram Bot</text>
+
+        <rect x="825" y="44" width="150" height="44" rx="6" fill="#f5f5f5"/>
+        <rect x="825" y="44" width="150" height="44" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="900" y="70" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Admin IT</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

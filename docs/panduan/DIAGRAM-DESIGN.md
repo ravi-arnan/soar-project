@@ -38,17 +38,28 @@ python3 ~/code/diagram-design/scripts/verify-geometry.py <sumber.html>
 | `fig-3.5-sequence-ar` | Sequence | ✅ selesai (pilot) |
 | `overview-bernomor` | Flowchart (bernomor) | ✅ selesai |
 | `arsitektur-soar` | Architecture | ✅ selesai |
-| `fig-3.3-arsitektur` | Architecture | ⬜ |
-| `fig-3.4-pipeline` | Data flow | ⬜ |
-| `fig-3.6-telegram` | Sequence | ⬜ |
-| `fig-karyawan-flow` | Sequence | ⬜ |
-| `fig-karyawan-setup-vs-harian` | Flowchart | ⬜ |
-| `demo-hybrid-flow` | Flowchart | ⬜ |
-| `workflow-malware` | Flowchart | ⬜ |
-| `workflow-phishing` | Flowchart | ⬜ |
-| `workflow-callback` | Flowchart | ⬜ |
-| `fig-3.1-tahapan` | Timeline | ⬜ |
-| `fig-3.2-waterfall` | Gantt | ⬜ |
+| `fig-3.3-arsitektur` | Architecture (4 zona) | ✅ selesai |
+| `fig-3.4-pipeline` | Data flow | ✅ selesai |
+| `fig-3.6-telegram` | Flowchart | ✅ selesai |
+| `fig-karyawan-flow` | Sequence | ✅ selesai |
+| `fig-karyawan-setup-vs-harian` | Flowchart (3 zona) | ✅ selesai |
+| `demo-hybrid-flow` | Flowchart | ✅ selesai |
+| `workflow-malware` | Flowchart | ✅ selesai (diringkas ~23 → 8 simpul) |
+| `workflow-phishing` | Flowchart | ✅ selesai (diringkas → 8 simpul) |
+| `workflow-callback` | Flowchart | ✅ selesai |
+| `fig-3.1-tahapan` | Timeline + umpan balik | ✅ selesai |
+| `fig-3.2-waterfall` | Waterfall (5 tahap) | ✅ selesai |
 
-Catatan: `overview-bernomor` (diagram "ikuti nomornya" untuk orang awam) tetap dipertahankan
-konsep bernomornya, tetapi digambar dengan tipe Architecture + nomor sebagai anotasi.
+**Selesai 2026-10-09 (14/14).** Semua sumber di `docs/diagrams/src/*.html`, PNG di
+`docs/diagrams/*.png`, dirender `--scale 2` dan lolos `self_check` + `verify-geometry`
+(0 temuan). Catatan:
+
+- Diagram dengan simpul > 9 (workflow malware/phishing — live 21–25 node) **diringkas**
+  ke tingkat overview (8 simpul); detail node tetap di dokumen masing-masing.
+- `fig-3.1-tahapan` digambar sebagai timeline vertikal dengan satu umpan-balik
+  "Tidak → desain"; `fig-3.2-waterfall` sebagai lima tahap bertingkat.
+- Zona (Endpoint/Server/Eksternal/HITL) digambar sebagai rect **tanpa stroke** supaya
+  tidak terhitung sebagai simpul oleh `verify-geometry`.
+- `overview-bernomor` tetap memakai konsep bernomor dengan tipe Architecture.
+- Perbaikan pilot `fig-3-5-sequence-ar`: marka panah callback yang salah
+  (`url(#arrow-link)`) → `url(#arrow)`, dan warna biru di luar palet → `#4f5d75`.
