@@ -245,14 +245,14 @@ class BehaviourTests(unittest.TestCase):
         self.assertEqual(c["r"]["severity"], "CRITICAL")
         self.assertTrue(c["r"]["should_active_response"])
         self.assertTrue(c["r"]["notify"])
-        self.assertEqual(c["b"]["alert_title"], "MALWARE TERDETEKSI")
+        self.assertEqual(c["b"]["alert_title"], "INDIKASI MALWARE")
 
-    def test_weak_indicator_tetap_medium_dengan_label_malware(self):
+    def test_weak_indicator_tetap_medium_tanpa_vonis_malware(self):
         c = self.out["mp4_weak"]
         self.assertEqual(c["r"]["severity"], "MEDIUM")
         self.assertEqual(c["r"]["decision"], "weak-indicator")
         self.assertTrue(c["r"]["notify"])
-        self.assertEqual(c["b"]["alert_title"], "MALWARE TERDETEKSI")
+        self.assertEqual(c["b"]["alert_title"], "INDIKASI MALWARE")
 
     def test_hosts_system_file_tak_berubah(self):
         c = self.out["hosts"]

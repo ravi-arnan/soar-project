@@ -313,21 +313,36 @@ BUILD_OUT_NEW = """    target_label: targetLabel,
     notify: isChain ? true : (vtData.notify !== false),"""
 
 
+TITLE_MARKER_V2 = "patch:noindicator:v2"
+TITLE_V1_OLD = "alertTitle = 'MALWARE TERDETEKSI';"
+TITLE_V2_NEW = "alertTitle = 'INDIKASI MALWARE';"
+
+
 def patch_build(js):
-    if MARKER in js:
+    if TITLE_MARKER_V2 in js:
         return js, False
-    for old in (BUILD_GUIDE_OLD, BUILD_TITLE_OLD, BUILD_OUT_OLD):
-        if old not in js:
-            raise SystemExit(
-                "Pola 'Build Payload' tidak cocok, patch dibatalkan. Pola hilang:\n"
-                + old
-            )
-    js = (
-        js.replace(BUILD_GUIDE_OLD, BUILD_GUIDE_NEW)
-        .replace(BUILD_TITLE_OLD, BUILD_TITLE_NEW)
-        .replace(BUILD_OUT_OLD, BUILD_OUT_NEW)
-    )
-    return js + "\n// patch:noindicator:v1", True
+    if MARKER not in js:
+        for old in (BUILD_GUIDE_OLD, BUILD_TITLE_OLD, BUILD_OUT_OLD):
+            if old not in js:
+                raise SystemExit(
+                    "Pola 'Build Payload' tidak cocok, patch dibatalkan. Pola hilang:\n"
+                    + old
+                )
+        js = (
+            js.replace(BUILD_GUIDE_OLD, BUILD_GUIDE_NEW)
+            .replace(BUILD_TITLE_OLD, BUILD_TITLE_NEW)
+            .replace(BUILD_OUT_OLD, BUILD_OUT_NEW)
+        )
+        js += "\n// patch:noindicator:v1"
+    # v2: judul deteksi nyata dinetralkan -- "INDIKASI MALWARE" (didasari
+    # indikator threat intel), bukan vonis pasti "MALWARE TERDETEKSI".
+    if TITLE_V1_OLD in js:
+        js = js.replace(TITLE_V1_OLD, TITLE_V2_NEW)
+    elif TITLE_V2_NEW not in js:
+        raise SystemExit(
+            "Pola judul 'Build Payload' tidak cocok untuk upgrade v2; patch dibatalkan."
+        )
+    return js + "\n// " + TITLE_MARKER_V2, True
 
 
 PATCHERS = [
