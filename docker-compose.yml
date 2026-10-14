@@ -158,8 +158,10 @@ services:
       - /home/ravi/Projects/soar-project/state:/state:rw
     command: ["python3", "/scripts/misp-feed-sync.py", "--serve", "--db", "/state/misp.db"]
 
-  # Pencatat alert Telegram keluar (observability): Bot API tak punya histori
-  # keluar, jadi n8n POST setiap alert terkirim ke sini (JSONL durable).
+  # Pencatat alert Telegram keluar + registry keputusan analis (HITL, M3):
+  # Bot API tak punya histori keluar, jadi n8n POST setiap alert terkirim ke
+  # sini (JSONL durable); service yang sama menyimpan item HITL tertunda
+  # (tenggat + audit trail keputusan) yang dibaca dashboard/eskalasi SLA.
   alert-log:
     image: python:3.12-alpine
     container_name: alert-log
@@ -173,6 +175,9 @@ services:
     environment:
       - ALERT_LOG_PORT=8091
       - ALERT_LOG_FILE=/state/telegram-alerts.jsonl
+      - ALERT_DECISION_FILE=/state/decisions.json
+      - ALERT_DECISION_AUDIT_FILE=/state/decisions-audit.jsonl
+      - ALERT_DECISION_TTL_SECS=21600
     volumes:
       - /home/ravi/Projects/soar-project/scripts:/scripts:ro
       - /home/ravi/Projects/soar-project/state:/state:rw
