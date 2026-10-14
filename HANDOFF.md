@@ -1293,3 +1293,80 @@ adopsi **diagram-design** untuk diagram.
 - Patch dijalankan dari nixbox dengan `--n8n-url http://100.73.91.17:5678` (Tailscale), bukan `127.0.0.1`.
 - `render-diagram.py` butuh **Chrome + internet** (font Google).
 - `.commandcode/taste/...` termodifikasi & sengaja **tidak** di-commit (auto-managed).
+
+---
+
+# Handoff SOAR — 2026-10-14 (PENUTUPAN SESI: M3 matriks confidence → otonomi LIVE)
+
+## Ringkasan
+Sesi nixbox. Fokus arahan Ravi: **lanjut milestone satu per satu** (progress laporan
+diabaikan). Milestone **M3 "Penyempurnaan respons berjenjang berbasis keyakinan"**
+dikerjakan sampai LIVE + dokumen luaran.
+
+## LIVE & terverifikasi
+| Item | Bukti |
+|---|---|
+| **Matriks confidence → otonomi** jadi satu sumber kebijakan (node `Tentukan Otonomi`, jalur file **dan** rantai proses) | live `Deteksi Malware` **28 node**, aktif; `should_active_response` diturunkan dari `autonomy` |
+| **Registry keputusan analis** (service `alert-log` diperluas) | `/decision/pending\|resolve\|escalate\|audit` + `/stats`; state tahan-restart `state/decisions.json` + `state/decisions-audit.jsonl` |
+| **Tombol HITL malware pulih** (sebelumnya mati) | `Send Telegram Alert` + inline keyboard dinamis `q:`/`a:`/`f:`; E2E klik tombol → resolved + audit + AR |
+| **Batasi otonomi AR** | hanya tier otonom; LOLBin & file sistem tak pernah auto-AR; `f:`/`a:` → `tanpa-ar` |
+| **Batas waktu + eskalasi** | workflow baru **`SLA Eskalasi HITL`** (Schedule 1 menit), live 5 node aktif; anti-spam (item keluar dari daftar overdue setelah dieskalasi) |
+| **Audit trail** | `Log Telegram Alert` kini membawa `hash/agent_id/path/tier/hitl`; keputusan analis juga masuk fleet (`status: analyst-quarantine/fp/ack`) → tampil di dashboard |
+| **Dokumen M3** | `docs/ilmiah/MATRIKS-CONFIDENCE-OTONOMI.md` + `docs/milestone/M3-MATRIKS-CONFIDENCE-OTONOMI.{html,pdf}` (gaya Milestone TA, 7 halaman) |
+
+## Bukti uji (semua hijau)
+- `python3 scripts/test_alert_log.py` → **58/58** (validasi, tenggat, eskalasi sekali,
+  audit, persist lintas-restart, TTL, token opsional).
+- `python3 scripts/test_patch_n8n_hitl_matrix.py` → **26/26** (matriks per tier, muatan
+  pendaftaran, parsing tombol lama/baru, pemilihan AR, sweeper SLA, gagal-keras bila pola
+  live tak cocok, credential node Telegram baru).
+- `python3 scripts/e2e-hitl-matrix.py` (live) → **36/36**: (A) HITL `hitl-review` + tenggat
+  900 dtk + **tanpa** AR; (B) klik `Karantina` → resolusi + audit + `analyst-quarantine` di
+  fleet + AR; (C) `auto-critical` → AR + fallback antrean fleet + `hitl=false` tanpa tenggat;
+  (D) eskalasi SLA menandai item lewat tenggat.
+- Idempotensi: penerapan patch kedua = **0 perubahan**.
+- Live registry saat sesi tutup: `total=7 · resolved=3 · escalated=2 · hitl=5 · auto=2 ·
+  mean_response_secs=5,3` (angka pertama metrik waktu respons analis).
+
+## Commit (sudah di-push? **BELUM** — lihat bagian sisa)
+`619c6ee` registry keputusan analis · `1089043` matriks + HITL + eskalasi SLA.
+Semua **tanpa trailer co-author** (aturan taste).
+
+## Temuan penting sesi ini
+1. **Klaim ROADMAP tidak sesuai live**: "Trusted autonomy SLA 15m (2026-09-04)" ternyata
+   **tidak pernah terpasang** — tidak ada node Wait/SLA di kelima workflow. Kini benar-benar
+   ada (workflow `SLA Eskalasi HITL`).
+2. **HITL Telegram malware mati** sejak suatu perubahan tak tercatat: notifikasi tak punya
+   tombol, padahal workflow callback masih menunggu `iso:`/`ign:`. Satu-satunya HITL jalan
+   waktu itu = tombol di dashboard (`Dashboard AR`).
+3. **`Log Telegram Alert` kehilangan korelasi hash** (mengambil `hash` dari `Build Payload`
+   yang memang tak punya hash) → log alert tidak bisa dipakai menelusuri deteksi. Ikut
+   dibetulkan.
+4. **Registrasi keputusan bergantung pada node yang tepat**: percobaan pertama membaca
+   `$input` (Build Payload) sehingga hash/agent_id kosong dan pendaftaran dilewati —
+   tertangkap E2E (bukan unit test), lalu diperbaiki dengan membaca node `Tentukan Otonomi`.
+5. **n8n public API**: `PUT /workflows/{id}` menolak field `id` **dan** `active`
+   (`read-only`) → aktivasi workflow baru harus lewat `POST /workflows/{id}/activate`.
+
+## Sisa untuk sesi berikutnya
+1. **Push** dua commit sesi ini (Ravi yang minta push biasanya) + update board.
+2. **M4 — uji konsistensi keluaran LLM** (milestone berikutnya, target Oktober).
+3. **M5** — firewall 1514/1515 + ganti password default Wazuh + OTX key → credential +
+   aktifkan `ALERT_LOG_TOKEN` untuk registry keputusan.
+4. Sisa kecil M3 (opsional): samakan jalur **phishing** ke registry (masih parse teks pesan);
+   batasi karantina ke direktori user-writable; aksi "batalkan karantina".
+5. Bukti laporan (dikesampingkan atas permintaan Ravi): screenshot dashboard/Telegram,
+   kolom "Agen Ringan".
+6. Drift `fleet-monitor` server-vs-repo (versi server masih lebih lama, tanpa penegakan
+   token); `state/*` milik root → bersihkan via `docker exec`.
+
+## Catatan operasional
+- Server **ravi-debian** dijangkau lewat Tailscale `100.73.91.17` (SSH + n8n `:5678`);
+  API key n8n diambil ulang dari sqlite (`user_api_keys`, label `soar-project`) karena
+  `/tmp` server terhapus saat reboot.
+- Service `alert-log` (:8091) & `fleet-monitor` (:8080) berbagi volume `./state` → state
+  registry keputusan ikut selamat saat rebuild/restart.
+- E2E M3 mengirim **3 pesan Telegram asli** (2 alert + 1 eskalasi) per run dan menyisakan
+  entri audit bertanda `e2e` — jalankan manual saja.
+- Render PDF dokumen M3 pakai Chrome headless: `google-chrome --headless --no-pdf-header-footer
+  --virtual-time-budget=4000 --print-to-pdf=... file:///...html`.

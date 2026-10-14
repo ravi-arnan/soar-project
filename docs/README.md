@@ -8,6 +8,7 @@ docs/
   arsitektur/    arsitektur, alur, konsep mitigasi, perbandingan dgn antivirus
   evaluasi/      metrik & data mentah benchmark
   ilmiah/        perbandingan penelitian, n8n vs shuffle, MITRE, relevansi 2026
+  milestone/     deliverable per-milestone bergaya Milestone TA (HTML + PDF)
   laporan/       draf & ekspor laporan TA
   bimbingan/     laporan bimbingan, catatan dospem, materi        (+ lampiran/)
   demo/          kartu demo & contekan
@@ -39,6 +40,12 @@ docs/
 | `N8N-VS-SHUFFLE.md` | Justifikasi n8n vs Shuffle |
 | `MITRE-ATTACK-MAPPING.md` | Pemetaan teknik MITRE ATT&CK |
 | `RELEVANSI-2026.md` | Kajian relevansi & lanskap 2026 |
+| `MATRIKS-CONFIDENCE-OTONOMI.md` | Matriks keyakinan → otonomi + playbook respons berjenjang (M3) |
+
+## milestone/
+| Dokumen | Isi |
+|---|---|
+| `M3-MATRIKS-CONFIDENCE-OTONOMI.html` / `.pdf` | Deliverable M3 bergaya Milestone TA: matriks confidence → otonomi, playbook berjenjang, jaminan keselamatan, bukti uji |
 
 ## laporan/
 | Dokumen | Isi |

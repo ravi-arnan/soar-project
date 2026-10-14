@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Deliverable M3 - Matriks Confidence terhadap Otonomi</title>
+<style>
+  @page { size: 8.5in 11in; margin: 3cm 3cm 3cm 4cm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Times New Roman", Times, serif; font-size: 12pt; line-height: 1.5; margin: 0; color: #000; }
+  h1.judul { font-size: 12pt; font-weight: bold; text-align: center; margin: 0 0 12pt 0; line-height: 1.5; }
+  h2 { font-size: 12pt; font-weight: bold; margin: 12pt 0 6pt 0; line-height: 1.5; page-break-after: avoid; }
+  h2 .no { display: inline-block; width: 1.5cm; }
+  h3 { font-size: 12pt; font-weight: bold; margin: 10pt 0 4pt 0; line-height: 1.5; page-break-after: avoid; }
+  p { text-align: justify; margin: 0 0 6pt 0; text-indent: 1.5cm; }
+  p.noindent { text-indent: 0; }
+  ol.isi { margin: 0 0 6pt 0; padding-left: 1.5cm; }
+  ol.isi > li { text-align: justify; margin-bottom: 4pt; }
+  ul.isi { margin: 0 0 6pt 0; padding-left: 1.5cm; }
+  ul.isi > li { text-align: justify; margin-bottom: 4pt; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 6pt; }
+  table.identitas td { border: 1px solid #000; padding: 3pt 5pt; vertical-align: top; line-height: 1.5; }
+  table.identitas td.label { width: 4.6cm; font-weight: bold; }
+  table.data { font-size: 10pt; }
+  table.data th, table.data td { border: 1px solid #000; padding: 3pt 4pt; vertical-align: top; line-height: 1.25; text-align: left; }
+  table.data th { font-weight: bold; text-align: center; background: #e8e8e8; }
+  table.data td.c { text-align: center; }
+  caption.tabelcap { caption-side: top; text-align: left; font-size: 10pt; padding-bottom: 4pt; line-height: 1.3; }
+  caption.tabelcap b { font-weight: bold; }
+  tr { page-break-inside: avoid; }
+  .kode { font-family: "Courier New", monospace; font-size: 9pt; line-height: 1.25; text-indent: 0; margin: 0 0 6pt 1.5cm; white-space: pre; }
+  .keterangan { font-size: 10pt; line-height: 1.3; text-indent: 0; }
+  .ttd { margin-top: 18pt; page-break-inside: avoid; }
+  .ttd p { text-align: left; text-indent: 0; }
+  .ttd .spasi { height: 42pt; }
+</style>
+</head>
+<body>
+
+<h1 class="judul">Deliverable Milestone M3<br>Matriks Confidence terhadap Otonomi dan Playbook Respons Berjenjang</h1>
+
+<table class="identitas">
+  <tr><td class="label">NIM</td><td>2305551076</td></tr>
+  <tr><td class="label">Nama</td><td>Ravi Arnan Irianto</td></tr>
+  <tr><td class="label">Bidang Keahlian</td><td>Network and Cloud Computing</td></tr>
+  <tr><td class="label">Mata Kuliah</td><td>Proyek 1</td></tr>
+  <tr><td class="label">Milestone</td><td>M3 &mdash; Penyempurnaan Respons Berjenjang Berbasis Keyakinan (target Oktober 2026)</td></tr>
+  <tr><td class="label">Judul</td><td style="text-align: justify;">Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)</td></tr>
+  <tr><td class="label">Dosen Pembimbing</td><td>1. Ir. I Nyoman Piarsa, ST., MT., IPM.<br>2. A.A. Kt Agung Cahyawan Wiranatha, S.T., M.T.</td></tr>
+</table>
+
+<h2><span class="no">1.</span>Tujuan</h2>
+
+<p>Dokumen ini memuat luaran Milestone M3, yaitu formalisasi aturan pemetaan tingkat keyakinan ancaman terhadap tingkat otonomi tindakan, penyempurnaan jalur human-in-the-loop, serta penerapan batas waktu dan eskalasi ketika analis tidak merespons. Sebelum milestone ini dikerjakan, kebijakan respons masih tersebar pada beberapa node JavaScript dan terdapat tiga kelemahan yang terverifikasi pada sistem live, yaitu jalur persetujuan analis melalui Telegram untuk ancaman malware tidak lagi berfungsi, tidak terdapat mekanisme batas waktu sehingga deteksi yang menunggu keputusan dapat hilang tanpa jejak, serta keputusan analis tidak tersimpan sebagai jejak audit yang terukur.</p>
+
+<p>Seluruh kebijakan pada dokumen ini telah diterapkan pada lingkungan uji dan diverifikasi secara otomatis. Matriks pada Tabel 2 bukan deskripsi rencana, melainkan kontrak kebijakan yang menjadi satu-satunya sumber penentu tindakan otomatis pada sistem.</p>
+
+<h2><span class="no">2.</span>Prinsip Penyusunan</h2>
+
+<p>Matriks dan playbook disusun atas empat prinsip yang sejalan dengan arah penelitian, yaitu sebagai berikut.</p>
+
+<ol class="isi">
+  <li><b>Berbasis keyakinan (confidence-based).</b> Tindakan otomatis hanya diberikan kepada deteksi dengan keyakinan tinggi, sedangkan keyakinan sedang diserahkan kepada analis.</li>
+  <li><b>Transparan.</b> Setiap notifikasi menyebut bukti yang mendasarinya sehingga tidak menghasilkan vonis tanpa indikator.</li>
+  <li><b>Sadar degradasi (self-aware).</b> Kegagalan verifikasi dari sumber threat intelligence tidak disenyapkan, melainkan ditandai sebagai belum terverifikasi.</li>
+  <li><b>Human-in-the-loop yang dapat dipertanggungjawabkan.</b> Setiap keputusan analis tercatat lengkap dengan pelaku, waktu, jenis aksi, dan lama waktu respons.</li>
+</ol>
+
+<h2><span class="no">3.</span>Sumber Bukti dan Tingkat Keyakinan</h2>
+
+<p>Tingkat keyakinan tidak ditentukan oleh jenis kejadian, melainkan oleh kekuatan bukti yang menyertainya. Sumber bukti yang dipakai beserta sifatnya disajikan pada Tabel 1.</p>
+
+<table class="data">
+  <caption class="tabelcap"><b>Tabel 1 </b>Sumber bukti dan sifatnya dalam penentuan tingkat keyakinan</caption>
+  <thead>
+    <tr><th style="width: 26%;">Sumber</th><th style="width: 40%;">Bukti yang dibaca</th><th style="width: 34%;">Sifat bukti</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>VirusTotal</td><td>Jumlah deteksi mesin antivirus (malicious, suspicious, undetected)</td><td>Kuat bila lima deteksi atau lebih; cache di server dengan masa berlaku berbeda menurut jenis verdict</td></tr>
+    <tr><td>MalwareBazaar</td><td>Signature dan tag keluarga malware</td><td>Kuat bila hash terdaftar sebagai malware</td></tr>
+    <tr><td>AlienVault OTX</td><td>Jumlah pulse yang memuat hash</td><td>Kuat bila pulse ditemukan; dipakai ketika VirusTotal gagal</td></tr>
+    <tr><td>MISP (feed OSINT)</td><td>Kecocokan hash pada event dan penanda to_ids</td><td>Kuat bila hash tercatat pada event</td></tr>
+    <tr><td>Aturan rantai proses Wazuh</td><td>Baris perintah proses dan proses induk (indikasi LOLBin)</td><td>Indikatif, karena biner sistem dapat sah</td></tr>
+    <tr><td>Aturan integritas berkas (FIM)</td><td>Perubahan checksum atau kemunculan berkas</td><td>Bukan indikator malware; tidak menaikkan tingkat keyakinan</td></tr>
+    <tr><td>Penanda berkas sistem</td><td>Path berkas konfigurasi sistem operasi</td><td>Perubahan administratif, dilaporkan tanpa tindakan otomatis</td></tr>
+    <tr><td>Metadata berkas</td><td>Ekstensi berisiko, bit eksekusi, berkas tanpa ekstensi</td><td>Sinyal lemah; memerlukan peninjauan analis</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="no">4.</span>Matriks Confidence terhadap Otonomi</h2>
+
+<p>Pemetaan resmi antara bukti, tingkat keyakinan, tingkat otonomi, tindakan otomatis, dan batas waktu keputusan disajikan pada Tabel 2. Nilai tenggat keputusan hanya berlaku bagi deteksi yang memerlukan persetujuan analis.</p>
+
+<table class="data">
+  <caption class="tabelcap"><b>Tabel 2 </b>Matriks tingkat keyakinan terhadap tingkat otonomi tindakan</caption>
+  <thead>
+    <tr><th style="width: 14%;">Keyakinan</th><th style="width: 27%;">Bukti pemicu</th><th style="width: 13%;">Tingkat otonomi</th><th style="width: 24%;">Tindakan otomatis</th><th style="width: 22%;">Keputusan analis</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Tinggi</td><td>Dua puluh deteksi atau lebih; atau signature MalwareBazaar disertai lima deteksi atau lebih</td><td>Otonom</td><td>Karantina berkas otomatis ditambah notifikasi</td><td>Tidak diminta; tersedia tombol penandaan false positive</td></tr>
+    <tr><td>Tinggi</td><td>Lima deteksi atau lebih; atau kecocokan MalwareBazaar, OTX, MISP; atau aturan rantai proses dengan level tinggi</td><td>Otonom</td><td>Karantina berkas otomatis ditambah notifikasi</td><td>Tidak diminta; tersedia tombol penandaan false positive</td></tr>
+    <tr><td>Sedang</td><td>Indikator lemah (satu sampai empat deteksi), verifikasi belum selesai karena kegagalan layanan, atau berkas eksekutabel dengan hash belum dikenal</td><td>Human-in-the-loop</td><td>Tidak ada tindakan otomatis</td><td>Diminta melalui notifikasi bertombol: karantina berkas atau tandai false positive; tenggat 15 menit</td></tr>
+    <tr><td>Sedang</td><td>Rantai proses mencurigakan (indikasi LOLBin)</td><td>Human-in-the-loop</td><td>Tidak ada tindakan otomatis terhadap biner sistem</td><td>Diminta melalui notifikasi bertombol: sudah ditinjau atau tandai false positive; tenggat 15 menit</td></tr>
+    <tr><td>Tidak ada</td><td>Perubahan berkas konfigurasi sistem operasi</td><td>Ditahan</td><td>Tidak ada tindakan otomatis; berkas sistem tidak pernah dikarantina</td><td>Dilaporkan dengan tingkat sedang dan VirusTotal dinyatakan tidak relevan</td></tr>
+    <tr><td>Rendah</td><td>Tidak terdapat indikator dari seluruh sumber intelijen</td><td>Pemantauan</td><td>Tidak ada tindakan otomatis</td><td>Tidak diminta; berkas media atau dokumen jinak tidak diberitakan, tetap tercatat pada dasbor</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="no">5.</span>Playbook Respons Berjenjang</h2>
+
+<p>Setiap tingkat otonomi memiliki langkah baku yang dijalankan sistem, yaitu sebagai berikut.</p>
+
+<h3>5.1 Tingkat otonom (keyakinan tinggi)</h3>
+<ol class="isi">
+  <li>Deteksi masuk melalui webhook, disaring, dan dideduplikasi.</li>
+  <li>Verifikasi berlapis dijalankan pada cache verdict, VirusTotal atau OTX, MalwareBazaar, dan MISP.</li>
+  <li>Kebijakan menetapkan tingkat otonomi otonom sehingga tindakan aktif dijalankan, dengan urutan Wazuh Active Response terlebih dahulu, lalu antrean perintah pada agen ringan apabila Active Response tidak dapat dijalankan.</li>
+  <li>Deteksi tetap didaftarkan pada registri keputusan sebagai jejak audit tanpa tenggat.</li>
+  <li>Notifikasi dikirim memuat bukti deteksi, ringkasan analisis model bahasa, dan tombol penandaan false positive sebagai umpan balik.</li>
+</ol>
+
+<h3>5.2 Tingkat human-in-the-loop (keyakinan sedang)</h3>
+<ol class="isi">
+  <li>Kebijakan menetapkan tingkat otonomi human-in-the-loop sehingga tindakan otomatis dimatikan.</li>
+  <li>Deteksi didaftarkan pada registri keputusan sebelum notifikasi dikirim, memuat hash, agen, path target, tingkat keyakinan, dan batas waktu lima belas menit.</li>
+  <li>Notifikasi Telegram dikirim dengan tombol tindakan; identitas tombol Membawa pengenal pendek (maksimum enam belas karakter) agar tetap sesuai batas panjang data tombol Telegram.</li>
+  <li>Saat analis menekan tombol, sistem mengklaim keputusan pada registri, mencatat jejak audit, mengambil target tindakan dari registri, menjalankan tindakan aktif hanya untuk aksi karantina, dan memperbarui pesan Telegram.</li>
+  <li>Keputusan juga dikirim ke pemantau fleet sehingga tampil pada dasbor sebagai keputusan analis.</li>
+  <li>Apabila tidak terdapat keputusan sampai batas waktu terlampaui, sistem mengirim eskalasi ke analis dan menandai item tersebut agar tidak dieskalasi berulang.</li>
+</ol>
+
+<h3>5.3 Tingkat ditahan dan pemantauan</h3>
+<ol class="isi">
+  <li>Perubahan berkas konfigurasi sistem dilaporkan dengan tingkat sedang, tanpa tindakan aktif, dan dengan penjelasan bahwa sistem SOAR sendiri menulis entri pemblokiran domain pada berkas tersebut.</li>
+  <li>Deteksi tanpa indikator dicatat pada dasbor tanpa mengganggu analis, kecuali berkas tersebut bukan media atau dokumen jinak.</li>
+</ol>
+
+<h2><span class="no">6.</span>Jaminan Keselamatan Tindakan</h2>
+
+<p>Selain matriks, diterapkan lima jaminan agar tindakan otomatis tidak menimbulkan kerugian, yaitu sebagai berikut.</p>
+
+<ol class="isi">
+  <li>Berkas konfigurasi sistem operasi tidak pernah dikarantina, dijaga pada dua lapisan pemeriksaan.</li>
+  <li>Rantai proses tidak pernah dikenai tindakan otomatis, karena biner yang terlibat dapat merupakan biner sistem yang sah.</li>
+  <li>Tindakan aktif hanya dijalankan oleh tingkat otonom dan oleh tombol karantina; aksi penandaan tidak mengeksekusi tindakan aktif.</li>
+  <li>Registri keputusan bersifat gagal-terbuka, sehingga kegagalan registri tidak mematikan fungsi deteksi.</li>
+  <li>Target tindakan diambil dari registri, bukan dari teks pesan, sehingga tetap akurat meskipun pesan Telegram mengalami pemformatan ulang.</li>
+</ol>
+
+<h2><span class="no">7.</span>Jejak Audit, Metrik, dan Bukti Pengujian</h2>
+
+<p>Registri keputusan menyediakan jejak audit yang tahan terhadap pemulihan layanan dan metrik waktu respons analis. Data yang terhimpun selama pengujian tanggal 14 Oktober 2026 disajikan pada Tabel 3, sedangkan ringkasan pengujian disajikan pada Tabel 4.</p>
+
+<table class="data">
+  <caption class="tabelcap"><b>Tabel 3 </b>Data registri keputusan setelah pengujian live tanggal 14 Oktober 2026</caption>
+  <thead>
+    <tr><th style="width: 40%;">Metrik registri</th><th style="width: 20%;">Nilai</th><th style="width: 40%;">Keterangan</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Total deteksi tercatat</td><td class="c">7</td><td>Tiga di antaranya berasal dari pengujian otomatis berulang</td></tr>
+    <tr><td>Keputusan selesai</td><td class="c">3</td><td>Dua karantina dan satu penandaan selesai ditinjau</td></tr>
+    <tr><td>Deteksi jalur human-in-the-loop</td><td class="c">5</td><td>Dua di antaranya dieskalasi karena melewati tenggat</td></tr>
+    <tr><td>Deteksi jalur otonom</td><td class="c">2</td><td>Tidak menunggu keputusan, tetap tercatat untuk audit</td></tr>
+    <tr><td>Rata-rata waktu respons analis</td><td class="c">5,3 detik</td><td>Nilai maksimum 8 detik pada lingkungan pengujian</td></tr>
+  </tbody>
+</table>
+
+<table class="data">
+  <caption class="tabelcap"><b>Tabel 4 </b>Ringkasan pengujian matriks confidence terhadap otonomi</caption>
+  <thead>
+    <tr><th style="width: 34%;">Lapisan pengujian</th><th style="width: 22%;">Hasil</th><th style="width: 44%;">Cakupan</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Uji unit registri keputusan dan eskalasi</td><td class="c">58 dari 58 lulus</td><td>Validasi masukan, tenggat, eskalasi satu kali, jejak audit, persistensi lintas pemulihan, masa berlaku, dan token opsional</td></tr>
+    <tr><td>Uji unit kebijakan dan jalur callback</td><td class="c">26 dari 26 lulus</td><td>Pemetaan tiap tingkat keyakinan, muatan pendaftaran, pembacaan tombol, pemilihan tindakan aktif, dan penyaring eskalasi</td></tr>
+    <tr><td>Pengujian end-to-end pada sistem live</td><td class="c">36 dari 36 lulus</td><td>Jalur human-in-the-loop tanpa tindakan otomatis, keputusan analis melalui tombol, jalur otonom dengan tindakan aktif, dan eskalasi batas waktu</td></tr>
+    <tr><td>Pengujian idempotensi penerapan</td><td class="c">Penerapan kedua tanpa perubahan</td><td>Penerapan kebijakan dapat diulang tanpa menggandakan node maupun koneksi</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="no">8.</span>Batasan dan Rencana Lanjutan</h2>
+
+<p>Beberapa batasan berikut dicatat secara terbuka sebagai dasar pengembangan berikutnya, yaitu sebagai berikut.</p>
+
+<ol class="isi">
+  <li>Jalur phishing belum menggunakan registri keputusan sehingga target tindakannya masih dibaca dari teks pesan.</li>
+  <li>Jalur otonom baru menyediakan umpan balik penandaan false positive, belum menyediakan pembatalan karantina.</li>
+  <li>Pembatasan akses pada layanan registri keputusan belum diaktifkan dan direncanakan menjadi bagian pengerasan keamanan pada milestone berikutnya.</li>
+  <li>Batas waktu lima belas menit dan masa berlaku enam jam masih seragam untuk semua tingkat keyakinan.</li>
+  <li>Pengukuran waktu respons analis masih berasal dari pengujian berukuran sampel kecil sehingga perlu dilanjutkan dengan jumlah pengulangan minimal tiga puluh pada milestone pengujian kuantitatif.</li>
+</ol>
+
+<div class="ttd">
+  <p>Denpasar, 14 Oktober 2026</p>
+  <p>Mahasiswa,</p>
+  <div class="spasi"></div>
+  <p>Ravi Arnan Irianto<br>NIM 2305551076</p>
+</div>
+
+</body>
+</html>
