@@ -12,9 +12,9 @@ field `undefined`:
     ...
 
 Penyebab: rantai live `Build Payload -> AI Generate -> Send Telegram Alert`.
-Node 'AI Generate' (Code, panggil Atria API) memakai
+Node 'AI Generate' (Code, panggil API LLM) memakai
 `onError: continueRegularOutput`. Saat panggilan AI gagal (timeout 60s,
-5xx/429, `ATRIA_API_KEY` kosong, atau respons tanpa
+5xx/429, `HCNSEC_API_KEY` kosong, atau respons tanpa
 `choices[0].message.content`), n8n TIDAK meneruskan `$json` dari Build
 Payload -- outputnya jadi item error. 'Send Telegram Alert' membaca SEMUA
 field dari `$json` -> semuanya undefined. Itu sebabnya muncul 'kadang' saja
@@ -22,20 +22,22 @@ field dari `$json` -> semuanya undefined. Itu sebabnya muncul 'kadang' saja
 
 Patch ini dua lapis:
 
-  1. 'AI Generate' -> bungkus panggilan HTTP dengan try/catch; SELALU
-     `return [{ json: { ...$json, ai_response, llm_error } }]`. Gagal AI hanya
-     membuat bagian analisis jadi teks fallback, field lain tetap utuh.
+  1. 'AI Generate' -> provider utama Pollinations (deepseek/deepseek-v4-flash,
+     max_tokens 1500), fallback Gemini flash, dibungkus try/catch; SELALU
+     `return [{ json: { ...$json, ai_response, llm_error, llm_model } }]`. Gagal
+     AI hanya membuat bagian analisis jadi teks fallback, field lain tetap utuh.
   2. 'Send Telegram Alert' -> field terstruktur (file/path/severity/hash/agent/
      waktu/dll) diambil dari node sumber `$('Build Payload')`, bukan `$json`,
-     plus fallback `?? ''`. Jadi walau `$json` rusak, pesan tetap utuh.
+     plus fallback `?? ''`, plus baris `⚠️ Error AI: <llm_error>` saat gagal.
+     Jadi walau `$json` rusak, pesan tetap utuh.
 
 Cara pakai (jalankan di ravi-debian, n8n terjangkau):
   python3 scripts/patch-n8n-ai-failsafe.py \
     --n8n-url http://127.0.0.1:5678 \
     --api-key-file /tmp/n8n_api_key.txt [--dry-run]
 
-Idempoten (marker `patch:aifailsafe:v1` di kode AI + deteksi path
-`$('Build Payload')` di template Telegram). Backup otomatis ke backups/.
+Idempoten (marker `patch:aifailsafe:v4` di kode AI + penanda `*Error AI:*`
+di template Telegram). Backup otomatis ke backups/.
 """
 
 import argparse
@@ -48,60 +50,85 @@ import urllib.request
 
 BACKUP_DIR = os.path.join(os.path.dirname(__file__), "..", "backups")
 WORKFLOW_ID_DEFAULT = "1MVcpL7ZKfBhR2tc"
-MARKER = "patch:aifailsafe:v1"
+MARKER = "patch:aifailsafe:v4"
 
 AI_NAME = "AI Generate"
 TG_NAME = "Send Telegram Alert"
 
 # Marker struktural di template Telegram (bukti lapis 2 sudah diterapkan).
-TG_MARKER = "$('Build Payload').first().json"
+TG_MARKER = "*Error AI:*"
 
-# Lapis 1: node AI Generate gagal-aman. Sama seperti versi live (Atria API,
-# model Atria-Dawn-Preview) tetapi dibungkus try/catch + fallback.
-AI_JSCODE = """const apiKey = $env.ATRIA_API_KEY;
+# Lapis 1: node AI Generate gagal-aman. Provider utama Pollinations
+# (deepseek/deepseek-v4-flash, max_tokens 1500 agar reasoning token tidak
+# menghabiskan output), fallback Gemini flash. Dibungkus try/catch + fallback teks.
+AI_JSCODE = """const pollinationsKey = $env.POLLINATIONS_API_KEY;
+const geminiKey = $env.GEMINI_API_KEY;
 const FALLBACK = 'Analisis AI tidak tersedia saat ini karena layanan AI gagal atau tidak dikonfigurasi.';
 
+const prompt = $json.prompt;
 let clean = '';
 let errMsg = null;
+let usedModel = null;
 
-if (!apiKey) {
-  errMsg = 'ATRIA_API_KEY belum di-set di n8n env';
-} else {
-  const body = {
-    model: 'Atria-Dawn-Preview',
-    max_tokens: 1500,
-    temperature: 0.3,
-    messages: [{ role: 'user', content: $json.prompt }],
-  };
+const cleanText = (t) => String(t || '')
+  .replace(/<think>[\\s\\S]*?<\\/think>/g, '')
+  .replace(/[*_`\\[\\]()]/g, '')
+  .replace(/\\n\\n+/g, '\\n')
+  .trim();
+
+// 1) Pollinations: deepseek/deepseek-v4-flash (max_tokens 1500)
+if (pollinationsKey) {
   try {
     const resp = await this.helpers.httpRequest({
       method: 'POST',
-      url: 'https://api.atria-asi.ai/v1/chat/completions',
+      url: 'https://gen.pollinations.ai/v1/chat/completions',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + apiKey,
+        'Authorization': 'Bearer ' + pollinationsKey,
       },
-      body: JSON.stringify(body),
-      timeout: 60000,
+      body: JSON.stringify({
+        model: 'deepseek/deepseek-v4-flash',
+        max_tokens: 1500,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      timeout: 35000,
     });
-    const text = resp?.choices?.[0]?.message?.content || '';
-    clean = text
-      .replace(/<think>[\\s\\S]*?<\\/think>/g, '')
-      .replace(/[*_`\\[\\]()]/g, '')
-      .replace(/\\n\\n+/g, '\\n')
-      .trim();
+    clean = cleanText(resp?.choices?.[0]?.message?.content);
+    if (clean) usedModel = 'pollinations:deepseek-v4-flash';
   } catch (e) {
-    errMsg = String((e && e.message) || e).slice(0, 200);
+    errMsg = 'pollinations: ' + String((e && e.message) || e).slice(0, 160);
+  }
+} else {
+  errMsg = 'POLLINATIONS_API_KEY belum di-set';
+}
+
+// 2) fallback Gemini (format generateContent, bukan OpenAI-compatible) supaya
+//    satu provider tumbang tidak menelan seluruh analisis.
+if (!clean && geminiKey) {
+  try {
+    const resp = await this.helpers.httpRequest({
+      method: 'POST',
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + geminiKey,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      timeout: 30000,
+    });
+    clean = cleanText((resp?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join(''));
+    if (clean) { usedModel = 'gemini:2.5-flash'; errMsg = null; }
+    else if (!errMsg) errMsg = 'gemini: respons kosong';
+  } catch (e) {
+    errMsg = (errMsg ? errMsg + ' | ' : '') + 'gemini: ' + String((e && e.message) || e).slice(0, 160);
   }
 }
 
-return [{ json: { ...$json, ai_response: clean || FALLBACK, llm_error: errMsg, llm_model: 'Atria-Dawn-Preview' } }];
-// patch:aifailsafe:v1"""
+return [{ json: { ...$json, ai_response: clean || FALLBACK, llm_error: clean ? null : errMsg, llm_model: usedModel || 'gagal' } }];
+// patch:aifailsafe:v4"""
 
 # Lapis 2: template Telegram ambil field terstruktur dari 'Build Payload'
 # (bukan $json), plus fallback `?? ''`. Field AI tetap dari $json output
 # 'AI Generate'. Escaping Markdown dipertahankan seperti versi live.
-TG_TEXT = """={{ $('Build Payload').first().json.severityIcon + " *" + $('Build Payload').first().json.severityLabel + " - " + $('Build Payload').first().json.alert_title + "*\\n\\n📁 " + $('Build Payload').first().json.target_label + ": " + ((($('Build Payload').first().json.filename ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + "\\n📂 Path: " + ((($('Build Payload').first().json.filepath ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + ($('Build Payload').first().json.chain_cmd ? ("\\n💻 Command: " + ((($('Build Payload').first().json.chain_cmd ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1'))) : "") + "\\n🔍 Hash: `" + ($('Build Payload').first().json.hash_display ?? 'Tidak tersedia') + "`" + "\\n🛡️ Severity: " + ($('Build Payload').first().json.severity ?? '') + " level " + ($('Build Payload').first().json.rule_level ?? '') + "\\n📊 Deteksi: " + ($('Build Payload').first().json.detection_text ?? '') + "\\n🖥️ Agent: " + ((($('Build Payload').first().json.agent_name ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + "\\n🕐 Waktu: " + ($('Build Payload').first().json.timestamp ?? '') + "\\n\\n🤖 *Analisis AI:*\\n" + (($json.ai_response ?? 'Analisis AI tidak tersedia.') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1') + "\\n\\n" + ($('Build Payload').first().json.vt_footer ?? '') }}"""
+TG_TEXT = """={{ $('Build Payload').first().json.severityIcon + " *" + $('Build Payload').first().json.severityLabel + " - " + $('Build Payload').first().json.alert_title + "*\\n\\n📁 " + $('Build Payload').first().json.target_label + ": " + ((($('Build Payload').first().json.filename ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + "\\n📂 Path: " + ((($('Build Payload').first().json.filepath ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + ($('Build Payload').first().json.chain_cmd ? ("\\n💻 Command: " + ((($('Build Payload').first().json.chain_cmd ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1'))) : "") + "\\n🔍 Hash: `" + ($('Build Payload').first().json.hash_display ?? 'Tidak tersedia') + "`" + "\\n🛡️ Severity: " + ($('Build Payload').first().json.severity ?? '') + " level " + ($('Build Payload').first().json.rule_level ?? '') + "\\n📊 Deteksi: " + ($('Build Payload').first().json.detection_text ?? '') + "\\n🖥️ Agent: " + ((($('Build Payload').first().json.agent_name ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + "\\n🕐 Waktu: " + ($('Build Payload').first().json.timestamp ?? '') + "\\n\\n🤖 *Analisis AI:*\\n" + (($json.ai_response ?? 'Analisis AI tidak tersedia.') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1') + "\\n\\n" + ($('Build Payload').first().json.vt_footer ?? '') + (($json.llm_error) ? ("\\n⚠️ *Error AI:* " + (($json.llm_error + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1'))) : "") }}"""
 
 
 def read_file(p):

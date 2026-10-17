@@ -129,11 +129,11 @@ const is_exec = /^[-r][-w][-x][-r][-w][-x]/.test(permStr) && permStr.charAt(2) =
 // patch:systemfile:v1"""
 
 EKSTRAK_OUT_OLD = """    is_system_file:   is_system_file,
-    model:            body?.model || 'Atria-Dawn-Preview',"""
+    model:            body?.model || 'DeepSeek-V4-Flash',"""
 
 EKSTRAK_OUT_NEW = """    is_system_file:   is_system_file,
     is_exec:          is_exec,
-    model:            body?.model || 'Atria-Dawn-Preview',"""
+    model:            body?.model || 'DeepSeek-V4-Flash',"""
 
 
 def patch_ekstrak(js):

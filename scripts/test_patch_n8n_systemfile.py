@@ -63,7 +63,7 @@ return [{
     srcip:            srcip,
     agent_id:         (body?.agent?.id || body?.agent_id || '000').toString().padStart(3, '0'),
     agent_name:       body?.agent?.name || body?.agent_name || 'unknown',
-    model:            body?.model || 'Atria-Dawn-Preview',
+    model:            body?.model || 'DeepSeek-V4-Flash',
     timestamp:        body?.timestamp || new Date().toISOString()
   }
 }];"""
@@ -238,7 +238,7 @@ if (isChain) {
 
 return [{
   json: {
-    model: 'Atria-Dawn-Preview',
+    model: 'DeepSeek-V4-Flash',
     prompt: prompt,
     stream: false,
     has_vt_data: hasVT,

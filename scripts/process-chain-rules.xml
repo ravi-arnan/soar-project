@@ -203,4 +203,35 @@
     <description>SOAR allowlist: rundll32/regsvr32 System32 dari Task Scheduler (maintenance Windows, teks-klasik)</description>
   </rule>
 
+  <!-- ============================================================
+       LEVEL 0: Allowlist — rundll32 FileProtocolHandler untuk browser
+       spawn / Google OAuth (mis. CLI Google Antigravity `agy`).
+       Di-spawn oleh agy.exe atau membuka URL resmi accounts.google.com.
+       ============================================================ -->
+  <rule id="110021" level="0">
+    <if_sid>110017</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler\s+https://accounts\.google\.com/</field>
+    <description>SOAR allowlist: rundll32 FileProtocolHandler Google OAuth (JSON)</description>
+  </rule>
+
+  <rule id="110022" level="0">
+    <if_sid>110017</if_sid>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\agy(\.exe)?$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler</field>
+    <description>SOAR allowlist: agy CLI browser spawn via rundll32 (JSON)</description>
+  </rule>
+
+  <rule id="110023" level="0">
+    <if_sid>110007</if_sid>
+    <field name="sysmon.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler\s+https://accounts\.google\.com/</field>
+    <description>SOAR allowlist: rundll32 FileProtocolHandler Google OAuth (teks-klasik)</description>
+  </rule>
+
+  <rule id="110024" level="0">
+    <if_sid>110007</if_sid>
+    <field name="sysmon.parentImage" type="pcre2">(?i)\\agy(\.exe)?$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler</field>
+    <description>SOAR allowlist: agy CLI browser spawn via rundll32 (teks-klasik)</description>
+  </rule>
+
 </group>

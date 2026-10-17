@@ -62,11 +62,15 @@ def is_noisy_path(file_path):
     """Return True kalau path masuk noise list (skip dari forwarding)."""
     if not file_path:
         return False
-    if file_path.startswith(NOISY_PATH_PREFIXES):
+    norm = file_path.replace("\\", "/").lower()
+    if norm.startswith(NOISY_PATH_PREFIXES):
         return True
-    # Ekstensi file yang selalu noise (ISO installer, DS_Store, thumbs.db)
-    NOISY_EXT = (".iso", ".ds_store", ".thumbs.db", ".dmg")
-    return file_path.lower().endswith(NOISY_EXT)
+    if any(p in norm for p in ("/$recycle.bin/", "/system volume information/")):
+        return True
+    # Ekstensi / nama file yang selalu noise
+    if norm.endswith(("/desktop.ini", "/thumbs.db", ".thumbs.db", ".iso", ".ds_store", ".dmg")):
+        return True
+    return False
 
 
 def extract_hash(alert):

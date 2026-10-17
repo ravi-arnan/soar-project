@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch AI Generate (Atria/Atria-Dawn-Preview) ke workflow live
+"""Patch AI Generate (HCNSEC/DeepSeek-V4-Flash) ke workflow live
 'Deteksi Malware' di n8n (via public API).
 
 Latar: node Preload Model + Ollama Generate dalam keadaan disabled dan service
@@ -8,8 +8,8 @@ menyisipkan jalur LLM eksternal (OpenAI-compatible):
 
   Build Payload -> AI Generate -> Send Telegram Alert
 
-AI Generate memanggil Atria API (model Atria-Dawn-Preview),
-membaca key dari $env.ATRIA_API_KEY (env container n8n). Output field
+AI Generate memanggil HCNSEC API (model DeepSeek-V4-Flash),
+membaca key dari $env.HCNSEC_API_KEY (env container n8n). Output field
 `ai_response`; template Telegram diperbarui dari `ollama_response`.
 
 Cara pakai (jalankan DI ravi-debian):
@@ -34,11 +34,11 @@ WORKFLOW_ID_DEFAULT = "1MVcpL7ZKfBhR2tc"
 AI_NAME = "AI Generate"
 TG_NAME = "Send Telegram Alert"
 
-AI_JSCODE = """const apiKey = $env.ATRIA_API_KEY;
-if (!apiKey) throw new Error('ATRIA_API_KEY belum di-set di n8n env');
+AI_JSCODE = """const apiKey = $env.HCNSEC_API_KEY;
+if (!apiKey) throw new Error('HCNSEC_API_KEY belum di-set di n8n env');
 
 const body = {
-  model: 'Atria-Dawn-Preview',
+  model: 'DeepSeek-V4-Flash',
   max_tokens: 1500,
   temperature: 0.3,
   messages: [{ role: 'user', content: $json.prompt }],
@@ -46,7 +46,7 @@ const body = {
 
 const resp = await this.helpers.httpRequest({
   method: 'POST',
-  url: 'https://api.atria-asi.ai/v1/chat/completions',
+  url: 'https://api.hcnsec.cn/v1/chat/completions',
   headers: {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer ' + apiKey,
@@ -63,7 +63,8 @@ const clean = text
   .replace(/\\n\\n+/g, '\\n')
   .trim();
 
-return [{ json: { ...$json, ai_response: clean, llm_model: 'Atria-Dawn-Preview' } }];"""
+
+return [{ json: { ...$json, ai_response: clean, llm_model: 'DeepSeek-V4-Flash' } }];"""
 
 AI_NODE = {
     "name": AI_NAME,
