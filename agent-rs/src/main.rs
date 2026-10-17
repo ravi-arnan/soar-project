@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -42,6 +43,16 @@ struct Args {
 
     #[arg(long, default_value = "60")]
     heartbeat_secs: u64,
+
+    /// Interval scan terjadwal (detik). 0 = mati. FIM hanya melihat event
+    /// baru, jadi file lama / file yang masuk saat agent mati tidak pernah
+    /// ter-scan. Task ini memindai `--scan-roots` tiap interval.
+    #[arg(long, default_value = "0")]
+    scan_interval_secs: u64,
+
+    /// Root scan terjadwal, dipisah koma. Default = daftar `--watch`.
+    #[arg(long, value_delimiter = ',')]
+    scan_roots: Option<Vec<String>>,
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
@@ -207,11 +218,17 @@ async fn post_to_n8n(
 }
 
 fn should_ignore(path: &Path) -> bool {
-    let s = path.to_string_lossy();
     // ponytail: filter sama dengan scripts/custom-n8n.py noise filter
     // jangan kirim /tmp, /var/cache, dll biar hemat VT quota
-    // Juga filter ekstensi noise: file ISO installer, DS_Store, thumbs.db
-    let lower = path.to_string_lossy().to_lowercase();
+    // Juga filter ekstensi noise: file ISO installer, DS_Store, thumbs.db, desktop.ini
+    let lower_raw = path.to_string_lossy().to_lowercase();
+    let lower = lower_raw.replace('\\', "/");
+
+    // File name spesifik Windows / macOS yang sering jadi noise FIM
+    let fname = lower.split('/').last().unwrap_or("");
+    if fname == "desktop.ini" || fname == "thumbs.db" || fname == ".ds_store" {
+        return true;
+    }
     const NOISY_EXT: &[&str] = &[
         ".iso",
         ".ds_store",
@@ -257,12 +274,13 @@ fn should_ignore(path: &Path) -> bool {
         "/tmp/com.brave",
         "/tmp/mozilla-",
     ];
-    NOISY_PREFIXES.iter().any(|p| s.starts_with(p))
+    NOISY_PREFIXES.iter().any(|p| lower.starts_with(p))
         || {
             // ponytail: FP 14 Sep — USB watcher recursive masuk ke mirror Wine
             // (/run/media/.../dosdevices/z:/home/...) + repo/tooling (/.git/,
             // /node_modules/, /__pycache__/, /cache/). File di sini (git objects,
             // db snapshot, browser cache) bukan vektor infeksi workstation.
+            // Ditambah $recycle.bin & system volume information untuk Windows.
             // Upgrade path: hapus pengecualian ini kalau scope diperluas ke
             // server-side FIM penuh (saat itu pakai allowlist, bukan denylist).
             const NOISY_CONTAINS: &[&str] = &[
@@ -272,6 +290,8 @@ fn should_ignore(path: &Path) -> bool {
                 "/__pycache__/",
                 "/.cache/",
                 "/cache/",
+                "/$recycle.bin/",
+                "/system volume information/",
             ];
             NOISY_CONTAINS.iter().any(|p| lower.contains(p))
         }
@@ -354,6 +374,55 @@ fn count_dirs_bounded(root: &Path, limit: usize) -> usize {
 /// disk game/Wine (GamesRavi) ratusan ribu -> tolak dengan warn, bukan hang.
 const MAX_WATCH_DIRS: usize = 5000;
 
+/// Kandidat mount yang dipantau real-time (di luar watch path tetap).
+/// Parity drive/watcher: Linux punya `/run/media/<user>` (flashdisk), Windows
+/// tidak punya padanan sampai 15 Okt (Ramnit di G:\ lolos). Windows enumerasi
+/// disk non-system (removable + HDD eksternal) via `sysinfo::Disks` (dependensi
+/// yang sudah ada, tanpa crate baru).
+#[cfg(unix)]
+fn candidate_mounts() -> Vec<PathBuf> {
+    let user = std::env::var("USER").unwrap_or_else(|_| "ravi".to_string());
+    let usb_root = PathBuf::from(format!("/run/media/{}", user));
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&usb_root) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            // symlink_metadata: entry mount berupa symlink, jangan di-follow.
+            let is_real_dir = std::fs::symlink_metadata(&p)
+                .map(|m| m.file_type().is_dir())
+                .unwrap_or(false);
+            if is_real_dir {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(windows)]
+fn candidate_mounts() -> Vec<PathBuf> {
+    use sysinfo::Disks;
+    let system = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
+    let system = system.to_ascii_uppercase();
+    Disks::new_with_refreshed_list()
+        .list()
+        .iter()
+        .filter(|d| {
+            let mp = d.mount_point().to_string_lossy().to_ascii_uppercase();
+            !mp.starts_with(&system) && d.is_removable()
+        })
+        .map(|d| d.mount_point().to_path_buf())
+        .collect()
+}
+
+/// Root scan terjadwal: pakai `--scan-roots` kalau diisi, kalau tidak ikut
+/// `--watch`. Dipisah jadi fungsi murni supaya bisa diuji tanpa spawn task.
+fn resolve_scan_roots(scan_roots: &Option<Vec<String>>, watch: &[PathBuf]) -> Vec<String> {
+    scan_roots
+        .clone()
+        .unwrap_or_else(|| watch.iter().map(|p| p.display().to_string()).collect())
+}
+
 fn command_target_allowed(target: &Path, roots: &[PathBuf], action: &str) -> bool {
     let Ok(metadata) = std::fs::symlink_metadata(target) else {
         return false;
@@ -370,6 +439,20 @@ fn command_target_allowed(target: &Path, roots: &[PathBuf], action: &str) -> boo
     let Ok(resolved_target) = std::fs::canonicalize(target) else {
         return false;
     };
+    // ponytail: scan boleh ke path absolut mana pun (termasuk drive root dan
+    // folder spesifik di drive eksternal — bukti Ramnit 15 Okt: walk root G:\
+    // berhenti di cap 2000 sebelum mencapai folder yang terinfeksi, jadi
+    // analis butuh memindai subfolder langsung). Aman karena scan cuma
+    // hash read-only + laporan ringkasan (tanpa karantina per-file), dibatasi
+    // MAX_SCAN_FILES, dan server memvalidasi ulang absolut + tanpa `..`.
+    // Quarantine TETAP harus di watch root (aksi destruktif).
+    // Upgrade path: allowlist per-drive kalau batas ini kepentok.
+    if action == "scan" {
+        return target.is_absolute()
+            && !target.components().any(|c| {
+                matches!(c, std::path::Component::ParentDir)
+            });
+    }
     roots.iter().any(|root| {
         std::fs::canonicalize(root)
             .map(|resolved_root| resolved_target.starts_with(resolved_root))
@@ -432,13 +515,12 @@ async fn main() -> Result<()> {
         }
     }
 
-    // USB dynamic scanner (saran dospem: deteksi file malware dipindah dari flashdisk)
-    // ponytail: scan /run/media/<user> tiap 2s; mount baru otomatis di-watch RECURSIVE.
-    // Ini nutup dua kelemahan lama: (1) flashdisk colok belakangan tidak ke-detect,
-    // (2) file di subfolder mount tidak ke-detect (non-recursive lama).
-    // Upgrade path: udev/kernel inotify pada mount event kalau polling 2s dirasa lambat.
-    let user = std::env::var("USER").unwrap_or_else(|_| "ravi".to_string());
-    let usb_root = PathBuf::from(format!("/run/media/{}", user));
+    // Drive/mount watcher (saran dospem: deteksi file malware dipindah dari
+    // flashdisk). Parity lintas OS via `candidate_mounts()`: Linux `/run/media/
+    // <user>`, Windows disk non-system. Mount baru otomatis di-watch RECURSIVE.
+    // Ini nutup dua kelemahan lama: (1) flashdisk/drive colok belakangan tidak
+    // ke-detect, (2) file di subfolder mount tidak ke-detect.
+    // Upgrade path: udev/WM_DEVICECHANGE kalau polling 2s dirasa lambat.
     let watched_mounts: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
     // Mount yang ditolak karena kegedean: ingat supaya tidak di-scan ulang
     // (dan tidak spam log) tiap poll 2 detik. Dibersihkan saat dicabut.
@@ -447,60 +529,50 @@ async fn main() -> Result<()> {
         let watcher = watcher.clone();
         let watched_mounts = watched_mounts.clone();
         let rejected_mounts = rejected_mounts.clone();
-        let usb_root = usb_root.clone();
         tokio::spawn(async move {
             loop {
-                if let Ok(entries) = std::fs::read_dir(&usb_root) {
-                    for entry in entries.flatten() {
-                        let p = entry.path();
-                        // symlink_metadata dulu: mount entry berupa symlink
-                        // jangan di-watch (is_dir() mem-follow symlink).
-                        let is_real_dir = std::fs::symlink_metadata(&p)
-                            .map(|m| m.file_type().is_dir())
-                            .unwrap_or(false);
-                        if !is_real_dir
-                            || watched_mounts.lock().unwrap().contains(&p)
-                            || rejected_mounts.lock().unwrap().contains(&p)
-                        {
-                            continue;
-                        }
-                        // Tolak mount raksasa SEBELUM watch: disk game/Wine
-                        // isinya ratusan ribu direktori (notify men-follow
-                        // symlink dosdevices/z: -> /). Cek murah (<1 detik
-                        // untuk flashdisk normal, berhenti di limit).
-                        let n_dirs = count_dirs_bounded(&p, MAX_WATCH_DIRS + 1);
-                        if n_dirs > MAX_WATCH_DIRS {
-                            warn!(path = %p.display(), n_dirs, "mount terlalu besar, skip watch (bukan flashdisk?)");
-                            rejected_mounts.lock().unwrap().push(p.clone());
-                            continue;
-                        }
-                        match watcher.lock().unwrap().watch(&p, RecursiveMode::Recursive) {
-                            Ok(_) => {
-                                watched_mounts.lock().unwrap().push(p.clone());
-                                info!(path = %p.display(), n_dirs, "USB mounted, watching (recursive)");
-                            }
-                            Err(e) => warn!(path = %p.display(), error = %e, "gagal watch USB mount"),
-                        }
+                for p in candidate_mounts() {
+                    if watched_mounts.lock().unwrap().contains(&p)
+                        || rejected_mounts.lock().unwrap().contains(&p)
+                    {
+                        continue;
                     }
-                    // Bersihkan mount yang sudah dicabut (unwatch beneran:
-                    // retain saja tidak melepas kernel watch = leak).
-                    let mounted: Vec<PathBuf> = std::fs::read_dir(&usb_root)
-                        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
-                        .unwrap_or_default();
+                    // Tolak mount raksasa SEBELUM watch: disk game/Wine
+                    // isinya ratusan ribu direktori (notify men-follow
+                    // symlink dosdevices/z: -> /). Cek murah (<1 detik
+                    // untuk flashdisk normal, berhenti di limit).
+                    let n_dirs = count_dirs_bounded(&p, MAX_WATCH_DIRS + 1);
+                    if n_dirs > MAX_WATCH_DIRS {
+                        warn!(path = %p.display(), n_dirs, "mount terlalu besar, skip watch (bukan flashdisk?)");
+                        rejected_mounts.lock().unwrap().push(p.clone());
+                        continue;
+                    }
+                    match watcher.lock().unwrap().watch(&p, RecursiveMode::Recursive) {
+                        Ok(_) => {
+                            watched_mounts.lock().unwrap().push(p.clone());
+                            info!(path = %p.display(), n_dirs, "drive mounted, watching (recursive)");
+                        }
+                        Err(e) => warn!(path = %p.display(), error = %e, "gagal watch mount"),
+                    }
+                }
+                // Bersihkan mount yang sudah dicabut (unwatch beneran:
+                // retain saja tidak melepas kernel watch = leak).
+                let mounted = candidate_mounts();
+                {
                     let mut wm = watched_mounts.lock().unwrap();
                     wm.retain(|p| {
                         if mounted.contains(p) {
                             true
                         } else {
-                            info!(path = %p.display(), "USB dicabut, unwatch");
+                            info!(path = %p.display(), "drive dicabut, unwatch");
                             let _ = watcher.lock().unwrap().unwatch(p);
                             false
                         }
                     });
-                    // Bersihkan juga daftar tolak untuk mount yang sudah pergi
-                    // (nama mount dipakai ulang oleh media lain).
-                    rejected_mounts.lock().unwrap().retain(|p| mounted.contains(p));
                 }
+                // Bersihkan juga daftar tolak untuk mount yang sudah pergi
+                // (nama mount dipakai ulang oleh media lain).
+                rejected_mounts.lock().unwrap().retain(|p| mounted.contains(p));
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
         });
@@ -541,12 +613,23 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Client khusus scan: hashing + POST laporan besar bisa lama, jadi timeout
+    // jauh lebih panjang dari client heartbeat (5s).
+    let scan_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()?;
+
     // Heartbeat ke fleet-monitor (custom monitoring 100 PC, desain Wazuh, arahan dospem)
     // ponytail: satu task tokio, interval 60s, best-effort (jangan crash kalau fleet down)
     let fleet_url = args.fleet_url.clone();
     let hb_id = args.agent_id.clone();
     let hb_name = args.agent_name.clone();
     let hb_interval = args.heartbeat_secs;
+    let hb_scan_client = scan_client.clone();
+    let hb_watch_paths: Vec<String> = watch_paths
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect();
     tokio::spawn(async move {
         let poll_token = fleet_poll_token.clone();
         let client = reqwest::Client::builder()
@@ -584,10 +667,7 @@ async fn main() -> Result<()> {
                 "version": env!("CARGO_PKG_VERSION"),
                 "os": os,
                 "ip": "",
-                "watch_paths": watch_paths
-                    .iter()
-                    .map(|p| p.display().to_string())
-                    .collect::<Vec<_>>(),
+                "watch_paths": hb_watch_paths,
                 "cpu_pct": (cpu_pct * 100.0).round() / 100.0,
                 "ram_gb": {
                     "total": (ram_total_gb * 100.0).round() / 100.0,
@@ -628,7 +708,7 @@ async fn main() -> Result<()> {
                                     let mut roots = command_roots.clone();
                                     roots.extend(command_mounts.lock().unwrap().iter().cloned());
                                     if !command_target_allowed(Path::new(target), &roots, action) {
-                                        warn!(action = %action, target = %target, "target di luar watch root");
+                                        warn!(action = %action, target = %target, "target command ditolak (bukan absolut / traversal / di luar watch root)");
                                         continue;
                                     }
                                 }
@@ -642,13 +722,13 @@ async fn main() -> Result<()> {
                                         Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
                                     },
                                     "scan" => {
-                                        let c = client.clone();
+                                        let c = hb_scan_client.clone();
                                         let b = base.to_string();
                                         let id = hb_id.clone();
                                         let nm = hb_name.clone();
                                         let tgt = target.to_string();
                                         tokio::spawn(async move {
-                                            match do_scan(&c, &b, &id, &nm, &tgt).await {
+                                            match do_scan(&c, &b, &id, &nm, &tgt, "on-demand").await {
                                                 Ok(d) => info!(action = "scan", target = %tgt, detail = %d, "perintah dashboard OK"),
                                                 Err(e) => warn!(action = "scan", target = %tgt, error = %e, "perintah dashboard gagal"),
                                             }
@@ -667,6 +747,40 @@ async fn main() -> Result<()> {
             tokio::time::sleep(Duration::from_secs(hb_interval)).await;
         }
     });
+
+    // Scan terjadwal: menutup celah yang TIDAK bisa ditutup FIM, yaitu file
+    // yang sudah ada di disk sebelum agent jalan, atau file yang masuk saat
+    // agent mati (FIM hanya melihat event baru). Root default = watch path.
+    // 0 = mati (default), supaya tidak mengagetkan agent existing.
+    if args.scan_interval_secs > 0 {
+        let roots = resolve_scan_roots(&args.scan_roots, &watch_paths);
+        let base = args
+            .fleet_url
+            .trim_end_matches("/api/heartbeat")
+            .trim_end_matches('/')
+            .to_string();
+        let id = args.agent_id.clone();
+        let nm = args.agent_name.clone();
+        let interval = args.scan_interval_secs;
+        let client = scan_client.clone();
+        info!(?roots, interval, "scan terjadwal aktif");
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(interval)).await;
+                for root in &roots {
+                    if !Path::new(root).is_dir() {
+                        continue;
+                    }
+                    match do_scan(&client, &base, &id, &nm, root, "scheduled").await {
+                        Ok(d) => info!(root = %root, detail = %d, "scan terjadwal OK"),
+                        Err(e) => warn!(root = %root, error = %e, "scan terjadwal gagal"),
+                    }
+                    // Jeda antar-root: hindari spike CPU/panas saat hashing.
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        });
+    }
 
     // Satu HTTP client untuk semua POST jalur file (lihat post_with_retry).
     let http = reqwest::Client::builder()
@@ -928,6 +1042,17 @@ fn do_quarantine(path: &str) -> Result<String> {    let src = Path::new(path);
 /// untuk Downloads/USB, tetap kecil biar waktu hash + payload tidak meledak.
 const MAX_SCAN_FILES: usize = 2000;
 
+/// Satu scan pada satu waktu (on-demand vs terjadwal). Serialisasi ini
+/// mencegah dua walk hashing bareng yang bikin CPU/laptop panas.
+static SCAN_BUSY: AtomicBool = AtomicBool::new(false);
+
+struct ScanGuard;
+impl Drop for ScanGuard {
+    fn drop(&mut self) {
+        SCAN_BUSY.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Kumpulkan file target scan di bawah `root` (rekursif, TANPA follow symlink).
 /// Melewati file yang di-ignore sensor, file 0-byte, dan non-file. Bounded:
 /// berhenti setelah `max` file -> (paths, truncated).
@@ -981,11 +1106,16 @@ async fn do_scan(
     agent_id: &str,
     agent_name: &str,
     path: &str,
+    trigger: &str,
 ) -> Result<String> {
     let root = Path::new(path);
     if !root.is_dir() {
         anyhow::bail!("folder tidak ada atau bukan direktori: {}", path);
     }
+    if SCAN_BUSY.swap(true, Ordering::SeqCst) {
+        anyhow::bail!("scan lain sedang berjalan, lewati");
+    }
+    let _guard = ScanGuard;
     let started = std::time::Instant::now();
     let (targets, truncated) = collect_scan_targets(root, MAX_SCAN_FILES);
     let mut files = Vec::with_capacity(targets.len());
@@ -1009,6 +1139,7 @@ async fn do_scan(
         "agent_id": agent_id,
         "agent_name": agent_name,
         "path": path,
+        "trigger": trigger,
         "started": chrono::Utc::now().to_rfc3339(),
         "elapsed_ms": started.elapsed().as_millis() as u64,
         "scanned": n,
@@ -1021,7 +1152,7 @@ async fn do_scan(
     if !resp.status().is_success() {
         anyhow::bail!("fleet {} -> {}", url, resp.status());
     }
-    info!(path = %path, files = n, truncated, "scan on-demand terkirim");
+    info!(path = %path, files = n, truncated, trigger = %trigger, "scan terkirim");
     Ok(format!(
         "{} file, {} byte{}",
         n,
@@ -1049,6 +1180,11 @@ mod tests {
             "/tmp/.vscode-server/x",
             "/home/ravi/doc.txt~",
             "/home/ravi/a.db-shm",
+            r"I:\$RECYCLE.BIN\S-1-5-21-2998944698-2190097625-1310765221-1001\desktop.ini",
+            r"C:\$Recycle.Bin\desktop.ini",
+            r"C:\Users\Bapak\Downloads\desktop.ini",
+            r"C:\Users\Bapak\Downloads\thumbs.db",
+            r"D:\System Volume Information\WPSettings.dat",
         ] {
             assert!(should_ignore(Path::new(p)), "harus diabaikan: {p}");
         }
@@ -1199,10 +1335,12 @@ mod tests {
         let outside = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/soar-test-command-outside");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&outside);
         std::fs::create_dir_all(&root).unwrap();
         let file = root.join("sample.bin");
         std::fs::write(&file, b"x").unwrap();
-        std::fs::write(&outside, b"x").unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("x.bin"), b"x").unwrap();
         #[cfg(unix)]
         std::os::unix::fs::symlink(&file, root.join("link.bin")).ok();
 
@@ -1211,10 +1349,40 @@ mod tests {
         assert!(command_target_allowed(&root, &roots, "scan"));
         assert!(!command_target_allowed(&outside, &roots, "quarantine"));
         assert!(!command_target_allowed(&root, &roots, "quarantine"));
+        // Scan boleh ke path absolut mana pun (bukti Ramnit 15 Okt: subfolder
+        // drive eksternal), quarantine tetap tidak boleh.
+        // Traversal `..` selalu ditolak (server memvalidasi ulang juga).
+        #[cfg(unix)]
+        {
+            assert!(command_target_allowed(Path::new("/"), &roots, "scan"));
+            assert!(!command_target_allowed(Path::new("/"), &roots, "quarantine"));
+            assert!(command_target_allowed(&outside, &roots, "scan"));
+            assert!(!command_target_allowed(
+                Path::new("/tmp/../etc"),
+                &roots,
+                "scan"
+            ));
+        }
         #[cfg(unix)]
         assert!(!command_target_allowed(&root.join("link.bin"), &roots, "quarantine"));
 
         std::fs::remove_dir_all(&root).ok();
-        std::fs::remove_file(&outside).ok();
+        std::fs::remove_dir_all(&outside).ok();
+    }
+
+    #[test]
+    fn resolve_scan_roots_default_ikut_watch_dan_override() {
+        let watch = vec![PathBuf::from("/home/ravi/Downloads")];
+        // Tanpa --scan-roots: ikut watch path.
+        assert_eq!(
+            resolve_scan_roots(&None, &watch),
+            vec!["/home/ravi/Downloads".to_string()]
+        );
+        // Dengan --scan-roots: pakai itu, watch diabaikan.
+        let explicit = Some(vec!["C:\\".to_string(), "D:\\data".to_string()]);
+        assert_eq!(
+            resolve_scan_roots(&explicit, &watch),
+            vec!["C:\\".to_string(), "D:\\data".to_string()]
+        );
     }
 }
