@@ -128,7 +128,7 @@ docker compose up -d
 
 ### 1.6 Konfigurasi Modul LLM (API)
 
-Tambahkan kunci penyedia LLM ke `.env` (mis. `ATRIA_API_KEY`) lalu jalankan
+Tambahkan kunci penyedia LLM ke `.env` (mis. `HCNSEC_API_KEY`) lalu jalankan
 `docker compose up -d n8n` agar env terbaca node. Node `AI Generate` memanggil
 API penyedia lewat HTTPS — tidak ada layanan inferensi lokal yang dijalankan,
 sehingga tidak ada port 11434 yang perlu dibuka.

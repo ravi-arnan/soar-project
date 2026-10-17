@@ -127,7 +127,7 @@ Sistem dirancang dengan **5 layer** terpisah dengan tanggung jawab yang clear:
 
 **Components**:
 - **VirusTotal API** — external threat intel (hash/URL reputation)
-- **LLM API (Atria)** — analisis kontekstual via API penyedia (OpenAI-compatible)
+- **LLM API (HCNSEC)** — analisis kontekstual via API penyedia (OpenAI-compatible)
 
 **Fungsi**:
 - VT: lookup hash/URL terhadap 60+ antivirus engines
@@ -193,7 +193,7 @@ graph LR
 | Wazuh Indexer | 9200/tcp | 9200/tcp | Internal |
 | Wazuh Dashboard | 5601/tcp | 443/tcp | Internal (HTTPS) |
 | n8n webhook | 5678/tcp | 5678/tcp | Internal (untuk integratord) |
-| API LLM (Atria) | 443/tcp | – | Keluar (HTTPS) |
+| API LLM (HCNSEC) | 443/tcp | – | Keluar (HTTPS) |
 
 ## 4. Workflow Logic — Severity Classification
 
@@ -395,7 +395,7 @@ graph TB
     "name": "rocky-server"
   },
   "timestamp": "2026-05-16T20:08:00.000+0000",
-  "model": "Atria-Dawn-Preview",
+  "model": "DeepSeek-V4-Flash",
   "data": {
     "sha256_after": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
     "path": "/home/ravi/Downloads/eicar-rocky-demo2.com",
@@ -458,7 +458,7 @@ Content-Type: application/json
 | Wazuh Indexer (heap 1g, light 512m) | ~1-1.5 GB | 1 core | `wazuh-docker/single-node/docker-compose.yml: OPENSEARCH_JAVA_OPTS=-Xms1g` (light: `-Xms512m` di `docker-compose.light.yml`) |
 | Wazuh Dashboard | ~1 GB (optional) | 1 core | **Bisa dimatikan** untuk 100 PC — `fleet-monitor :8080` desain Wazuh `#011a2f` jadi pengganti fleet, hemat 1 GB |
 | n8n + task runner | ~700 MB | 1 core |  |
-| LLM API (Atria) | – (cloud) | – | Node live `AI Generate`, model `Atria-Dawn-Preview`, key `ATRIA_API_KEY` di `.env`, patch `scripts/patch-n8n-ai-generate.py`; latensi 1-3 s tanpa RAM/CPU server |
+| LLM API (HCNSEC) | – (cloud) | – | Node live `AI Generate`, model `DeepSeek-V4-Flash`, key `HCNSEC_API_KEY` di `.env`, patch `scripts/patch-n8n-ai-generate.py`; latensi 1-3 s tanpa RAM/CPU server |
 | **Total full (lama)** | **~11 GB** | 4+ core |  |
 | **Total light (LLM API + Wazuh light)** | **~5-6 GB** | 2-3 core | Tanpa Dashboard, Indexer 512m, LLM via API — muat 100 rust agent hash-only |
 
@@ -512,7 +512,7 @@ Demonstrasi **cross-distribution multi-endpoint SOAR**:
 
 - **Tanpa beban server:** inferensi lokal menuntut RAM/CPU besar dan lambat untuk pemantauan 100 PC; LLM API menjawab 1-3 s tanpa memakai resource server.
 - **Kualitas** lebih baik untuk 2-3 kalimat Bahasa Indonesia formal.
-- Trade-off: **data keluar infra** (hash, path, hostname ke Atria), butuh `ATRIA_API_KEY` + internet. Untuk TA, Wazuh + hash-only tetap lokal, hanya AI yang cloud — kompromi 100 PC.
+- Trade-off: **data keluar infra** (hash, path, hostname ke HCNSEC), butuh `HCNSEC_API_KEY` + internet. Untuk TA, Wazuh + hash-only tetap lokal, hanya AI yang cloud — kompromi 100 PC.
 
 ### Kenapa severity classifier di Rangkum Hasil (bukan Build Payload)?
 

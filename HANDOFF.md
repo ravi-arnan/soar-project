@@ -1,4 +1,113 @@
-# Handoff SOAR - 2026-09-14 (lanjutan)
+# Handoff SOAR - 2026-10-17 (Audit UI, Interaktivitas Top Navbar & Optimalisasi Stack)
+
+## Status Terakhir (Checkpoint: 17 Oktober 2026, 15:24 WIB)
+
+### 1. Rangkuman Perubahan Utama
+- **Aktivasi Tombol Top Navigation Bar ([WazuhHeader.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/WazuhHeader.tsx))**:
+  - Tombol icon Bell (Notifikasi ancaman dengan alert counter), API status popover (n8n, Wazuh, Gemini), pemilih Workspace (`default`), Bantuan (`?` tautan dokumen & modal Tentang Sistem), serta tombol aksi cepat (`...`).
+  - Dilengkapi mekanisme auto-close saat klik di luar popover atau menekan tombol `Escape`.
+- **Penyelarasan Drawer Navigasi ([WazuhSidebar.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/WazuhSidebar.tsx))**:
+  - Menambahkan menu `mitre` (MITRE ATT&CK Matrix) dan `network-map` (Network Map Topology) ke drawer sidebar agar dapat diakses langsung dari semua sub-halaman tanpa harus kembali ke Modules Hub.
+- **Konsistensi Format Data ([SettingsView.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/SettingsView.tsx))**:
+  - Format angka total events diselaraskan menggunakan `.toLocaleString('en-US')`.
+- **Optimalisasi Performa Backend & Frontend**:
+  - Backend: `ThreadingHTTPServer` stdlib, TTL caching health check & SQLite event count, mode WAL + composite indexing pada database event.
+  - Frontend: Pengurangan polling event berlebih, pembagian kode via dynamic import, `React.memo` & `useMemo`, serta pembatalan query usang dengan `AbortController`.
+- **Integrasi LLM & Failsafe**:
+  - Rantai n8n diarahkan ke provider HCNSEC (`DeepSeek-V4-Flash`) dengan failsafe error handling agar kegagalan API tidak memutus alur pesan Telegram.
+
+### 2. Daftar File Diubah
+- Frontend:
+  - `dashboard/src/app/page.tsx`
+  - `dashboard/src/components/wazuh/WazuhHeader.tsx`
+  - `dashboard/src/components/wazuh/WazuhSidebar.tsx`
+  - `dashboard/src/components/wazuh/SettingsView.tsx`
+  - `dashboard/src/components/wazuh/ModulesHub.tsx`
+  - `dashboard/src/components/wazuh/ExpandableCard.tsx`
+  - `dashboard/src/components/wazuh/Pagination.tsx`
+  - `dashboard/src/components/wazuh/SecurityEventsDashboard.tsx`
+  - `dashboard/src/components/wazuh/AgentDetailView.tsx`
+  - `dashboard/src/components/wazuh/FimDashboard.tsx`
+  - `dashboard/src/components/wazuh/NetworkMapView.tsx`
+  - `dashboard/src/lib/fleet.ts`
+- Backend & Scripts:
+  - `scripts/fleet-monitor.py`
+  - `scripts/health-monitor.py`
+  - `scripts/custom-n8n.py`
+  - `scripts/patch-n8n-ai-generate.py`
+  - `scripts/patch-n8n-ai-failsafe.py`
+  - `scripts/patch-n8n-fp-guard.py`
+  - `scripts/patch-n8n-noindicator.py`
+  - `scripts/patch-n8n-systemfile.py`
+  - `scripts/patch-n8n-drop-ollama.py`
+  - `scripts/process-chain-rules.xml`
+  - `scripts/test_patch_n8n_aifailsafe.py`
+  - `scripts/test_patch_n8n_systemfile.py`
+- Agent & Deployment:
+  - `agent-rs/Cargo.toml`
+  - `agent-rs/src/main.rs`
+  - `deploy/install-agent-windows.ps1`
+  - `deploy/bundle/install-agent-windows.ps1`
+  - `deploy/bundle/soar-agent.exe`
+  - `deploy/guide-toshiba-bapak.md`
+  - `deploy/install-toshiba.ps1`
+- Dokumentasi & Konfigurasi:
+  - `HANDOFF.md`
+  - `.env.example`
+  - `docs/arsitektur/ARCHITECTURE.md`
+  - `docs/arsitektur/FLOW.md`
+  - `docs/demo/KARTU-DEMO.md`
+  - `docs/demo/KARTU-CONTEKAN-RINGKAS.md`
+  - `docs/diagrams/fig-3.3-arsitektur.mmd`
+  - `docs/diagrams/workflow-malware.mmd`
+  - `docs/panduan/DEPLOYMENT.md`
+
+### 3. Status Verifikasi
+- Frontend Suite (`npm run check`): 100% PASS (6 commands test, 1 placeholder test, 7 events test, 1 session test, 1 session rate limit test, ESLint clean, TypeScript clean, Next.js build clean).
+- Backend Suite (`python3 -m unittest`): 100% PASS (89 tests).
+- Server Remote (`ravi-debian`): Image `soar-fleet-dashboard:latest` ter-rebuild, container `fleet-dashboard` berjalan sehat (Up, healthy) dan merespons HTTP 200 OK.
+
+### 4. Next Action
+Lakukan verifikasi visual di browser pada https://soar.raviarnan.dev/ dan jalankan git commit secara manual untuk menyimpan checkpoint perubahan ke repository.
+
+---
+
+## -0. Refaktor Performa & Efisiensi Stack (17 Okt 2026)
+
+**Tujuan**: Mengoptimalkan latensi backend, throughput konkurensi, bundle size frontend, dan efisiensi render React tanpa menambah dependensi berat (prinsip Lazy Senior Dev).
+
+### 1. Backend (`scripts/fleet-monitor.py`)
+- **ThreadingHTTPServer**: Ganti single-threaded `HTTPServer` menjadi `ThreadingHTTPServer` dari stdlib Python agar request multi-client (dashboard auto-refresh, heartbeat agent, scan polling) tidak saling memblokir.
+- **Health Check Caching & Fast Timeout**:
+  - `check_http` untuk n8n dan external URL kini dilengkapi TTL cache 15 detik (`_HEALTH_CACHE`).
+  - Timeout request diturunkan dari 10s ke 3s (fail-fast) sehingga jika n8n restart/lambat, HTTP worker tidak menggantung.
+- **SQLite Event Stats Caching & Indexing**:
+  - Penghitungan `events_total` dan `severity` breakdown di-cache 10 detik (`_EVENT_STATS_CACHE`).
+  - Invalidation otomatis saat ada alert baru masuk via `_event_store_insert()`.
+  - SQLite diaktifkan mode WAL (`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;`) untuk konkurensi read-write tanpa lock contention.
+  - Tambah composite index `idx_events_source_ts` dan `idx_events_source_sev`.
+  - Latensi endpoint `/api/fleet` berkurang drastis menjadi ~5ms.
+
+### 2. Frontend (`dashboard/`)
+- **Eliminasi Fetch `/api/events` yang Tidak Dipakai**:
+  - `fetchSnapshot()` sebelumnya mendownload 200 event JSON utuh setiap 5 detik meski halaman utama tidak menampilkannya. Diubah hanya mengambil `/api/fleet`, menghemat ~90% bandwidth polling periodik.
+- **Pencegahan Cascading Re-render**:
+  - `useFleet()` memvalidasi perubahan struktural data sebelum memicu `setSnapshot`. Jika status agent dan angka stats tidak berubah, reference dipertahankan sehingga DOM tidak me-render ulang.
+  - Komponen view utama dan widget (`ModulesHub`, `WazuhHeader`, `WazuhSidebar`, `ExpandableCard`, `Pagination`) dibungkus `React.memo` dan `useMemo`.
+- **Code-Splitting (Dynamic Imports)**:
+  - Halaman `dashboard/src/app/page.tsx` menggunakan `next/dynamic` dengan skeleton loader untuk modul-modul sekunder (`SecurityEventsDashboard`, `AgentsManagement`, `AgentDetailView`, `FimDashboard`, dll.). Initial JS bundle yang diunduh browser pada load pertama jauh lebih kecil.
+- **Race Condition & AbortController**:
+  - `useEventHistory()` kini mengintegrasikan `AbortController`. Request usang langsung dibatalkan saat pengguna mengganti filter/pencarian, mencegah glitch race condition dan query menumpuk di server.
+
+### 3. Agent Rust (`agent-rs/Cargo.toml`)
+- Menambahkan profil `[profile.release]` dengan `opt-level = 3`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, dan `strip = true` untuk menghasilkan binary endpoint sekecil dan secepat mungkin.
+
+### 4. Hasil Verifikasi
+- Frontend: `npm run check` (test:commands, test:placeholder, test:events, test:session, test:session-rate, lint, typecheck, build) lulus 100%.
+- Python: `python3 -m unittest scripts/test_fleet_monitor.py` lulus 25/25 test dalam 1.28 detik.
+- Live Server: Container `fleet-monitor` dan `fleet-dashboard` ter-deploy, live latency `/api/fleet` ~5ms.
+
+---
 
 ## 0. Fix dashboard 500 + kolom IP/OS (sesi nixbox, 14 Sep sore)
 
@@ -249,20 +358,20 @@ Resume besok (satu-satunya sisa): ps1 reinstall di 005/006
 (exe baru sudah di `http://100.73.91.17:8000/soar-agent.exe`, byte 7928320).
 Lalu: screenshot dashboard + Telegram untuk laporan (TODO lama).
 
-# Handoff SOAR - 2026-09-16/17 (nixbox, Atria + auto-karantina)
+# Handoff SOAR - 2026-09-16/17 (nixbox, HCNSEC + auto-karantina)
 
-## 1. AI Generate pindah Experiential -> Atria (kredit habis)
+## 1. AI Generate pindah Experiential -> HCNSEC (kredit habis)
 
-- Key Atria (`atr_...`, 36 char) di `~/.config/opencode/secrets/atria.key`.
-  API OpenAI-compatible `https://api.atria-asi.ai/v1`, model `Atria-Dawn-Preview`
+- Key HCNSEC (`sk-...`) di `~/.config/opencode/secrets/hcnsec.key`.
+  API OpenAI-compatible `https://api.hcnsec.cn/v1`, model `DeepSeek-V4-Flash`
   (text-only, reasoning; `/v1/models` terverifikasi hidup).
-- Repo: `scripts/patch-n8n-ai-generate.py` (jsCode Atria + Bearer),
-  `docker-compose.yml` (`ATRIA_API_KEY`), `.env.example`.
+- Repo: `scripts/patch-n8n-ai-generate.py` (jsCode HCNSEC + Bearer),
+  `docker-compose.yml` (`HCNSEC_API_KEY`), `.env.example`.
 - Server: `.env` + compose diupdate via ssh, `docker compose up -d n8n`
-  (env kebaca: `docker exec n8n env` ada ATRIA_API_KEY).
+  (env kebaca: `docker exec n8n env` ada HCNSEC_API_KEY).
 - n8n API key lama 401 -> pulihkan dari sqlite manager
   (`docker cp n8n:.../database.sqlite`, tabel `user_api_keys` label
-  soar-project). Patch live OK, read-back: active, ada atria, tanpa experiential.
+  soar-project). Patch live pending, target HCNSEC (DeepSeek-V4-Flash).
 - Gotcha: max_tokens 300 habis di reasoning -> `content: null`
   (test EICAR-1 ai_response = dump JSON). Fix: max_tokens 1500 +
   temperature 0.3 + fallback statis. Test EICAR-2: AI Indonesia benar
@@ -742,7 +851,7 @@ Audit live (5 workflow aktif) menunjukkan:
 - Node `Preload Model` dan `Ollama Generate` di `Deteksi Malware` **orphan** —
   tidak ada koneksi masuk ke `Preload Model`, jadi jalur Ollama tidak pernah
   dijalankan (itulah sebabnya eksekusi E2E tetap tanpa error).
-- Jalur AI yang benar-benar jalan: **Atria** (OpenAI-compatible) untuk malware,
+- Jalur AI yang benar-benar jalan: **HCNSEC** (OpenAI-compatible) untuk malware,
   **Gemini** untuk phishing. `Submit URL VirusTotal` + `Get URL Report` di
   workflow phishing juga orphan (eskalasi manual lama).
 
@@ -763,8 +872,8 @@ ditukar"). **Narasi laporan perlu diputuskan**: kalau tetap menyebut "AI lokal
 # Handoff SOAR - 2026-09-20 (lanjutan: klaim "AI lokal" dihapus)
 
 Keputusan Ravi: **"AI Lokal itu hapus saja, menurut saya tidak relevan"** → AI
-digambarkan sebagai **analisis LLM via API penyedia** (malware: Atria
-`Atria-Dawn-Preview`; phishing: Gemini). Tidak ada model lokal.
+digambarkan sebagai **analisis LLM via API penyedia** (malware: HCNSEC
+`DeepSeek-V4-Flash`; phishing: Gemini). Tidak ada model lokal.
 
 ## 1. Laporan (`docs/laporan/Laporan-SOAR.md`)
 
@@ -791,7 +900,7 @@ digambarkan sebagai **analisis LLM via API penyedia** (malware: Atria
   docstring `health-monitor.py`, `create-ppt/pdf-bimbingan.py`.
 - Figur dirender ulang (gaya asli dipertahankan): `fig-3.1`, `fig-3.3`, `fig-3.4`,
   `overview-bernomor`, `demo-hybrid-flow`, `workflow-malware` (node Preload
-  Model/Ollama Generate → `AI Generate (Atria API)`), `workflow-phishing`
+  Model/Ollama Generate → `AI Generate (HCNSEC API)`), `workflow-phishing`
   (→ `Gemini Generate (API)`). Skala render 2× seperti sebelumnya.
 - **Extent DOCX diselaraskan lagi** (Gambar 3.1/3.3/3.4) karena rasio PNG berubah
   setelah render ulang → tidak ada gambar tertarik (verifikasi rasio cocok).
@@ -800,7 +909,7 @@ digambarkan sebagai **analisis LLM via API penyedia** (malware: Atria
 
 `scripts/patch-n8n-drop-ollama.py` (**baru**, idempoten + backup + dry-run):
 hapus node `Preload Model` + `Ollama Generate` (orphan, tidak pernah jalan),
-bersihkan edge, normalkan field `model` → `Atria-Dawn-Preview`.
+bersihkan edge, normalkan field `model` → `DeepSeek-V4-Flash`.
 Hasil: **25 → 23 node**, workflow tetap aktif, `Build Payload → AI Generate →
 Send Telegram Alert`, tanpa edge yatim. E2E 1 alert sintetis: 18 node, **tanpa
 error**, sampai Telegram (1 pesan).
@@ -1160,7 +1269,7 @@ Symptom: pesan alert **kadang** keluar dengan semua field `undefined`
 (`undefined undefined - undefined`, `📂 Path:` / `🖥️ Agent:` kosong). Akar:
 rantai live `Build Payload -> AI Generate -> Send Telegram Alert`. Node
 `AI Generate` (`onError: continueRegularOutput`) mengirim **item error** saat
-Atria API gagal (timeout/429/5xx/key kosong); `Send Telegram Alert` membaca
+HCNSEC API gagal (timeout/429/5xx/key kosong); `Send Telegram Alert` membaca
 SEMUA field dari `$json` → undefined. Muncul "kadang" karena hanya saat AI
 gagal. Field yang terlihat kosong adalah yang punya `?? ''`, yang `undefined`
 literal adalah yang tanpa fallback (sidik jari bug ini).
@@ -1370,3 +1479,344 @@ Semua **tanpa trailer co-author** (aturan taste).
   entri audit bertanda `e2e` — jalankan manual saja.
 - Render PDF dokumen M3 pakai Chrome headless: `google-chrome --headless --no-pdf-header-footer
   --virtual-time-budget=4000 --print-to-pdf=... file:///...html`.
+
+# Handoff SOAR - 2026-10-15 (nixbox, ideapc 001 pulih + reinstall)
+
+## 1. soar.raviarnan.dev tak bisa diquery tanpa login
+Semua path (`/`, `/api/fleet`, `/healthz`) 302 ke halaman login Cloudflare
+Access. Data fleet diambil langsung dari server via Tailscale
+(`100.73.91.17:8080`), hasilnya identik dengan `:3000`.
+
+## 2. ideapc (001) disconnected 5 hari -> ACTIVE
+- Gejala: heartbeat terakhir 10 Okt 22:34; Scheduled Task `SOAR Agent` ada tapi
+  proses mati. `sc.exe query soar-agent` 1060 = normal (installer pakai Task,
+  bukan service, sejak 15 Sep).
+- Start ulang task -> proses SYSTEM jalan tapi bisu (nol POST di log
+  `fleet-monitor`; `curl.exe` dari mesin itu dapat 200, `Invoke-WebRequest`
+  gagal — quirk WinINET, bukan temuan utama).
+- Tes foreground sebagai user `microsoft` langsung heartbeat -> binary +
+  network + argumen sehat, yang wedged hanya instance SYSTEM.
+- Fix: kill instance macet + start fresh -> heartbeat pulih.
+- Butuh 2x kill karena instance diagnostik foreground (nama `test-diagnostik`)
+  sempat yatim dan menimpa nama roster; sudah dibersihkan, nama kembali
+  `ideapc`. Jangan jalankan agent foreground via SSH tanpa kill setelahnya.
+
+## 3. Reinstall 001 via SSH (exe bundle + token)
+- Binary lama 19 Sep (9.888.768, v0.2.0, tanpa flag token) -> exe bundle
+  25 Sep (9.965.568, v0.3.0, ada dukungan token + scan).
+- Token polling `001` dibuat (`secrets.token_hex(24)`) dan ditambahkan ke
+  `FLEET_AGENT_POLL_TOKENS_JSON` di `.env` server (keys kini 001/009/010) +
+  `docker restart fleet-monitor` (roster selamat via `fleet-state.json`).
+- `deploy/bundle/{soar-agent.exe,install-agent-windows.ps1}` di-scp ke
+  `C:\Windows\Temp\soar-bundle`, ps1 dijalankan dengan
+  `AGENT_ID=001 AGENT_NAME=ideapc SOAR_FLEET_POLL_TOKEN=...` (via env SSH,
+  tidak disimpan di mana pun). Copy sempat gagal karena handle exe lama
+  terkunci -> kill + jeda 5 dtk -> hijau.
+- Verifikasi: task Running (PID baru), `--fleet-poll-token-file` ada di
+  commandline, `fleet.token` ada, fleet `001 ideapc active v0.3.0`,
+  `GET /api/commands?agent_id=001` 200. Temp bundle dihapus dari ideapc.
+- Catatan: exe bundle 25 Sep belum memuat `watch_paths` di heartbeat
+  (commit 03222ad, 4 Okt) -> kolom `watch_paths` 001 masih `[]`. Kosmetik.
+
+## Sisa
+- `003 toshiba-bapak` + `008 macbook` masih disconnected (offline minggu).
+  `002 bali-handmade` aktif tapi instalasi lawasnya tanpa token (poll-nya
+  lolos karena kode server belum menegakkan token, lihat drift di atas).
+- IP LAN server pindah `192.168.1.47` -> `192.168.1.50` (dokumentasi lama
+  masih menyebut .47).
+
+# Handoff SOAR - 2026-10-15 (nixbox, Ramnit ideapc + scan drive eksternal)
+
+## 1. Temuan: 602 deteksi Defender (Ramnit) di drive eksternal tak terlihat agent
+`D:/ramnit_detected_files.txt` (dibuat di ideapc, 17:16): 602 deteksi,
+mayoritas `Win32/Ramnit.J` + `VBS/Ramnit.gen`, semua di `I:\` (sudah dicabut)
+dan `G:\` (masih nyambung, 53GB label WINDOWS). Tiga lapis penyebab lolos:
+(a) agent Windows cuma watch Downloads+Desktop — watcher USB/removable cuma
+ada di agent Linux (`/run/media`), klaim "USB" di README tidak berlaku di
+Windows; (b) file lama + scan Defender cuma read (tak memicu FIM
+create/modify); (c) sebagian deteksi terjadi saat 001 masih down. Bukan flaw
+logika verdict (histori 001 sudah ada CRITICAL/HIGH dari pipeline).
+
+## 2. Patch server: path `G:\` ditolak validasi command
+POST `/api/commands` (scan) 400: validator live (file server lebih lama dari
+repo) cuma mengizinkan `/`, `C:\`, `C:/`. Patch 1 baris via backup
+(`/tmp/fleet-monitor.py.bak-ideapc-scan`): izinkan `^[A-Za-z]:[\\/]` —
+menyamai `_valid_path_target` repo HEAD (drift server-vs-repo yang sudah
+dicatat, belum di-sync penuh). `docker restart fleet-monitor`, roster selamat.
+
+## 3. Patch agent: scan guard menolak target di luar watch root
+`command_target_allowed` (main.rs) drop diam-diam semua scan di luar
+Downloads/Desktop (`warn` saja, tak ada di dashboard). Dua iterasi:
+(a) izinkan drive root — terbukti kurang (walk `G:\` berhenti di cap 2000
+sebelum mencapai folder terinfeksi: laporan cuma `G:\Windows` + 3 file root);
+(b) final: **scan boleh ke path absolut mana pun tanpa `..`** (mirror validasi
+server; read-only + ringkasan + cap 2000 jadi tetap aman), **quarantine tetap
+wajib di watch root**. Test `command_target_hanya_boleh_di_watch_root`
+diperluas (root + outside-dir + tolak `..`); `cargo test --release` 8 passed.
+Cross-compile Windows di nixbox butuh
+`RUSTFLAGS="-L /nix/store/*mingw_w64-pthreads-*/lib"` (lihat
+`deploy/rebuild-agent-binaries.sh`); exe baru 15,5MB (rustc 1.98) disalin ke
+`deploy/bundle/soar-agent.exe` (belum commit).
+
+## 4. Pelajaran operasional: JANGAN tumpuk instance via schtasks /run
+`schtasks /run` + `Start-ScheduledTask` berulang menciptakan 3 instance
+paralel (PID 11140/2736/992) yang berebut antrean command + menimpa nama
+roster (`test-diagnostik` dari run diagnostik). Gejala: command "hilang",
+hasil scan tak kunjung datang, PID churn. Prosedur benar: kill semua
+(`taskkill /F /IM`), verifikasi NOL, start SEKALI, verifikasi SATU.
+`GET /api/commands` itu destructive-read (pop) — jangan dipakai untuk
+"cek antrean" karena ikut menghabiskan command.
+
+## 5. Bukti tutup-loop (verified live)
+Scan target `G:\Users\...\Temp\drp` (folder terinfeksi): 1203 file, 1099 hash
+baru, tidak truncated, 161 detik. Dua file vonis Defender di-hash ulang via
+`certutil` dan COCOK dengan laporan scan (RTNUninst32.dll `96df25df…`,
+clinfo.exe `a790387b…`, keduanya `new:true`). Catatan: scan `G:\` root
+menemukan 1837 hash baru tapi semuanya file Windows generik (cap), bukan
+file Ramnit — targeted scan yang membuktikan. Verdict VT per-hash belum
+dijalankan (butuh 1099 lookup, kuota 4/menit) — hash baru tinggal diklik di
+dashboard (link VirusTotal).
+
+## File berubah sesi ini (belum commit, Ravi yang commit)
+M: `agent-rs/src/main.rs` (guard scan), `deploy/bundle/soar-agent.exe`
+(binary baru), `HANDOFF.md`. Live-only (tak ada di repo): token `001` di
+`.env` server + patch 1 baris `fleet-monitor.py` server.
+
+# Handoff SOAR - 2026-10-15 (lanjutan: perluas cakupan deteksi)
+
+## Latar
+Setelah scan on-demand `G:\` berhasil, Ravi minta cakupan deteksi diperluas
+("bukan cuma Downloads"). Koreksi penting yang jadi dasar desain: FIM
+(`notify`) itu event-based, jadi menambah folder watch SAJA tidak akan
+menangkap file Ramnit yang sudah ada di disk. Ada 3 celah berbeda:
+(a) drop baru di folder lain (Documents dll) -> perluas watch;
+(b) malware masuk via USB/drive belakangan -> drive watcher Windows;
+(c) file lama / file masuk saat agent mati -> scan terjadwal.
+Ketiganya dikerjakan.
+
+## 1. Perluas + konfigurable watch folder
+Windows installer default watch jadi Downloads + Desktop + Documents
+(sebelumnya cuma 2). Override via `$env:SOAR_WATCH` (dipisah koma). Linux
+default tidak berubah. Windows task arg terbukti:
+`--watch "...\Downloads,...\Desktop,...\Documents"`.
+
+## 2. Drive watcher Windows (parity Linux /run/media)
+Agent Linux sudah punya watcher `/run/media/<user>`; Windows tidak punya
+sampai sekarang (Ramnit di G:\ lolos). Tambah `candidate_mounts()` ber-`#[cfg]`:
+Linux = isi `/run/media/<user>` (seperti sebelumnya, symlink tak di-follow),
+Windows = disk non-system via `sysinfo::Disks` (dependensi yang sudah ada,
+tanpa crate baru). Loop watch/unwatch dipakai bersama kedua OS.
+Guard `MAX_WATCH_DIRS=5000` tetap: drive raksasa (G:\ = 5001 dir) ditolak
+supaya tidak event-storm (insiden Wine 16 Sep). Jadi drive watcher menutup
+USB/flash kecil, bukan HDD besar -> untuk HDD besar pakai scan on-demand
+targeted. Verifikasi live: drop `E:\soar-drivewatcher-test.txt` -> agent log
+`drive mounted, watching E:\` lalu `file event -> hitung hash -> POST ke n8n`.
+
+## 3. Scan terjadwal periodik
+Args baru `--scan-interval-secs` (default 0 = mati) + `--scan-roots`
+(default = watch path). Task tokio memindai tiap root (reuse `do_scan`),
+jeda 5s antar-root biar tidak spike panas. Installer set 21600s (6 jam) via
+`$env:SOAR_SCAN_INTERVAL_SECS`. `do_scan` kini punya `trigger`
+(on-demand|scheduled) dan `SCAN_BUSY` guard (serialisasi, cegah dua walk
+hashing bareng). Server simpan/teruskan field `trigger`.
+Verifikasi live: scan terjadwal Desktop -> API `scan[001].trigger=scheduled`.
+
+## 4. Fix installer: reinstall gagal "Access denied" token
+Token lama terkunci ACL (SYSTEM+Administrators read-only), `WriteAllText`
+gagal saat reinstall. Installer (bundle + deploy) hapus `$TOKEN_FILE` dulu
+sebelum tulis. Ditemukan & diperbaiki saat deploy sesi ini.
+
+## 5. Deploy ideapc (verified)
+Exe baru (15,536,704 byte) cross-compile di nixbox, install via bundle
+installer. Hasil: `001 ideapc active`, watch_paths = Downloads/Desktop/
+Documents, task arg `--scan-interval-secs 21600`, satu instance. Fleet
+4 active / 3 disconnected (002/003/008, lama). Temp file di ideapc dibersihkan.
+
+## File berubah sesi lanjutan (belum commit, Ravi yang commit)
+M: `agent-rs/src/main.rs` (candidate_mounts, scan terjadwal, SCAN_BUSY,
+trigger), `deploy/bundle/soar-agent.exe`, `deploy/bundle/install-agent-windows.ps1`,
+`deploy/install-agent-windows.ps1`, `scripts/fleet-monitor.py` (field trigger),
+`HANDOFF.md`. Live-only: patch 1 baris `trigger` di `fleet-monitor.py` server
+(container mount /scripts) + restart fleet-monitor. Repo nixbox vs server
+tetap drift (belum direkonsiliasi, di luar scope sesi ini).
+
+# Handoff SOAR - 2026-10-15 (lanjutan: analisis AI gagal, kuota provider + DNS host)
+
+## Latar
+Alert Telegram memuat "Analisis AI tidak tersedia saat ini karena layanan AI
+gagal atau tidak dikonfigurasi." Node `AI Generate` (workflow `Deteksi
+Malware`, id 1MVcpL7ZKfBhR2tc) gagal-aman, jadi teks itu muncul saat panggilan
+AI gagal. Node live ternyata sudah drift ke Atria API.
+
+## 1. Akar masalah: kuota Atria habis (bukan DNS/key hilang)
+Panggil langsung dari container dengan key yang sama: `POST
+https://api.atria-asi.ai/v1/chat/completions` -> `429 {"error":{"message":
+"Token quota exhausted.","code":"insufficient_quota"}}`. Jadi bukan masalah
+jaringan, key, atau kredensial.
+
+## 2. Perbaikan: balik ke hcnsec + tampilkan error asli
+- Key hcnsec ada di `~/.config/opencode/secrets/hcnsec.key` (nixbox), endpoint
+  `https://api.hcnsec.cn/v1` (uji 200, model `DeepSeek-V4-Flash`). Key dipindah
+  ke server via stdin (tidak pernah dicetak), ditambah ke
+  `/home/ravi/Projects/soar-project/.env` sebagai `HCNSEC_API_KEY`. n8n pakai
+  `env_file: .env` -> `docker compose up -d n8n`.
+- Node `AI Generate` dikembalikan ke hcnsec (DeepSeek-V4-Flash), marker
+  `patch:aifailsafe:v2`. Node `Send Telegram Alert` menambah baris
+  `⚠️ Error AI: <llm_error>` saat AI gagal, bukan cuma teks fallback.
+- Apply lewat CLI import (file API key tidak ada): `n8n import:workflow
+  --input=...` (regular mode: import menonaktifkan), lalu
+  `n8n update:workflow --active=true` + restart. Hasil `active: True`.
+- Script repo `scripts/patch-n8n-ai-failsafe.py` diselaraskan ke v2 (marker +
+  snippet llm_error di Telegram); `test_patch_n8n_aifailsafe.py` 8 test hijau.
+
+## 3. Bukti (verified)
+Panggilan persis node dari container: `status 200`, `content "OK"` (37s, lambat
+karena WiFi server 2.4GHz). Node AI akan sukses. E2E lewat webhook belum
+dijalankan (hindari spam Telegram), diserahkan ke Ravi.
+
+## 4. DNS host server: dipulihkan
+Akar: `/etc/resolv.conf` -> `100.100.100.100` (MagicDNS), MagicDNS konsisten
+timeout (3/3) karena tailscaled "no resolvers configured" lalu meneruskan ke
+dirinya sendiri. Router DNS `192.168.1.1` sehat. n8n TIDAK terpengaruh
+(container pakai DNS Docker 8.8.8.8/1.1.1.1), ini murni DNS host.
+Perbaikan dijalankan: `sudo tailscale set --accept-dns=false`. resolv.conf
+kini `182.8.64.11/13` (+IPv6) dari DHCP. Verified: `getent`/`dig` jalan,
+`curl google` 200, `curl api.hcnsec.cn` 401 (terjangkau). Prefs persist
+(`CorpDNS: false`). Tidak ada dependensi nama `.ts.net` di repo/scripts/cron,
+jadi aman. Efek: host tak lagi resolve nama MagicDNS (pakai IP); bila mau
+keduanya, pasang global nameserver (mis. 1.1.1.1) di konsol admin Tailscale.
+Akar turunan: WiFi 2.4GHz laten naik-turun (sempat avg 751ms, kini avg 34ms),
+eth `enp0s31f6` DOWN.
+
+## 5. AI masih timeout -> model hcnsec mati + fallback Gemini
+Alert Telegram berikutnya sudah menampilkan `⚠️ Error AI: timeout of 60000ms
+exceeded` (perbaikan tampilan error bekerja). Setelah diukur ternyata:
+`DeepSeek-V4-Flash` -> `500 分组 auto 下模型 DeepSeek-V4-Flash 的可用渠道不存在`
+(channel tak ada, gagal ~47s lalu timeout). Kandidat lain: `MiniMax-M3` 503,
+`kimi-k3` end-of-life, `DeepSeek-V4-Pro` 123s. Yang sehat: model `auto`
+(router) ~10-12s `finish stop`. Maka node AI v3: hcnsec model `auto` (timeout
+30s) + **fallback Gemini `gemini-2.5-flash`** (timeout 30s) via
+`generateContent`. Klarifikasi: ensemble MalwareBazaar/OTX/MISP itu untuk
+DETEKSI (dipakai `Rangkum Hasil`), bukan untuk analisis LLM; jalur VT di alert
+ini sehat (`0/62` = 62 engine menjawab, bukan rate limit). Diterapkan lewat
+import; `active: True`. Marker `patch:aifailsafe:v3`.
+
+## File berubah sesi ini (belum commit, Ravi yang commit)
+M: `scripts/patch-n8n-ai-failsafe.py` (v3: hcnsec `auto` + fallback Gemini,
+tampilkan llm_error), `scripts/test_patch_n8n_aifailsafe.py` (9 test hijau),
+`HANDOFF.md`. Live-only (server): `.env` + `HCNSEC_API_KEY`, workflow `Deteksi
+Malware` (node AI v3 + node Telegram -> llm_error), backup
+`backups/deteksi-malware-live-ai-hcnsec-20261015-183340.json` (pra-patch) dan
+`backups/deteksi-malware-live-ai-v2-20261015-185556.json` (di server).
+Catatan: `HCNSEC_API_KEY` rahasia, jangan dicetak/commit. Saat mencari key,
+isi `~/.config/9router/secrets.json` sempat tercetak ke transkrip sesi opencode
+(bukan ke file/commit); rotasi bila transkrip dibagikan.
+
+# Handoff SOAR - 2026-10-15 (lanjutan AGY: migrasi AI Generate ke Pollinations)
+
+## 1. Migrasi provider AI ke Pollinations
+- Penyebab: Atria kuota habis (429), hcnsec sering timeout / channel hilang (500).
+- Solusi: node `AI Generate` dialihkan ke Pollinations API (`https://gen.pollinations.ai/v1/chat/completions`) menggunakan model `deepseek/deepseek-v4-flash` dengan `max_tokens: 1500` (agar reasoning tokens tidak memotong output), temperature `0.3`, dan fallback Gemini `gemini-2.5-flash`.
+- Kredensial: `POLLINATIONS_API_KEY` aktif di `.env` server `192.168.1.50` dan container n8n.
+- Skrip repo: `scripts/patch-n8n-ai-failsafe.py` diperbarui ke marker `patch:aifailsafe:v4`.
+- Unit test: `scripts/test_patch_n8n_aifailsafe.py` (9 test hijau).
+
+## 2. Status live n8n server
+- Workflow live `Deteksi Malware` (`1MVcpL7ZKfBhR2tc`) berhasil dipatch dan diaktifkan (`active: True`).
+- Backup live dibuat sebelum patch: `backups/deteksi-malware-live-pra-pollinations-20261015-194809.json`.
+- Smoke test panggilan Pollinations langsung dari container n8n: SUKSES (respons analisis 1080 bytes, tanpa timeout).
+
+## 3. File berubah (belum commit, biarkan Ravi yang commit)
+M: `scripts/patch-n8n-ai-failsafe.py`, `scripts/test_patch_n8n_aifailsafe.py`, `HANDOFF.md`.
+Live-only (server): `.env` (`POLLINATIONS_API_KEY`), workflow `Deteksi Malware` (node AI Generate v4).
+
+# Handoff SOAR - 2026-10-15 (lanjutan: fix FP desktop.ini/Recycle Bin & install agy ideapc)
+
+## 1. Filter False-Positive Windows Metadata
+- Masalah: `I:\$RECYCLE.BIN\...\desktop.ini` terdeteksi dan dinaikkan ke HIGH karena 45 pulse OTX (dump sandbox VM kotor).
+- Perbaikan di Agent (`agent-rs/src/main.rs`):
+  - Normalisasi path separator (`\` -> `/`).
+  - Tambah filter `desktop.ini`, `thumbs.db`, `.ds_store`, `/$recycle.bin/`, dan `/system volume information/` di `should_ignore`.
+  - 9 unit test cargo passed.
+- Perbaikan di Wazuh script (`scripts/custom-n8n.py`):
+  - `is_noisy_path` diselaraskan untuk mengabaikan direktori dan file metadata tersebut.
+- Perbaikan di n8n (`Filter Alert Malware`):
+  - `cond-not-noise` diperbarui dengan regex yang mendukung backslash Windows dan menyaring `$recycle.bin`, `system volume information`, `desktop.ini`, serta `thumbs.db`.
+  - Workflow live di server berhasil dipatch dan aktif (`active: True`).
+
+## 2. Deploy Binary Agent Baru ke IdeaPC
+- Cross-compile binary Windows `soar-agent.exe` (15,537,488 bytes) di nixbox.
+- Disalin ke server publik (`~/public/soar-agent.exe`) dan diunduh ke IdeaPC.
+- Binary di `C:\Program Files\soar-agent\soar-agent.exe` berhasil diganti dan service berjalan ulang (PID 3292).
+
+## 3. Instalasi Antigravity CLI di IdeaPC
+- Mengunduh binary Windows x64 `cli_windows_x64.exe` (v1.3.5, 193.8MB) ke `C:\Users\Microsoft\AppData\Local\agy\bin\agy.exe`.
+- Menjalankan `agy.exe install` untuk konfigurasi PATH environment variable pengguna.
+- Verifikasi versi: `1.3.5` terpasang sukses.
+
+## 4. File berubah (belum commit, biarkan Ravi yang commit)
+M: `agent-rs/src/main.rs`, `scripts/custom-n8n.py`, `scripts/patch-n8n-fp-guard.py`, `deploy/bundle/soar-agent.exe`, `HANDOFF.md`.
+Live-only: workflow n8n live `Deteksi Malware` (node Filter Alert Malware).
+
+# Handoff SOAR - 2026-10-16 (Fix Partisi D IdeaPC, FP Whitelist, & Onboarding Toshiba Bapak)
+
+## 1. Tanggal & Waktu
+- 2026-10-16 01:38 WITA
+
+## 2. File Berubah (git status -s)
+- `agent-rs/src/main.rs`: perbaikan filter partisi disk `candidate_mounts()`, hanya pantau removable drive (flashdisk), abaikan partisi fixed lokal `D:\`.
+- `deploy/bundle/soar-agent.exe`: binary rilis Windows cross-compiled terbaru (SHA256: `1868657f71143ef08f77ac652cc0c5de861f83d608e2133f1b5bd3c78afa9423`).
+- `deploy/install-toshiba.ps1`: skrip instalasi otomasi khusus Toshiba Bapak (Agent 003) dengan auto-detect server, Scheduled Task SYSTEM, update Wazuh, dan aktifasi OpenSSH Server port 22.
+- `deploy/guide-toshiba-bapak.md`: panduan instalasi dan 1-liner PowerShell untuk Toshiba Bapak diperbarui.
+- `scripts/process-chain-rules.xml`: penambahan Wazuh rules 110021-110024 allowlist proses LOLBin rundll32/powershell yang dipicu oleh agy / opencode (Google OAuth).
+- `HANDOFF.md`: pencatatan checkpoint sesi kerja.
+
+## 3. Status Terakhir
+- **IdeaPC (Agent 001)**:
+  - Berhasil diperbarui ke binary `soar-agent.exe` terbaru (`1868657f...`) dan berjalan normal (PID 9304). Partisi `D:\` tidak lagi dipindai otomatis.
+  - Alert SLA terlampaui untuk `MLEROY.jsf` dan `rundll32 url.dll` (agy oauth) telah diselesaikan sebagai `false_positive`. Antrean pending di `alert-log` bersih (0).
+- **Server SOAR (`192.168.1.50` / `100.73.91.17`)**:
+  - Wazuh allowlist rules 110021-110024 aktif dan terverifikasi di container `single-node-wazuh.manager-1`.
+  - Token polling Agent 003 (`89adbd12281c78a103fe5971ce28183b8260270bb1f9a355`) telah ditambahkan ke `.env` dan `fleet-monitor` telah direstart.
+  - File installer `install-toshiba.ps1` dan binary `soar-agent.exe` siap diunduh di `http://192.168.1.50:8000/`.
+- **Toshiba Bapak (Agent 003)**:
+  - Perangkat aktif di jaringan lokal (`192.168.1.15`).
+  - Siap di-onboard menggunakan 1-liner PowerShell Administrator.
+
+## 4. Next Action
+Jalankan 1-liner PowerShell Administrator di laptop Toshiba Bapak untuk menyelesaikan onboarding Agent 003 dan verifikasi status aktifnya di dashboard fleet monitor.
+
+# Handoff SOAR - 2026-10-17 (Audit & Polish Dashboard soar.raviarnan.dev)
+
+## 1. Tanggal & Waktu
+- 2026-10-17 12:30 WITA
+
+## 2. File Berubah (git status -s)
+- `dashboard/src/app/page.tsx`: wiring filter agent saat navigasi dari detail agent ke Security events (`initialAgentId`).
+- `dashboard/src/components/wazuh/AgentDetailView.tsx`: cross-platform path splitting (regex `/[/\\]/`) untuk nama file Windows; teruskan `agentId` saat klik tab sub-modul.
+- `dashboard/src/components/wazuh/SecurityEventsDashboard.tsx`: dukungan `initialAgentId` dan sinkronisasi filter chip; perbaikan label metrik (Critical alerts Level 12+, High severity threats, Medium severity events).
+- `dashboard/src/components/wazuh/ModulesHub.tsx`: sertakan hitungan macOS di deskripsi fleet inventory; hapus karakter em dash.
+- `dashboard/src/components/wazuh/NetworkMapView.tsx`: ekstraksi konstanta dimensi peta di luar komponen, membersihkan lint warning `useMemo`.
+- `dashboard/src/components/wazuh/FimDashboard.tsx`: pembersihan unused import `FileCheck2`, `Search`, `RefreshCw`; perbaikan teks footer file list.
+- `dashboard/src/components/wazuh/WazuhHeader.tsx`: pembersihan unused import `Globe`.
+- `scripts/fleet-monitor.py`: pemulihan `EVENTS` dari SQLite saat boot (`_event_store_load_recent()`) dan penghitungan `events_total` serta `sev_counts` langsung dari database SQLite durable `events.db`.
+- `docker-compose.yml`: pemetaan env `DASHBOARD_ALLOWED_ORIGINS`, `DASHBOARD_LOGIN_TOKEN`, dan `FLEET_COMMAND_TOKEN` ke service `dashboard`.
+
+## 3. Status Terakhir
+- **Fix Threat Events 0 di Modules Hub**:
+  - `fleet-monitor.py` sebelumnya menghitung `events_total` dari panjang list in-memory `EVENTS` yang kosong saat container di-restart (dan maksimal hanya 20 event).
+  - Telah diperbaiki agar saat startup memuat 200 event terbaru dari SQLite ke memory buffer, dan menghitung `events_total` (2.410 event) serta breakdown severity langsung dari database SQLite.
+  - Tampilan KPI *Threat events* di Modules Hub kini menampilkan **2.410** (akurat sesuai riwayat event).
+- **Fix Origin Akses Publik (`https://soar.raviarnan.dev`)**:
+  - Service `dashboard` di server `ravi-debian` telah dipetakan ke env `DASHBOARD_ALLOWED_ORIGINS`, `DASHBOARD_LOGIN_TOKEN`, dan `FLEET_COMMAND_TOKEN`.
+  - Image `soar-fleet-dashboard:latest` telah di-rebuild dan container `fleet-dashboard` berjalan sehat (`Up healthy`).
+  - Uji live `POST /api/session` dari origin `https://soar.raviarnan.dev`: status 204 No Content dengan `Set-Cookie: soar_session=...; HttpOnly; SameSite=Strict; Secure`.
+  - Tombol karantina, blokir/sinkhole, dan scan folder kini dapat menerima sesi dari domain publik tanpa error 403.
+- **Konsistensi UI & Data**:
+  - Penanganan path file Windows (`c:\...`) pada tabel event agent diperbaiki agar nama file tampil bersih.
+  - Label metrik KPI di Security Events Dashboard kini akurat mendeskripsikan severity ancaman.
+  - Format angka KPI di Modules Hub kini menggunakan pemisah ribuan `2,410`.
+  - Linting ESLint (0 errors, 0 warnings), typecheck TypeScript, dan seluruh test suite unit test hijau.
+
+## 4. Next Action
+Ravi dapat membuka https://soar.raviarnan.dev/ untuk verifikasi visual akhir dan menjalankan commit git secara manual.

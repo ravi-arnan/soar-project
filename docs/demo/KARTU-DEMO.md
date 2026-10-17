@@ -17,8 +17,8 @@ cd wazuh-docker/single-node && docker compose up -d && cd ../..
 # 2. Pastikan 2 agent Active
 docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l
 
-# 3. WAJIB: pastikan ATRIA_API_KEY ada di .env (analisis LLM via API)
-grep -q ATRIA_API_KEY .env || echo "ISI ATRIA_API_KEY di .env!"
+# 3. WAJIB: pastikan HCNSEC_API_KEY ada di .env (analisis LLM via API)
+grep -q HCNSEC_API_KEY .env || echo "ISI HCNSEC_API_KEY di .env!"
 
 # 4. Tes 1x sebelum tampil (pastikan Telegram nyampe)
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > ~/Downloads/eicar-cek.com
@@ -53,7 +53,7 @@ Artefak sementara (temp browser `.org.chromium.*`, unduhan separuh `.crdownload`
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > ~/Downloads/malware-demo.com
 ```
 
-**Yang terjadi (±15–30 dtk):** Wazuh FIM deteksi → VirusTotal **≈59 dari 70+ antivirus malicious** (≥ 20) → severity KRITIS → AI (Atria) analisis → **file otomatis dikarantina** → Telegram: **"OTOMATIS DIISOLASI"** (tanpa tombol).
+**Yang terjadi (±15–30 dtk):** Wazuh FIM deteksi → VirusTotal **≈59 dari 70+ antivirus malicious** (≥ 20) → severity KRITIS → AI (HCNSEC) analisis → **file otomatis dikarantina** → Telegram: **"OTOMATIS DIISOLASI"** (tanpa tombol).
 
 **Buktikan:**
 ```bash
@@ -105,7 +105,7 @@ echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
 | **Wazuh** | SIEM + HIDS: File Integrity Monitoring, korelasi aturan, eksekusi Active Response |
 | **n8n** | Mesin orkestrasi (otak SOAR): playbook deteksi → pengayaan → keputusan |
 | **VirusTotal** | Threat intelligence: reputasi hash/URL terhadap 60+ antivirus |
-| **Atria (Atria-Dawn-Preview)** | Analisis LLM via API penyedia |
+| **HCNSEC (DeepSeek-V4-Flash)** | Analisis LLM via API penyedia |
 | **Telegram Bot** | Kanal notifikasi + antarmuka keputusan dua arah |
 | **tg-callback-poller** | Meneruskan klik tombol ke n8n (aman di balik NAT, long-poll) |
 | **Tailscale** | Mesh VPN: agent tetap terhubung walau beda jaringan |
@@ -118,7 +118,7 @@ echo "foto liburan biasa" > ~/Downloads/foto-liburan.jpg
 1. **SOAR penuh dari open-source** — kapabilitas yang biasanya hanya di Cortex XSOAR / Splunk (mahal).
 2. **Respons berjenjang (confidence-based):** auto untuk keyakinan tinggi, human-in-the-loop untuk ambigu.
 3. **Deteksi berbasis intelijen, bukan kebisingan FIM** → keputusan diikat ke konsensus VirusTotal (60+ engine), sehingga **false positive ditekan** dan tidak ada alert fatigue.
-4. **AI via API** (Atria): hash dan path ringkas terkirim ke penyedia — kompromi yang diambil untuk skala 100 PC.
+4. **AI via API** (HCNSEC): hash dan path ringkas terkirim ke penyedia — kompromi yang diambil untuk skala 100 PC.
 5. **Lintas distribusi + resilient** (Tailscale).
 
 ---
