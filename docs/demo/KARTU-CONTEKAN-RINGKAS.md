@@ -8,7 +8,7 @@
 ```bash
 cd ~/Projects/soar-project && docker compose start
 cd wazuh-docker/single-node && docker compose start && cd ../..
-grep -q ATRIA_API_KEY .env || echo "ISI ATRIA_API_KEY di .env!"   # analisis LLM via Atria API
+grep -q HCNSEC_API_KEY .env || echo "ISI HCNSEC_API_KEY di .env!"   # analisis LLM via HCNSEC API
 docker exec single-node-wazuh.manager-1 /var/ossec/bin/agent_control -l       # 2 agent Active?
 docker exec single-node-wazuh.manager-1 grep block-domain /var/ossec/etc/shared/ar.conf  # ada?
 ```
@@ -75,4 +75,4 @@ rm -f ~/Downloads/malware-demo.com ~/Downloads/demoreview-*.txt ~/Downloads/foto
 ```
 
 ---
-**Komponen:** Wazuh (SIEM/HIDS+AR) · n8n (orkestrasi) · VirusTotal/GSB/URLScan (intel) · Atria (AI via API) · Telegram (notif+keputusan) · Tailscale (mesh). **2 agent:** ravi-zorin (Ubuntu) + rocky-server (Rocky 9).
+**Komponen:** Wazuh (SIEM/HIDS+AR) · n8n (orkestrasi) · VirusTotal/GSB/URLScan (intel) · HCNSEC (AI via API) · Telegram (notif+keputusan) · Tailscale (mesh). **2 agent:** ravi-zorin (Ubuntu) + rocky-server (Rocky 9).

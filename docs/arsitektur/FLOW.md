@@ -50,9 +50,9 @@ sequenceDiagram
 
     Note over N8N: AR TIDAK otomatis. Severity hanya<br/>menentukan apakah pesan diberi tombol aksi.
 
-    N8N->>N8N: 16. Build Payload<br/>(prompt severity-aware, model Atria-Dawn-Preview)
-    N8N->>Atria: 17. POST chat/completions<br/>(prompt, ATRIA_API_KEY)
-    Atria-->>N8N: 18. Response Bahasa Indonesia<br/>(choices[0].message.content)
+    N8N->>N8N: 16. Build Payload<br/>(prompt severity-aware, model DeepSeek-V4-Flash)
+    N8N->>HCNSEC: 17. POST chat/completions<br/>(prompt, HCNSEC_API_KEY)
+    HCNSEC-->>N8N: 18. Response Bahasa Indonesia<br/>(choices[0].message.content)
     N8N->>N8N: 19. Sanitize markdown chars
 
     alt should_active_response == true (HIGH/CRITICAL)
@@ -180,7 +180,7 @@ payload = {
     "rule": {"id": rule_id, "level": rule_level, "description": ...},
     "agent": {"id": agent_id, "name": agent_name},
     "timestamp": timestamp,
-    "model": "Atria-Dawn-Preview",
+    "model": "DeepSeek-V4-Flash",
     "data": {
         "sha256_after": hash_value,
         "path": file_path,
@@ -336,7 +336,7 @@ sengaja manual demi keamanan.
 
 ### Phase 6: AI Enrichment
 
-**Step 16-18: LLM analysis (Atria API)**
+**Step 16-18: LLM analysis (HCNSEC API)**
 
 Build Payload prepare severity-aware prompt:
 
@@ -353,8 +353,8 @@ Konteks: ancaman KRITIS. Berikan rekomendasi immediate response, isolasi sistem,
 Jelaskan tingkat bahaya file ini dan berikan rekomendasi tindakan yang harus diambil.
 ```
 
-Live sekarang: node `AI Generate` (Code) → `POST https://api.atria-asi.ai/v1/chat/completions`
-(model `Atria-Dawn-Preview`, `max_tokens` 1500, key `$env.ATRIA_API_KEY`).
+Live sekarang: node `AI Generate` (Code) → `POST https://api.hcnsec.cn/v1/chat/completions`
+(model `DeepSeek-V4-Flash`, `max_tokens` 1500, key `$env.HCNSEC_API_KEY`).
 Lihat `scripts/patch-n8n-ai-generate.py`.
 
 Response cleaning:
@@ -391,7 +391,7 @@ text: expr(`={{ $('Build Payload').first().json.severityIcon + " *" +
 ```
 
 **Failsafe AI (penting).** Rantai live `Build Payload -> AI Generate -> Send
-Telegram Alert`. Node `AI Generate` memanggil Atria API; kalau gagal
+Telegram Alert`. Node `AI Generate` memanggil HCNSEC API; kalau gagal
 (timeout/429/5xx/key kosong) node hanya boleh menghasilkan teks fallback, BUKAN
 melempar error. Sebelum `scripts/patch-n8n-ai-failsafe.py`, `onError:
 continueRegularOutput` membuat output berisi item error sehingga seluruh pesan
@@ -418,7 +418,7 @@ End-to-end latency dari file drop sampai Telegram delivery (observed):
 | 11-12: Workflow filter + ekstrak | ~30 ms |
 | 13-14: **VirusTotal scan** | **5-15 s** |
 | 15: Severity classifier | ~10 ms |
-| 16-18: **LLM inference (Atria API)** | **1-3 s** |
+| 16-18: **LLM inference (HCNSEC API)** | **1-3 s** |
 | 19-21: Markdown sanitize + Telegram (+ tombol) | ~1 s |
 | **TOTAL (deteksi → notifikasi)** | **≈10-20 detik** |
 
