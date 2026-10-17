@@ -1,36 +1,30 @@
-# Update Agent SOAR - toshiba-bapak
+# Setup & Update Agent SOAR - toshiba-bapak (Agent 003)
 
-## Masalah
+Panduan instalasi dan pembaruan SOAR Agent (Rust) serta Wazuh Agent pada laptop Toshiba Bapak (`toshiba-bapak`, IP LAN `192.168.1.15`, Tailscale `100.124.254.89`).
 
-Dashboard fleet menampilkan OS toshiba-bapak sebagai `unknown` karena binary masih versi lama (belum kirim field `os`).
+## Cara Cepat (1-Liner PowerShell Administrator)
 
-## Solusi
-
-Reinstall agent dengan binary terbaru dari GitHub release.
-
-### Jalankan di PowerShell (Admin)
+Buka **PowerShell sebagai Administrator** (tekan `Win + X`, pilih `Windows PowerShell (Admin)`), lalu salin dan jalankan satu baris perintah berikut:
 
 ```powershell
-# 1. Hapus service lama
-Stop-Service soar-agent -ErrorAction SilentlyContinue
-sc.exe delete soar-agent
-
-# 2. Set binary HTTPS yang sudah diverifikasi dan token polling agent 005
-$env:BINARY_URL = "<URL_HTTPS_BINARY_TERVERIFIKASI>"
-$env:SOAR_FLEET_POLL_TOKEN = "<TOKEN_POLLING_AGENT_005>"
-
-# 3. Install ulang dengan ID yang benar
-$env:AGENT_ID = "005"
-$env:AGENT_NAME = "toshiba-bapak"
-$env:SERVER = "100.73.91.17"
-powershell -File install-agent-windows.ps1
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; (New-Object Net.WebClient).DownloadFile("http://192.168.1.50:8000/install-toshiba.ps1", "$env:TEMP\install-toshiba.ps1"); powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-toshiba.ps1"
 ```
 
-### Verifikasi
+## Apa yang Dikerjakan Skrip Ini
 
-Cek di dashboard `http://soar.raviarnan.dev:3000` atau fleet API:
-```
-curl http://192.168.1.47:8080/api/fleet
+1. **Auto-Detect Server**: Mendeteksi koneksi ke server SOAR (`192.168.1.50` untuk jaringan lokal Wi-Fi atau `100.73.91.17` jika Tailscale aktif).
+2. **Download Binary**: Mengunduh binary terbaru `soar-agent.exe` yang sudah diperbaiki (tidak memindai drive fixed `D:\`, hanya removable/flashdisk).
+3. **Token Keamanan**: Mendaftarkan token polling resmi untuk Agent 003 ke `C:\ProgramData\soar-agent\fleet.token` dengan proteksi hak akses sistem.
+4. **Scheduled Task**: Memasang scheduled task `SOAR Agent` (berjalan sebagai akun `SYSTEM` saat komputer menyala dan saat pengguna login, dengan fitur auto-restart bila gagal).
+5. **Wazuh Agent**: Memeriksa `ossec.conf`, mengarahkan server ke IP aktif, mendaftarkan key Agent 003 jika diperlukan, dan merestart `WazuhSvc`.
+6. **Remote Management**: Mengaktifkan OpenSSH Server di port 22 agar pemeliharaan berikutnya dapat dilakukan otomatis dari jarak jauh.
+
+## Verifikasi Hasil
+
+Setelah skrip selesai, verifikasi status agent melalui terminal server atau browser:
+
+```bash
+curl -s http://192.168.1.50:8080/api/fleet | grep -o '"id": "003"[^}]*'
 ```
 
-Kolom OS seharusnya sudah muncul sebagai `windows`.
+Di dashboard Fleet (`http://192.168.1.50:8080` atau `http://localhost:3000`), Agent 003 `toshiba-bapak` akan berstatus `active` dengan OS `windows`.
