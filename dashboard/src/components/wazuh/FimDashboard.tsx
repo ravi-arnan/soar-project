@@ -9,11 +9,8 @@ import {
   HardDrive,
   Key,
   Shield,
-  FileCheck2,
   ChevronDown,
   X,
-  Search,
-  RefreshCw,
   ExternalLink,
 } from 'lucide-react';
 
@@ -228,7 +225,7 @@ export function FimDashboard() {
           </div>
 
           <div className="pt-2 border-t border-[#EBEFF5] text-[11px] text-[#8A94A6]">
-            Rows per page: 15
+            Total: {filteredFiles.length} file
           </div>
         </div>
 

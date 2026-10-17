@@ -85,7 +85,11 @@ export function SettingsView({ health, stats, generatedAt, online, refreshMs, on
             label="Agent aktif"
             detail={`${stats.active}/${stats.total} endpoint (${stats.rust} Rust agent)`}
           />
-          <StatusRow ok={true} label="Event tercatat" detail={`${stats.events_total} event`} />
+          <StatusRow
+            ok={true}
+            label="Event tercatat"
+            detail={`${stats.events_total?.toLocaleString('en-US') || 0} event`}
+          />
           <div className="pt-2 text-[12px] text-[#5A626F]">
             Update terakhir: {generatedAt ? formatWazuhTime(generatedAt) : '-'}
           </div>

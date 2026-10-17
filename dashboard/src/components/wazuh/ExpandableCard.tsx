@@ -13,7 +13,11 @@ interface ExpandableCardProps {
 
 /** Kartu gaya Wazuh dengan tombol expand fungsional: isi kartu dibuka ulang
  *  dalam modal fullscreen. Tutup via X, klik backdrop, atau Escape. */
-export function ExpandableCard({ title, actions, children }: ExpandableCardProps) {
+export const ExpandableCard = React.memo(function ExpandableCard({
+  title,
+  actions,
+  children,
+}: ExpandableCardProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -67,4 +71,4 @@ export function ExpandableCard({ title, actions, children }: ExpandableCardProps
       )}
     </>
   );
-}
+});

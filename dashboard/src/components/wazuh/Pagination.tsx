@@ -14,7 +14,7 @@ interface PaginationProps {
 }
 
 /** Footer paginasi bersama (diekstrak dari tabel yang tadinya menduplikasi). */
-export function Pagination({
+export const Pagination = React.memo(function Pagination({
   page,
   pageCount,
   total,
@@ -73,4 +73,4 @@ export function Pagination({
       </div>
     </div>
   );
-}
+});

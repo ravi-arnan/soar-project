@@ -41,27 +41,32 @@ function LaptopIcon({ dim }: { dim: boolean }) {
   );
 }
 
+const MAP_WIDTH = 640;
+const MAP_HEIGHT = 400;
+const CX = MAP_WIDTH / 2;
+const CY = MAP_HEIGHT / 2;
+
 /** Peta jaringan hub-and-spoke ala kartu Wazuh: server di tengah, agent di
  *  sekeliling sebagai ikon PC/laptop (bukan lingkaran). Garis hijau = active,
  *  merah = disconnected. Klik node = detail agent. */
 export function NetworkMapView({ agents, onSelectAgent }: NetworkMapViewProps) {
-  const W = 640;
-  const H = 400;
-  const cx = W / 2;
-  const cy = H / 2;
+  const W = MAP_WIDTH;
+  const H = MAP_HEIGHT;
+  const cx = CX;
+  const cy = CY;
 
   // fetchSnapshot() sudah menyaring 000 wazuh.manager (server itu sendiri),
   // jadi di sini semua agents = endpoint spoke.
   const nodes = useMemo(() => {
     const n = agents.length || 1;
-    const rx = W / 2 - 90;
-    const ry = H / 2 - 70;
+    const rx = MAP_WIDTH / 2 - 90;
+    const ry = MAP_HEIGHT / 2 - 70;
     return agents.map((a, i) => {
       const ang = (2 * Math.PI * i) / n - Math.PI / 2;
       return {
         agent: a,
-        x: cx + rx * Math.cos(ang),
-        y: cy + ry * Math.sin(ang),
+        x: CX + rx * Math.cos(ang),
+        y: CY + ry * Math.sin(ang),
         active: (a.status || '').toLowerCase() === 'active',
       };
     });

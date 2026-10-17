@@ -183,20 +183,23 @@ export function formatClock(iso: string): string {
   return d.toLocaleTimeString('en-GB', { hour12: false, timeZone: 'Asia/Makassar' });
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/json' } });
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
   return (await res.json()) as T;
 }
 
-export async function fetchSnapshot(): Promise<{
+export async function fetchSnapshot(signal?: AbortSignal): Promise<{
   snapshot: FleetSnapshot;
   events: FleetEvent[];
 }> {
-  const [snapshot, eventsRes] = await Promise.all([
-    getJson<FleetSnapshot>('/api/fleet'),
-    getJson<{ events: FleetEvent[] }>('/api/events'),
-  ]);
+  // Hanya fetch /api/fleet (ringan & cepat). Data event spesifik diambil
+  // per view via /api/events/history sesuai kebutuhan periode/filter.
+  const snapshot = await getJson<FleetSnapshot>('/api/fleet', signal);
   // 000 wazuh.manager adalah server itu sendiri (self-loopback), bukan agent:
   // keluarkan dari daftar + hitung ulang stats supaya dashboard hanya bicara
   // soal endpoint. Status manager tetap terpantau via health (Stack health).
@@ -211,7 +214,7 @@ export async function fetchSnapshot(): Promise<{
     rust: agents.filter((a) => a.type === 'rust').length,
     wazuh: agents.filter((a) => a.type === 'wazuh').length,
   };
-  return { snapshot, events: eventsRes.events || [] };
+  return { snapshot, events: [] };
 }
 
 export interface UseFleetResult {
@@ -224,9 +227,8 @@ export interface UseFleetResult {
 }
 
 /**
- * Poll `/api/fleet` + `/api/events` secara berkala (default 5s, sama dengan
- * auto-refresh dashboard lama). Kalau backend mati, snapshot terakhir tetap
- * ditampilkan dan `error` diisi.
+ * Poll `/api/fleet` secara berkala (default 5s).
+ * Mengabaikan re-render jika data esensial tidak berubah untuk hemat CPU/baterai.
  */
 export function useFleet(pollMs = 5000): UseFleetResult {
   const [snapshot, setSnapshot] = useState<FleetSnapshot>(EMPTY_SNAPSHOT);
@@ -241,7 +243,30 @@ export function useFleet(pollMs = 5000): UseFleetResult {
     inFlight.current = true;
     try {
       const data = await fetchSnapshot();
-      setSnapshot(data.snapshot);
+      setSnapshot((prev) => {
+        // Cek kesamaan struktural esensial untuk mencegah cascading re-render DOM
+        const prevStats = prev.stats;
+        const nextStats = data.snapshot.stats;
+        const prevHealth = prev.health;
+        const nextHealth = data.snapshot.health;
+        if (
+          prevStats.total === nextStats.total &&
+          prevStats.active === nextStats.active &&
+          prevStats.events_total === nextStats.events_total &&
+          prevHealth.n8n === nextHealth.n8n &&
+          prevHealth.gemini === nextHealth.gemini &&
+          prevHealth.wazuh_api === nextHealth.wazuh_api &&
+          prev.agents.length === data.snapshot.agents.length &&
+          prev.agents.every(
+            (a, idx) =>
+              a.id === data.snapshot.agents[idx]?.id &&
+              a.status === data.snapshot.agents[idx]?.status
+          )
+        ) {
+          return prev;
+        }
+        return data.snapshot;
+      });
       setEvents(data.events);
       setOnline(true);
       setError(null);
@@ -255,8 +280,6 @@ export function useFleet(pollMs = 5000): UseFleetResult {
   }, []);
 
   useEffect(() => {
-    // setTimeout(0) menunda fetch pertama keluar dari body effect supaya tidak
-    // memicu setState sinkron saat render (react-hooks/set-state-in-effect).
     const kickoff = setTimeout(load, 0);
     const timer = setInterval(load, pollMs);
     return () => {
@@ -391,35 +414,44 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
   const [data, setData] = useState<EventHistoryResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const inFlight = useRef(false);
   const url = `/api/events/history?${buildHistoryQuery(query)}`;
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setLoading(true);
+
     try {
-      const result = await getJson<EventHistoryResult>(url);
+      const result = await getJson<EventHistoryResult>(url, controller.signal);
       setData(result);
       setError(null);
-    } catch (e) {
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        return; // Dibatalkan oleh query baru yang lebih mutakhir
+      }
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      inFlight.current = false;
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   }, [url]);
 
   useEffect(() => {
-    const kickoff = setTimeout(() => {
-      setLoading(true);
-      load();
-    }, 0);
+    const kickoff = setTimeout(load, 0);
     const timer = setInterval(load, pollMs);
     return () => {
       clearTimeout(kickoff);
       clearInterval(timer);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
-  }, [url, load, pollMs]);
+  }, [load, pollMs]);
 
   return {
     events: data?.events ?? [],

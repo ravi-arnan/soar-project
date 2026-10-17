@@ -1,23 +1,58 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { WazuhHeader } from '@/components/wazuh/WazuhHeader';
 import { WazuhSidebar } from '@/components/wazuh/WazuhSidebar';
 import { ModulesHub } from '@/components/wazuh/ModulesHub';
-import { SecurityEventsDashboard } from '@/components/wazuh/SecurityEventsDashboard';
-import { AgentsManagement } from '@/components/wazuh/AgentsManagement';
-import { AgentDetailView } from '@/components/wazuh/AgentDetailView';
-import { FimDashboard } from '@/components/wazuh/FimDashboard';
-import { ThreatIntelView } from '@/components/wazuh/ThreatIntelView';
-import { MitreAttackView } from '@/components/wazuh/MitreAttackView';
-import { NetworkMapView } from '@/components/wazuh/NetworkMapView';
-import { SettingsView } from '@/components/wazuh/SettingsView';
 import { useFleet } from '@/lib/fleet';
+
+function ViewSkeleton() {
+  return (
+    <div className="p-8 text-center text-[#5A626F] text-sm animate-pulse bg-white border border-[#D3DAE6] rounded">
+      Memuat modul...
+    </div>
+  );
+}
+
+const SecurityEventsDashboard = dynamic(
+  () => import('@/components/wazuh/SecurityEventsDashboard').then((m) => m.SecurityEventsDashboard),
+  { loading: () => <ViewSkeleton /> }
+);
+const AgentsManagement = dynamic(
+  () => import('@/components/wazuh/AgentsManagement').then((m) => m.AgentsManagement),
+  { loading: () => <ViewSkeleton /> }
+);
+const AgentDetailView = dynamic(
+  () => import('@/components/wazuh/AgentDetailView').then((m) => m.AgentDetailView),
+  { loading: () => <ViewSkeleton /> }
+);
+const FimDashboard = dynamic(
+  () => import('@/components/wazuh/FimDashboard').then((m) => m.FimDashboard),
+  { loading: () => <ViewSkeleton /> }
+);
+const ThreatIntelView = dynamic(
+  () => import('@/components/wazuh/ThreatIntelView').then((m) => m.ThreatIntelView),
+  { loading: () => <ViewSkeleton /> }
+);
+const MitreAttackView = dynamic(
+  () => import('@/components/wazuh/MitreAttackView').then((m) => m.MitreAttackView),
+  { loading: () => <ViewSkeleton /> }
+);
+const NetworkMapView = dynamic(
+  () => import('@/components/wazuh/NetworkMapView').then((m) => m.NetworkMapView),
+  { loading: () => <ViewSkeleton /> }
+);
+const SettingsView = dynamic(
+  () => import('@/components/wazuh/SettingsView').then((m) => m.SettingsView),
+  { loading: () => <ViewSkeleton /> }
+);
 
 export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentView, setCurrentView] = useState<string>('modules');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('004');
+  const [eventsAgentFilter, setEventsAgentFilter] = useState<string | undefined>(undefined);
 
   const [refreshMs, setRefreshMs] = useState(() => {
     try {
@@ -116,6 +151,10 @@ export default function Home() {
         breadcrumbs={getBreadcrumbs()}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         online={online}
+        stats={stats}
+        health={health}
+        onNavigate={(viewId) => setCurrentView(viewId)}
+        onRefresh={refresh}
       />
 
       {/* Slide-out Sidebar Drawer */}
@@ -165,6 +204,7 @@ export default function Home() {
             onSelectAgent={handleSelectAgent}
             onOpenAgents={() => setCurrentView('agents')}
             onRefresh={refresh}
+            initialAgentId={eventsAgentFilter}
           />
         )}
 
@@ -181,10 +221,15 @@ export default function Home() {
           <AgentDetailView
             agentId={effectiveAgentId}
             agent={selectedAgent}
-            onNavigateTab={(tab) => {
-              if (tab === 'Security events') setCurrentView('security-events');
-              if (tab === 'Integrity monitoring') setCurrentView('integrity-monitoring');
-              if (tab === 'Threat Intel') setCurrentView('threat-intel');
+            onNavigateTab={(tab, agentId) => {
+              if (tab === 'Security events') {
+                setEventsAgentFilter(agentId);
+                setCurrentView('security-events');
+              } else if (tab === 'Integrity monitoring') {
+                setCurrentView('integrity-monitoring');
+              } else if (tab === 'Threat Intel') {
+                setCurrentView('threat-intel');
+              }
             }}
           />
         )}
