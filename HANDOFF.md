@@ -1,6 +1,6 @@
 # Handoff SOAR - 2026-10-17 (Audit UI, Interaktivitas Top Navbar & Optimalisasi Stack)
 
-## Status Terakhir (Checkpoint: 17 Oktober 2026, 15:24 WIB)
+## Status Terakhir (Checkpoint: 17 Oktober 2026, 23:10 WIB - Sesi Ditutup & Pushed)
 
 ### 1. Rangkuman Perubahan Utama
 - **Aktivasi Tombol Top Navigation Bar ([WazuhHeader.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/WazuhHeader.tsx))**:
@@ -16,59 +16,23 @@
 - **Integrasi LLM & Failsafe**:
   - Rantai n8n diarahkan ke provider HCNSEC (`DeepSeek-V4-Flash`) dengan failsafe error handling agar kegagalan API tidak memutus alur pesan Telegram.
 
-### 2. Daftar File Diubah
-- Frontend:
-  - `dashboard/src/app/page.tsx`
-  - `dashboard/src/components/wazuh/WazuhHeader.tsx`
-  - `dashboard/src/components/wazuh/WazuhSidebar.tsx`
-  - `dashboard/src/components/wazuh/SettingsView.tsx`
-  - `dashboard/src/components/wazuh/ModulesHub.tsx`
-  - `dashboard/src/components/wazuh/ExpandableCard.tsx`
-  - `dashboard/src/components/wazuh/Pagination.tsx`
-  - `dashboard/src/components/wazuh/SecurityEventsDashboard.tsx`
-  - `dashboard/src/components/wazuh/AgentDetailView.tsx`
-  - `dashboard/src/components/wazuh/FimDashboard.tsx`
-  - `dashboard/src/components/wazuh/NetworkMapView.tsx`
-  - `dashboard/src/lib/fleet.ts`
-- Backend & Scripts:
-  - `scripts/fleet-monitor.py`
-  - `scripts/health-monitor.py`
-  - `scripts/custom-n8n.py`
-  - `scripts/patch-n8n-ai-generate.py`
-  - `scripts/patch-n8n-ai-failsafe.py`
-  - `scripts/patch-n8n-fp-guard.py`
-  - `scripts/patch-n8n-noindicator.py`
-  - `scripts/patch-n8n-systemfile.py`
-  - `scripts/patch-n8n-drop-ollama.py`
-  - `scripts/process-chain-rules.xml`
-  - `scripts/test_patch_n8n_aifailsafe.py`
-  - `scripts/test_patch_n8n_systemfile.py`
-- Agent & Deployment:
-  - `agent-rs/Cargo.toml`
-  - `agent-rs/src/main.rs`
-  - `deploy/install-agent-windows.ps1`
-  - `deploy/bundle/install-agent-windows.ps1`
-  - `deploy/bundle/soar-agent.exe`
-  - `deploy/guide-toshiba-bapak.md`
-  - `deploy/install-toshiba.ps1`
-- Dokumentasi & Konfigurasi:
-  - `HANDOFF.md`
-  - `.env.example`
-  - `docs/arsitektur/ARCHITECTURE.md`
-  - `docs/arsitektur/FLOW.md`
-  - `docs/demo/KARTU-DEMO.md`
-  - `docs/demo/KARTU-CONTEKAN-RINGKAS.md`
-  - `docs/diagrams/fig-3.3-arsitektur.mmd`
-  - `docs/diagrams/workflow-malware.mmd`
-  - `docs/panduan/DEPLOYMENT.md`
+### 2. Daftar File Diubah & Status Git
+Seluruh 40 file telah diuji dan di-commit ke branch `main`, serta di-push ke `origin/main` (`fc2bc86..4194652`):
+- `feat(dashboard): interaktivitas top navbar, drawer navigasi, dan dynamic code-splitting` (`3bd1dfa`)
+- `perf(backend): threading http server, ttl caching, dan wal indexing sqlite` (`8801540`)
+- `chore(deploy): profile release agent rust dan bundle windows toshiba` (`5d8a869`)
+- `docs: sinkronisasi arsitektur, flow diagram, kartu demo, dan handoff 17 okt` (`4194652`)
+
+Working directory lokal saat ini bersih (*clean*).
 
 ### 3. Status Verifikasi
 - Frontend Suite (`npm run check`): 100% PASS (6 commands test, 1 placeholder test, 7 events test, 1 session test, 1 session rate limit test, ESLint clean, TypeScript clean, Next.js build clean).
 - Backend Suite (`python3 -m unittest`): 100% PASS (89 tests).
+- Rust Agent (`cargo test`): 100% PASS (9 tests).
 - Server Remote (`ravi-debian`): Image `soar-fleet-dashboard:latest` ter-rebuild, container `fleet-dashboard` berjalan sehat (Up, healthy) dan merespons HTTP 200 OK.
 
 ### 4. Next Action
-Lakukan verifikasi visual di browser pada https://soar.raviarnan.dev/ dan jalankan git commit secara manual untuk menyimpan checkpoint perubahan ke repository.
+Lanjutkan milestone M5 (migrasi OTX API Key ke n8n credential via `httpHeaderAuth`) atau M4 (uji konsistensi dan ketahanan LLM) pada sesi berikutnya.
 
 ---
 
