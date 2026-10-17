@@ -7,7 +7,7 @@ Dua lapis:
      - 'AI Generate' sukses -> spread field Build Payload + ai_response bersih.
      - 'AI Generate' gagal (httpRequest throw) -> TIDAK melempar, field utuh,
        ai_response = fallback, llm_error terisi.
-     - 'AI Generate' tanpa ATRIA_API_KEY -> fallback, tidak memanggil HTTP.
+     - 'AI Generate' tanpa HCNSEC_API_KEY -> fallback, tidak memanggil HTTP.
      - Template Telegram: dievaluasi sebagai ekspresi JS; tidak boleh ada
        'undefined' walau $json rusak ({}), karena field diambil dari 'Build
        Payload'.
@@ -64,7 +64,8 @@ def tg_expression():
 
 
 def run_template(json_obj, build_payload):
-    body = r"""
+    body = (
+        r"""
 (() => {
   const $ = (name) => {
     if (name !== 'Build Payload') throw new Error('node tak terduga: ' + name);
@@ -74,9 +75,10 @@ def run_template(json_obj, build_payload):
   const out = (new Function('$json', '$', 'return (' + expr + ')')(__JSON__, $));
   console.log(JSON.stringify({ out }));
 })();
-""".replace("__BP__", json.dumps(build_payload)).replace(
-        "__EXPR__", json.dumps(tg_expression())
-    ).replace("__JSON__", json.dumps(json_obj))
+""".replace("__BP__", json.dumps(build_payload))
+        .replace("__EXPR__", json.dumps(tg_expression()))
+        .replace("__JSON__", json.dumps(json_obj))
+    )
     proc = subprocess.run(
         ["node", "-e", body], capture_output=True, text=True, timeout=60
     )
@@ -123,11 +125,15 @@ class TransformasiTest(unittest.TestCase):
     def test_patch_telegram_dan_idempoten(self):
         nodes = self.make_nodes()
         self.assertTrue(
-            MODULE.patch_telegram(nodes, MODULE.TG_NAME, MODULE.TG_TEXT, MODULE.TG_MARKER)
+            MODULE.patch_telegram(
+                nodes, MODULE.TG_NAME, MODULE.TG_TEXT, MODULE.TG_MARKER
+            )
         )
         self.assertIn(MODULE.TG_MARKER, nodes[1]["parameters"]["text"])
         self.assertFalse(
-            MODULE.patch_telegram(nodes, MODULE.TG_NAME, MODULE.TG_TEXT, MODULE.TG_MARKER)
+            MODULE.patch_telegram(
+                nodes, MODULE.TG_NAME, MODULE.TG_TEXT, MODULE.TG_MARKER
+            )
         )
 
     def test_node_hilang_system_exit(self):
@@ -150,7 +156,7 @@ class AiNodeTest(unittest.TestCase):
             r"""
 (async () => {
   const helpers = { httpRequest: async () => ({ choices: [{ message: { content: 'Bahaya **tinggi** [isolasi]' } }] }) };
-  const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { ATRIA_API_KEY: 'k' }))[0].json;
+  const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { POLLINATIONS_API_KEY: 'k' }))[0].json;
   console.log(JSON.stringify(r));
 })();
 """.replace("__BASE__", json.dumps(self.BASE))
@@ -165,14 +171,17 @@ class AiNodeTest(unittest.TestCase):
             r"""
 (async () => {
   const helpers = { httpRequest: async () => { throw new Error('ETIMEDOUT 60s'); } };
-  const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { ATRIA_API_KEY: 'k' }))[0].json;
+  const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { POLLINATIONS_API_KEY: 'k' }))[0].json;
   console.log(JSON.stringify(r));
 })();
 """.replace("__BASE__", json.dumps(self.BASE))
         )
         self.assertEqual(out["filename"], "eicar.com")
         self.assertEqual(out["severity"], "CRITICAL")
-        self.assertEqual(out["ai_response"], "Analisis AI tidak tersedia saat ini karena layanan AI gagal atau tidak dikonfigurasi.")
+        self.assertEqual(
+            out["ai_response"],
+            "Analisis AI tidak tersedia saat ini karena layanan AI gagal atau tidak dikonfigurasi.",
+        )
         self.assertIn("ETIMEDOUT", out["llm_error"])
 
     def test_tanpa_key_fallback_tanpa_http(self):
@@ -187,8 +196,28 @@ class AiNodeTest(unittest.TestCase):
 """.replace("__BASE__", json.dumps(self.BASE))
         )
         self.assertEqual(out["called"], 0)
-        self.assertIn("ATRIA_API_KEY", out["r"]["llm_error"])
+        self.assertIn("POLLINATIONS_API_KEY", out["r"]["llm_error"])
         self.assertEqual(out["r"]["filename"], "eicar.com")
+
+    def test_fallback_gemini_saat_pollinations_gagal(self):
+        out = run_js(
+            r"""
+(async () => {
+  let n = 0;
+  const helpers = { httpRequest: async () => {
+    n++;
+    if (n === 1) throw new Error('pollinations timeout');
+    return { candidates: [{ content: { parts: [{ text: 'Analisis dari **Gemini**' }] } }] };
+  }};
+  const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { POLLINATIONS_API_KEY: 'k', GEMINI_API_KEY: 'g' }))[0].json;
+  console.log(JSON.stringify({ r, n }));
+})();
+""".replace("__BASE__", json.dumps(self.BASE))
+        )
+        self.assertEqual(out["n"], 2)
+        self.assertEqual(out["r"]["ai_response"], "Analisis dari Gemini")
+        self.assertIsNone(out["r"]["llm_error"])
+        self.assertEqual(out["r"]["llm_model"], "gemini:2.5-flash")
 
 
 class TemplateTest(unittest.TestCase):

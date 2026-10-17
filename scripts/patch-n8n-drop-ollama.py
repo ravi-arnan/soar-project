@@ -9,7 +9,7 @@ yang tersisa (dulu nama model lokal) menjadi model yang benar-benar dipakai.
 Yang dilakukan:
   1. Hapus node `Preload Model` dan `Ollama Generate`.
   2. Hapus semua edge yang menyentuh node tersebut (sumber maupun tujuan).
-  3. Update `model: 'llama3.2:3b'` -> `'Atria-Dawn-Preview'` di jsCode node
+  3. Update `model: 'llama3.2:3b'` -> `'DeepSeek-V4-Flash'` di jsCode node
      Ekstrak Alert / Ekstrak Chain (field inert, hanya penanda informasi).
 
 Jalankan DI ravi-debian:
@@ -31,7 +31,7 @@ BACKUP_DIR = os.path.join(os.path.dirname(__file__), "..", "backups")
 WORKFLOW_ID_DEFAULT = "1MVcpL7ZKfBhR2tc"
 DROP_NODES = ("Preload Model", "Ollama Generate")
 OLD_MODEL = "llama3.2:3b"
-NEW_MODEL = "Atria-Dawn-Preview"
+NEW_MODEL = "DeepSeek-V4-Flash"
 
 
 def read_file(p):

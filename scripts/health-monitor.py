@@ -13,7 +13,7 @@ disk supaya transisi tidak dikirim ulang tiap restart.
 Cek:
   - Wazuh Manager API   -> tiap agent: active? (disconnected = blind spot)
   - n8n                 -> /healthz reachable
-  - LLM API             -> kunci penyedia (mis. GEMINI_API_KEY/ATRIA_API_KEY) ada
+  - LLM API             -> kunci penyedia (mis. GEMINI_API_KEY/HCNSEC_API_KEY) ada
 
 Env (lihat .env.example):
   TELEGRAM_BOT_TOKEN   token bot (wajib)

@@ -35,10 +35,10 @@ WORKFLOW_ID = "1MVcpL7ZKfBhR2tc"  # Deteksi Malware (live)
 # (regex literal & .test di kiri) bikin IF error "convert to boolean"
 # (exec 719/720). Daftar pola mirror should_ignore() agent-rs.
 NOISE_PATTERN = (
-    r"/\/(dosdevices|\.git|node_modules|__pycache__|\.cache|cache)\/"
+    r"/[\\/](dosdevices|\.git|node_modules|__pycache__|\.cache|cache|\$recycle\.bin|system volume information)[\\/]"
     r"|\.db-(wal|shm|journal)$"
     r"|\.(tmp|log|swp|iso|dmg)$"
-    r"|~$|\.ds_store$|thumbs\.db$/i"
+    r"|~$|\.ds_store$|[\\/]?(desktop\.ini|thumbs\.db)$/i"
 )
 PATH_EXPR = (
     "($json.body ?? $json).syscheck?.path "

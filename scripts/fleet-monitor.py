@@ -32,7 +32,7 @@ import urllib.request
 import uuid
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import PurePosixPath, PureWindowsPath
 from urllib.parse import parse_qs, urlparse
 
@@ -100,6 +100,12 @@ EVENTS_RETENTION_DAYS = int(os.environ.get("FLEET_EVENTS_RETENTION_DAYS", "90") 
 EVENTS_MAX_ROWS = int(os.environ.get("FLEET_EVENTS_MAX_ROWS", "200000") or 200000)
 EVENTS_PRUNE_EVERY = 100  # prune tiap N insert (hindari thread terpisah)
 _events_insert_count = 0
+_EVENT_STATS_CACHE = {
+    "ts": 0,
+    "total": 0,
+    "severity": {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "UNVERIFIED": 0, "INFO": 0},
+}
+_EVENT_STATS_TTL = 10  # detik (hindari SQLite scan tiap 5s poll)
 
 # Wazuh Indexer (OpenSearch) untuk riwayat penuh alert Wazuh historis (semua
 # rule, bukan cuma yang lewat pipeline). Kosong = source indexer nonaktif
@@ -408,12 +414,22 @@ def _get(url, headers=None, timeout=10):
     return urllib.request.urlopen(req, timeout=timeout, context=_INSECURE)
 
 
-def check_http(url):
+_HEALTH_CACHE = {}
+_HEALTH_CACHE_TTL = 15  # detik (hindari blocking HTTP connection tiap poll dashboard)
+
+
+def check_http(url, timeout=3):
+    now = time.time()
+    cached = _HEALTH_CACHE.get(url)
+    if cached and now - cached["ts"] < _HEALTH_CACHE_TTL:
+        return cached["ok"]
     try:
-        with _get(url) as r:
-            return 200 <= r.status < 300
+        with _get(url, timeout=timeout) as r:
+            ok = 200 <= r.status < 300
     except Exception:
-        return False
+        ok = False
+    _HEALTH_CACHE[url] = {"ok": ok, "ts": now}
+    return ok
 
 
 def _fetch_wazuh_once(base_url, cfg):
@@ -547,12 +563,34 @@ def build_fleet(cfg):
         "wazuh_api": len(wazuh_agents) > 0,
     }
 
-    # Severity summary untuk donut chart (dari EVENTS)
-    sev_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "UNVERIFIED": 0, "INFO": 0}
-    for ev in EVENTS:
-        sev = ev.get("severity", "INFO")
-        if sev in sev_counts:
-            sev_counts[sev] += 1
+    # Severity summary dan total event: prioritaskan dari cache / SQLite durable bila tersedia
+    now_ts = time.time()
+    if now_ts - _EVENT_STATS_CACHE["ts"] < _EVENT_STATS_TTL:
+        events_total = _EVENT_STATS_CACHE["total"]
+        sev_counts = dict(_EVENT_STATS_CACHE["severity"])
+    else:
+        events_total = len(EVENTS)
+        sev_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "UNVERIFIED": 0, "INFO": 0}
+        try:
+            with closing(_db()) as conn:
+                row = conn.execute("SELECT count(*) FROM events WHERE source = 'soar'").fetchone()
+                if row and row[0] is not None:
+                    events_total = int(row[0])
+                cur = conn.execute(
+                    "SELECT severity, count(*) FROM events WHERE source = 'soar' GROUP BY severity"
+                )
+                for r in cur.fetchall():
+                    sev = (r[0] or "INFO").upper()
+                    if sev in sev_counts:
+                        sev_counts[sev] += r[1]
+                _EVENT_STATS_CACHE["total"] = events_total
+                _EVENT_STATS_CACHE["severity"] = dict(sev_counts)
+                _EVENT_STATS_CACHE["ts"] = now_ts
+        except Exception:
+            for ev in EVENTS:
+                sev = (ev.get("severity") or "INFO").upper()
+                if sev in sev_counts:
+                    sev_counts[sev] += 1
     active = sum(1 for a in fleet if a["status"] == "active")
     rust_count = sum(1 for a in fleet if a["type"] == "rust")
     wazuh_count = sum(1 for a in fleet if a["type"] == "wazuh")
@@ -567,7 +605,7 @@ def build_fleet(cfg):
             "rust": rust_count,
             "wazuh": wazuh_count,
             "capacity_demo": "100 workstation ready (scalable, hash-only 1-2 KB per event)",
-            "events_total": len(EVENTS),
+            "events_total": events_total,
             "severity": sev_counts,
         },
         "agents": fleet,
@@ -1017,8 +1055,10 @@ def _to_utc_iso(value):
         n = int(v)
         if n > 10**12:
             n /= 1000
-        return datetime.fromtimestamp(n, tz=timezone.utc).isoformat().replace(
-            "+00:00", "Z"
+        return (
+            datetime.fromtimestamp(n, tz=timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z")
         )
     try:
         s = v.replace("Z", "+00:00")
@@ -1076,6 +1116,8 @@ def _event_store_init():
                     source TEXT NOT NULL DEFAULT 'soar'
                 )"""
             )
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id, ts)"
@@ -1083,9 +1125,33 @@ def _event_store_init():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_events_sev ON events(severity, ts)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_source_ts ON events(source, ts)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_events_source_sev ON events(source, severity)"
+            )
         print(f"event store siap: {EVENTS_DB}", flush=True)
+        _event_store_load_recent()
     except Exception as e:
         print(f"event store init gagal (riwayat nonaktif): {e}", flush=True)
+
+
+def _event_store_load_recent():
+    """Muat event terbaru dari SQLite ke memory buffer EVENTS saat startup."""
+    global EVENTS
+    try:
+        with closing(_db()) as conn:
+            cur = conn.execute(
+                "SELECT * FROM events WHERE source = 'soar' ORDER BY ts DESC LIMIT ?",
+                (EVENTS_MAX,),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            if rows:
+                EVENTS = list(reversed(rows))
+                print(f"event store: {len(EVENTS)} event dimuat ke ring buffer", flush=True)
+    except Exception as e:
+        print(f"event store load recent error: {e}", flush=True)
 
 
 def _event_store_insert(ev):
@@ -1101,6 +1167,7 @@ def _event_store_insert(ev):
                 _event_row(ev),
             )
         _events_insert_count += 1
+        _EVENT_STATS_CACHE["ts"] = 0  # Invalidate agar /api/fleet langsung hitung ulang
         if _events_insert_count % EVENTS_PRUNE_EVERY == 0:
             _event_store_prune()
     except Exception as e:
@@ -1109,7 +1176,9 @@ def _event_store_insert(ev):
 
 def _event_store_prune(now=None):
     """Buang event lebih tua dari retensi, lalu cap jumlah baris (terbaru menang)."""
-    cutoff = _to_utc_iso((now or datetime.now(WITA)) - timedelta(days=EVENTS_RETENTION_DAYS))
+    cutoff = _to_utc_iso(
+        (now or datetime.now(WITA)) - timedelta(days=EVENTS_RETENTION_DAYS)
+    )
     try:
         with closing(_db()) as conn, conn:
             conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
@@ -1138,7 +1207,7 @@ def _event_store_query(since=None, until=None, severity=None, agent_id=None, q=N
     if severity:
         where.append("severity IN (%s)" % ",".join("?" * len(severity)))
         params.extend(severity)
-    for token in (q or []):
+    for token in q or []:
         like = f"%{token}%"
         where.append(
             "(path LIKE ? OR hash LIKE ? OR url LIKE ? OR agent LIKE ?"
@@ -1177,12 +1246,25 @@ def _indexer_search(since, until, size):
         "query": {
             "bool": {
                 "filter": [
-                    {"range": {"@timestamp": {"gte": since or "now-90d", "lte": until or "now"}}}
+                    {
+                        "range": {
+                            "@timestamp": {
+                                "gte": since or "now-90d",
+                                "lte": until or "now",
+                            }
+                        }
+                    }
                 ]
             }
         },
         "_source": [
-            "@timestamp", "timestamp", "rule", "agent", "syscheck", "data", "location",
+            "@timestamp",
+            "timestamp",
+            "rule",
+            "agent",
+            "syscheck",
+            "data",
+            "location",
         ],
     }
     req = urllib.request.Request(
@@ -1215,9 +1297,12 @@ def _indexer_map(hit):
     except (TypeError, ValueError):
         level = 0
     severity = (
-        "CRITICAL" if level >= 12
-        else "HIGH" if level >= 7
-        else "MEDIUM" if level >= 5
+        "CRITICAL"
+        if level >= 12
+        else "HIGH"
+        if level >= 7
+        else "MEDIUM"
+        if level >= 5
         else "INFO"
     )
     h = (
@@ -1260,10 +1345,14 @@ def _merge_history(soar_rows, wazuh_rows, dedup=True):
         if e.get("path") and e["path"] not in ("", "-"):
             keys.add((aid, "p", e["path"]))
     kept = [
-        e for e in wazuh_rows
-        if not (e.get("hash") and (e.get("agent_id"), "h", str(e["hash"]).lower()) in keys)
+        e
+        for e in wazuh_rows
+        if not (
+            e.get("hash") and (e.get("agent_id"), "h", str(e["hash"]).lower()) in keys
+        )
         and not (
-            e.get("path") and e["path"] not in ("", "-")
+            e.get("path")
+            and e["path"] not in ("", "-")
             and (e.get("agent_id"), "p", e["path"]) in keys
         )
     ]
@@ -1304,8 +1393,15 @@ def _parse_csv(value):
 
 
 def build_event_history(
-    since=None, until=None, limit=None, offset=0,
-    severity=None, agent_id=None, q=None, source="all", dedup=True,
+    since=None,
+    until=None,
+    limit=None,
+    offset=0,
+    severity=None,
+    agent_id=None,
+    q=None,
+    source="all",
+    dedup=True,
 ):
     """Riwayat event gabungan (SOAR SQLite + Wazuh Indexer) untuk rentang waktu."""
     started = time.time()
@@ -1338,9 +1434,11 @@ def build_event_history(
         tokens = [t.lower() for t in (q or [])]
         if tokens:
             wazuh_rows = [
-                e for e in wazuh_rows
+                e
+                for e in wazuh_rows
                 if all(
-                    t in " ".join(
+                    t
+                    in " ".join(
                         str(e.get(k, ""))
                         for k in ("path", "hash", "url", "agent", "rule_desc")
                     ).lower()
@@ -1351,7 +1449,7 @@ def build_event_history(
     merged = _merge_history(soar_rows, wazuh_rows, dedup)
     merged.sort(key=lambda e: e.get("ts") or "", reverse=True)
     return {
-        "events": merged[offset: offset + limit],
+        "events": merged[offset : offset + limit],
         "total": len(merged),
         "limit": limit,
         "offset": offset,
@@ -1792,6 +1890,7 @@ class Handler(BaseHTTPRequestHandler):
                     "agent_id": aid,
                     "agent_name": str(j.get("agent_name", "")),
                     "path": str(j.get("path", "")),
+                    "trigger": str(j.get("trigger", "on-demand")),
                     "started": j.get("started") or datetime.now(WITA).isoformat(),
                     "finished": datetime.now(WITA).isoformat(),
                     "elapsed_ms": int(j.get("elapsed_ms", 0) or 0),
@@ -1875,8 +1974,8 @@ def main():
     _vt_cache_load()
     _event_store_init()
     _event_store_prune()
-    # ponytail: bind 0.0.0.0 supaya bisa diakses dari Tailscale 100.95.198.108:8080 untuk 100 PC
-    server = HTTPServer(("0.0.0.0", port), Handler)
+    # ThreadingHTTPServer agar multi-client request tidak saling block
+    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(
         f"fleet-monitor listen 0.0.0.0:{port} (Wazuh {cfg['wazuh_url']}, n8n {cfg['n8n_url']})",
         flush=True,

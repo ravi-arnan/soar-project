@@ -96,11 +96,11 @@ const is_system_file = /[\\\\/]etc[\\\\/]hosts$/.test(lowerPath)
 // patch:systemfile:v1"""
 
 EKSTRAK_OLD_OUT = """    agent_name:       body?.agent?.name || body?.agent_name || 'unknown',
-    model:            body?.model || 'Atria-Dawn-Preview',"""
+    model:            body?.model || 'DeepSeek-V4-Flash',"""
 
 EKSTRAK_NEW_OUT = """    agent_name:       body?.agent?.name || body?.agent_name || 'unknown',
     is_system_file:   is_system_file,
-    model:            body?.model || 'Atria-Dawn-Preview',"""
+    model:            body?.model || 'DeepSeek-V4-Flash',"""
 
 
 def patch_ekstrak(js):
