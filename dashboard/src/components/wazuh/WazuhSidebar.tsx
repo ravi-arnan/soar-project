@@ -10,6 +10,8 @@ import {
   Box,
   Settings,
   ExternalLink,
+  ShieldCheck,
+  Network,
 } from 'lucide-react';
 import { WazuhLogo } from './WazuhLogo';
 import type { FleetHealth } from '@/lib/fleet';
@@ -25,7 +27,7 @@ interface WazuhSidebarProps {
   health?: FleetHealth;
 }
 
-export function WazuhSidebar({
+export const WazuhSidebar = React.memo(function WazuhSidebar({
   isOpen,
   onClose,
   activeView,
@@ -54,11 +56,13 @@ export function WazuhSidebar({
       title: 'Threat Detection and Response',
       items: [
         { id: 'threat-intel', label: 'Threat Intel', icon: Box },
+        { id: 'mitre', label: 'MITRE ATT&CK', icon: ShieldCheck },
       ],
     },
     {
-      title: 'Management',
+      title: 'Operations & Management',
       items: [
+        { id: 'network-map', label: 'Network map', icon: Network },
         { id: 'settings', label: 'Settings', icon: Settings },
       ],
     },
@@ -156,4 +160,4 @@ export function WazuhSidebar({
       </div>
     </div>
   );
-}
+});

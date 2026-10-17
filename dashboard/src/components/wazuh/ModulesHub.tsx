@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ShieldAlert,
   FileCheck2,
@@ -22,11 +22,34 @@ interface ModulesHubProps {
   health?: FleetHealth;
 }
 
-export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProps) {
-  const linux = agents.filter((a) => (a.os || '').toLowerCase().includes('linux')).length;
-  const windows = agents.filter((a) => (a.os || '').toLowerCase().includes('windows')).length;
-  const stackOk = [health?.n8n, health?.gemini, health?.wazuh_api].filter(Boolean).length;
-  const sections = [
+export const ModulesHub = React.memo(function ModulesHub({
+  onNavigate,
+  stats,
+  agents,
+  health,
+}: ModulesHubProps) {
+  const linux = useMemo(
+    () => agents.filter((a) => (a.os || '').toLowerCase().includes('linux')).length,
+    [agents]
+  );
+  const windows = useMemo(
+    () => agents.filter((a) => (a.os || '').toLowerCase().includes('windows')).length,
+    [agents]
+  );
+  const mac = useMemo(
+    () =>
+      agents.filter((a) => {
+        const s = (a.os || '').toLowerCase();
+        return s.includes('mac') || s.includes('darwin');
+      }).length,
+    [agents]
+  );
+  const stackOk = useMemo(
+    () => [health?.n8n, health?.gemini, health?.wazuh_api].filter(Boolean).length,
+    [health]
+  );
+  const sections = useMemo(
+    () => [
     {
       title: 'SECURITY INFORMATION MANAGEMENT',
       modules: [
@@ -86,7 +109,7 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
         {
           id: 'agents',
           title: 'Fleet inventory',
-          description: `${stats.active}/${stats.total} aktif — Linux ${linux}, Windows ${windows}, ${stats.rust} endpoint.`,
+          description: `${stats.active}/${stats.total} aktif (Linux ${linux}, Windows ${windows}${mac > 0 ? `, macOS ${mac}` : ''}, ${stats.rust} endpoint).`,
           icon: Server,
         },
         {
@@ -103,7 +126,7 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
         },
       ],
     },
-  ];
+  ], [stats, linux, windows, mac, stackOk]);
 
   return (
     <div className="space-y-6">
@@ -138,7 +161,9 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
           onClick={() => onNavigate('security-events')}
         >
           <div className="text-[12px] text-[#5A626F] font-medium">Threat events</div>
-          <div className="text-[32px] font-semibold text-[#64748B] leading-tight mt-1">{stats.events_total}</div>
+          <div className="text-[32px] font-semibold text-[#64748B] leading-tight mt-1">
+            {stats.events_total.toLocaleString('en-US')}
+          </div>
         </div>
       </div>
 
@@ -198,4 +223,4 @@ export function ModulesHub({ onNavigate, stats, agents, health }: ModulesHubProp
       </div>
     </div>
   );
-}
+});

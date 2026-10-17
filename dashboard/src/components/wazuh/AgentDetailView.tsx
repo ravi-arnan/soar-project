@@ -13,7 +13,7 @@ interface AgentDetailViewProps {
   agentId?: string;
   /** Agent terpilih dari /api/fleet. */
   agent?: FleetAgent;
-  onNavigateTab?: (tab: string) => void;
+  onNavigateTab?: (tab: string, agentId?: string) => void;
 }
 
 const DEFAULT_PERIOD: PeriodValue = { preset: '7d', since: null, until: null };
@@ -269,7 +269,7 @@ function ScanPanel({ agentId, canScan, watchPaths }: { agentId: string; canScan:
                       className="py-1 font-mono text-[#1A1C21] truncate max-w-[220px]"
                       title={f.path}
                     >
-                      {f.path.split('/').pop() || f.path}
+                      {f.path.split(/[/\\]/).pop() || f.path}
                     </td>
                     <td className="py-1 text-right text-[#5A626F]">{f.size}</td>
                     <td className="py-1">
@@ -395,7 +395,7 @@ export function AgentDetailView({
               key={tab}
               onClick={() => {
                 setActiveTab(tab);
-                onNavigateTab?.(tab);
+                onNavigateTab?.(tab, agent?.id || agentId);
               }}
               className={`pb-2 -mb-1 whitespace-nowrap font-medium transition-colors ${
                 currentTab === tab
@@ -535,7 +535,7 @@ export function AgentDetailView({
                           className="py-1.5 text-[#006BB4] font-mono truncate max-w-[120px]"
                           title={e.path}
                         >
-                          {(e.path || '-').split('/').pop()}
+                          {(e.path || '-').split(/[/\\]/).pop()}
                         </td>
                         <td className="py-1.5 text-[#1A1C21]">{e.status || '-'}</td>
                         <td

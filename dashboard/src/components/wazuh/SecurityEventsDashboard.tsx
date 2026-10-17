@@ -25,6 +25,7 @@ interface SecurityEventsDashboardProps {
   /** Buka view Agents (opsional; tombol Explore agent disembunyikan bila tak ada). */
   onOpenAgents?: () => void;
   onRefresh?: () => void;
+  initialAgentId?: string;
 }
 
 /** Warna seri untuk donut Top 5, disamakan dengan desain Wazuh. */
@@ -39,11 +40,14 @@ export function SecurityEventsDashboard({
   onSelectAgent,
   onOpenAgents,
   onRefresh,
+  initialAgentId,
 }: SecurityEventsDashboardProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>('dashboard');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [activeFilters, setActiveFilters] = useState<string[]>(() =>
+    initialAgentId ? [initialAgentId] : []
+  );
   const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD_VALUE);
   const [source, setSource] = useState<HistorySource>('all');
   const [page, setPage] = useState(0);
@@ -243,6 +247,7 @@ export function SecurityEventsDashboard({
       <WazuhFilterBar
         onRefresh={refresh}
         onSearch={handleSearch}
+        initialFilters={activeFilters}
         periodSlot={
           <PeriodFilter
             value={period}
@@ -272,19 +277,19 @@ export function SecurityEventsDashboard({
               </div>
             </div>
             <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">Level 12 or above alerts</div>
+              <div className="text-[12px] text-[#5A626F] font-medium">Critical alerts (Level 12+)</div>
               <div className="text-[32px] font-semibold text-[#BD271E] leading-tight mt-1">
                 {sev.CRITICAL.toLocaleString('en-US')}
               </div>
             </div>
             <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">Authentication failure</div>
+              <div className="text-[12px] text-[#5A626F] font-medium">High severity threats</div>
               <div className="text-[32px] font-semibold text-[#D97706] leading-tight mt-1">
                 {sev.HIGH.toLocaleString('en-US')}
               </div>
             </div>
             <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">Authentication success</div>
+              <div className="text-[12px] text-[#5A626F] font-medium">Medium severity events</div>
               <div className="text-[32px] font-semibold text-[#00A389] leading-tight mt-1">
                 {sev.MEDIUM.toLocaleString('en-US')}
               </div>
