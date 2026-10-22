@@ -97,6 +97,23 @@ class WorkflowSetupTests(unittest.TestCase):
         self.assertEqual(results[0][1], "updated")
         self.assertIn(("PUT", "/api/v1/workflows/live-1"), calls)
 
+    def test_push_credentials_maps_otx_and_aliases(self):
+        env = {
+            "TELEGRAM_BOT_TOKEN": "bot123",
+            "WAZUH_API_USER": "wuser",
+            "WAZUH_API_PASS": "wpass",
+            "GSB_API_KEY": "gsbkey",
+            "URLSCAN_API_KEY": "urlkey",
+            "MALWAREBAZAAR_API_KEY": "mbkey",
+            "OTX_API_KEY": "otxkey123",
+        }
+        # Mode dry-run
+        name_to_id = n8n_setup.push_credentials("http://n8n", "key", env, vt_key="vtkey123", dry=True)
+        self.assertIn("OTX API Key", name_to_id)
+        self.assertIn("OTX Header Auth", name_to_id)
+        self.assertEqual(name_to_id["OTX API Key"], ("httpHeaderAuth", "DRY"))
+        self.assertEqual(name_to_id["OTX Header Auth"], ("httpHeaderAuth", "DRY"))
+
 
 if __name__ == "__main__":
     unittest.main()

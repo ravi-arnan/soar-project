@@ -40,6 +40,23 @@
 | **n8n sebagai mesin SOAR (akademik)** | Jurnal sejenis umumnya Shuffle/TheHive (termasuk 2026); n8n masih jarang di ranah akademik | 1, 5, 9, 14, 15 |
 | **Multi-agent lintas distribusi + open-source penuh** | Ubuntu + Rocky 9 lapor ke 1 manager; seluruh stack open-source, biaya nol | Jarang disebut eksplisit (kec. 8 yang fokus HA; 11 & 13 lab VM saja) |
 
+### Arsitektur dan Karakteristik Agen Ringan Rust (Alternatif #0a)
+
+Sebagai alternatif arsitektur utama berbasis agen Wazuh (#0), karya ini mengimplementasikan **Agen Ringan berbasis Rust (`agent-rs`)** (#0a) yang dirancang untuk mengatasi keterbatasan sumber daya pada workstation endpoint (seperti PC toko CV Bali Handmade dengan RAM terbatas):
+
+1. **Jejak Sumber Daya (Resource Footprint) Minimal**:
+   - Binary statis musl mandiri berukuran **~5,4 MB** (Linux) dan **~12 MB** (Windows), tanpa ketergantungan runtime eksternal.
+   - Penggunaan memori residen (RSS) berada pada kisaran **~7-10 MB RAM**, menghemat lebih dari 90% memori dibandingkan agen Wazuh tradisional (~80-150 MB).
+2. **Mekanisme Deteksi dan FIM Realtime**:
+   - Memanfaatkan subsistem `inotify` pada Linux dan API `ReadDirectoryChangesW` pada Windows dengan mekanisme debounce (*wait_settled*) untuk memantau direktori kerja (`--watch`).
+   - Fitur pemindaian on-demand (`collect_scan_targets`) yang dibatasi (*cap*) maksimal 2.000 berkas (`MAX_SCAN_FILES`) dengan serialisasi muteks (`SCAN_BUSY`) guna mencegah lonjakan pemakaian CPU.
+3. **Active Response dan Mitigasi Terisolasi**:
+   - Dilengkapi server HTTP lokal mandiri (`/quarantine`) yang dilindungi autentikasi token Bearer (`SOAR_FLEET_POLL_TOKEN`).
+   - Proteksi keamanan jalur (*path boundary verification* via `command_target_allowed`): aksi karantina dilarang menargetkan berkas di luar watch root atau direktori sistem OS, mencegah salah sasaran Active Response.
+4. **Hasil Pengukuran Kuantitatif Empiris**:
+   - **MTTR Malware (VT cache hangat)**: Rata-rata **0,04 detik** (median 0,03 detik, P95 0,05 detik, N=30), bersumber dari `docs/evaluasi/bench-rust-mttr-malware.json`.
+   - **Throughput Uji Beban (Load Test)**: Rata-rata latensi respons **164,84 ms** dengan throughput **29,49 alert/detik** (concurrency=5, N=20), bersumber dari `docs/evaluasi/bench-rust-load.json`.
+
 ## Catatan untuk sidang
 - Kebaruan bersifat **integratif** (kombinasi + desain), bukan fundamental — sampaikan jujur.
 - Perkuat klaim "unggul" dengan **metrik kuantitatif** (MTTR, % reduksi false-positive dari VT-gating, throughput/latensi) — belum dimiliki mayoritas pembanding level blog.
