@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Radio, FileText, ChevronRight, ChevronDown } from 'lucide-react';
+import { Radio, FileText, ChevronRight, ChevronDown, Filter, X } from 'lucide-react';
 import { WazuhFilterBar } from './WazuhFilterBar';
 import { ExpandableCard } from './ExpandableCard';
 import { PeriodFilter } from './PeriodFilter';
@@ -26,6 +26,8 @@ interface SecurityEventsDashboardProps {
   onOpenAgents?: () => void;
   onRefresh?: () => void;
   initialAgentId?: string;
+  initialSeverity?: string[];
+  initialTab?: 'dashboard' | 'events';
 }
 
 /** Warna seri untuk donut Top 5, disamakan dengan desain Wazuh. */
@@ -62,12 +64,19 @@ export function SecurityEventsDashboard({
   onOpenAgents,
   onRefresh,
   initialAgentId,
+  initialSeverity,
+  initialTab,
 }: SecurityEventsDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>(
+    () => initialTab || 'dashboard'
+  );
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>(() =>
     initialAgentId ? [initialAgentId] : []
+  );
+  const [selectedSeverities, setSelectedSeverities] = useState<string[]>(
+    () => initialSeverity || []
   );
   const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD_VALUE);
   const [source, setSource] = useState<HistorySource>('all');
@@ -75,6 +84,34 @@ export function SecurityEventsDashboard({
   const [rowsPerPage, setRowsPerPage] = useState(10);
   /** Status antrean AR per baris: queued | gagal | mengirim. */
   const [arState, setArState] = useState<Record<string, string>>({});
+
+  // Serialisasi array prop agar tidak memicu reset terus-menerus akibat referensi array baru
+  const serializeArray = (arr?: string[]) => (arr ? [...arr].sort().join(',') : '');
+  const [prevSeverityPropKey, setPrevSeverityPropKey] = useState(() => serializeArray(initialSeverity));
+  const [prevTabProp, setPrevTabProp] = useState(initialTab);
+  const [prevAgentProp, setPrevAgentProp] = useState(initialAgentId);
+
+  const currentSeverityPropKey = serializeArray(initialSeverity);
+  if (currentSeverityPropKey !== prevSeverityPropKey) {
+    setPrevSeverityPropKey(currentSeverityPropKey);
+    setSelectedSeverities(initialSeverity ? [...initialSeverity] : []);
+    setPage(0);
+  }
+
+  if (initialTab !== prevTabProp) {
+    setPrevTabProp(initialTab);
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }
+
+  if (initialAgentId !== prevAgentProp) {
+    setPrevAgentProp(initialAgentId);
+    if (initialAgentId) {
+      setActiveFilters([initialAgentId]);
+      setPage(0);
+    }
+  }
 
   const timeWindow = useMemo(() => periodToWindow(period), [period]);
   const tokens = useMemo(
@@ -87,11 +124,12 @@ export function SecurityEventsDashboard({
       since: timeWindow.since,
       until: timeWindow.until,
       q: tokens,
+      severity: selectedSeverities.length ? selectedSeverities : undefined,
       source,
       limit: rowsPerPage,
       offset: page * rowsPerPage,
     }),
-    [timeWindow.since, timeWindow.until, tokens, source, rowsPerPage, page]
+    [timeWindow.since, timeWindow.until, tokens, selectedSeverities, source, rowsPerPage, page]
   );
 
   const {
@@ -104,6 +142,21 @@ export function SecurityEventsDashboard({
     sources,
     refresh: refreshHistory,
   } = useEventHistory(historyQuery, 20000);
+
+  /** Pemilihan filter keparahan yang deterministik (klik filter -> aktifkan; klik ulang -> reset ke Semua). */
+  const handleSelectSeverityFilter = (sevs: string[], tab?: 'dashboard' | 'events') => {
+    const currentKey = [...selectedSeverities].sort().join(',');
+    const targetKey = [...sevs].sort().join(',');
+    if (currentKey === targetKey && sevs.length > 0) {
+      setSelectedSeverities([]);
+    } else {
+      setSelectedSeverities(sevs);
+    }
+    if (tab) {
+      setActiveTab(tab);
+    }
+    setPage(0);
+  };
 
   /** Terima search + chip filter dari WazuhFilterBar, reset ke halaman 1. */
   const handleSearch = (q: string, filters: string[]) => {
@@ -293,32 +346,64 @@ export function SecurityEventsDashboard({
 
       {activeTab === 'dashboard' && (
         <>
-          {/* Top 4 Metric KPI Counters — angka mengikuti rentang periode aktif. */}
+          {/* Top 4 Metric KPI Counters — interaktif: klik untuk memfilter keparahan di tab Events. */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 bg-white border border-[#D3DAE6] rounded p-4 text-center">
-            <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">Total</div>
+            <button
+              type="button"
+              onClick={() => handleSelectSeverityFilter([], 'events')}
+              className="p-2 rounded hover:bg-[#F5F7FA] transition-colors text-center group cursor-pointer border border-transparent hover:border-[#D3DAE6]"
+              title="Tampilkan semua security alerts di tab Events"
+            >
+              <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#1A1C21]">Total</div>
               <div className="text-[32px] font-semibold text-[#006BB4] leading-tight mt-1">
                 {total.toLocaleString('en-US')}
               </div>
-            </div>
-            <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">Critical alerts (Level 12+)</div>
+              <div className="text-[10px] text-[#8A94A6] group-hover:text-[#006BB4] mt-0.5">
+                Buka tab Events &rarr;
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectSeverityFilter(['CRITICAL'], 'events')}
+              className="p-2 rounded hover:bg-[#FDF3F2] transition-colors text-center group cursor-pointer border border-transparent hover:border-[#F5C2C0]"
+              title="Filter hanya Critical alerts (Level 12+) di tab Events"
+            >
+              <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#BD271E]">Critical alerts (Level 12+)</div>
               <div className="text-[32px] font-semibold text-[#BD271E] leading-tight mt-1">
                 {sev.CRITICAL.toLocaleString('en-US')}
               </div>
-            </div>
-            <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">High severity threats</div>
+              <div className="text-[10px] text-[#8A94A6] group-hover:text-[#BD271E] mt-0.5">
+                Filter Critical di Events &rarr;
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectSeverityFilter(['HIGH'], 'events')}
+              className="p-2 rounded hover:bg-[#FEF6E8] transition-colors text-center group cursor-pointer border border-transparent hover:border-[#F5D9A8]"
+              title="Filter hanya High severity threats di tab Events"
+            >
+              <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#D97706]">High severity threats</div>
               <div className="text-[32px] font-semibold text-[#D97706] leading-tight mt-1">
                 {sev.HIGH.toLocaleString('en-US')}
               </div>
-            </div>
-            <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">Medium severity events</div>
+              <div className="text-[10px] text-[#8A94A6] group-hover:text-[#D97706] mt-0.5">
+                Filter High di Events &rarr;
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectSeverityFilter(['MEDIUM'], 'events')}
+              className="p-2 rounded hover:bg-[#F0FAF7] transition-colors text-center group cursor-pointer border border-transparent hover:border-[#B2E6DC]"
+              title="Filter hanya Medium severity events di tab Events"
+            >
+              <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#00A389]">Medium severity events</div>
               <div className="text-[32px] font-semibold text-[#00A389] leading-tight mt-1">
                 {sev.MEDIUM.toLocaleString('en-US')}
               </div>
-            </div>
+              <div className="text-[10px] text-[#8A94A6] group-hover:text-[#00A389] mt-0.5">
+                Filter Medium di Events &rarr;
+              </div>
+            </button>
           </div>
 
           {/* Charts Grid */}
@@ -375,11 +460,18 @@ export function SecurityEventsDashboard({
                     { label: 'UNVERIFIED', count: sev.UNVERIFIED, color: '#64748B' },
                   ].map((s) =>
                     s.count > 0 ? (
-                      <div key={s.label} className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                        <span>{s.label}</span>
+                      <button
+                        key={s.label}
+                        type="button"
+                        onClick={() => handleSelectSeverityFilter([s.label], 'events')}
+                        className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer text-left w-full group"
+                        title={`Filter ${s.label} di tab Events`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                        <span className="group-hover:underline">{s.label}</span>
                         <span className="font-semibold">{s.count}</span>
-                      </div>
+                        <span className="text-[10px] text-[#8A94A6] ml-auto group-hover:text-[#006BB4]">&rarr;</span>
+                      </button>
                     ) : null
                   )}
                 </div>
@@ -520,6 +612,117 @@ export function SecurityEventsDashboard({
         </>
       )}
 
+      {/* Quick Severity Filter Bar & Active Filter Chips */}
+      {(() => {
+        const isAll = selectedSeverities.length === 0;
+        const isCritAndHigh =
+          selectedSeverities.length === 2 &&
+          selectedSeverities.includes('CRITICAL') &&
+          selectedSeverities.includes('HIGH');
+        const isCritOnly =
+          selectedSeverities.length === 1 && selectedSeverities.includes('CRITICAL');
+        const isHighOnly =
+          selectedSeverities.length === 1 && selectedSeverities.includes('HIGH');
+        const isMedOnly =
+          selectedSeverities.length === 1 && selectedSeverities.includes('MEDIUM');
+
+        return (
+          <div className="bg-white border border-[#D3DAE6] rounded p-2.5 flex flex-wrap items-center justify-between gap-2.5 text-[12px]">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex items-center gap-1 text-[#5A626F] font-semibold text-[11px] mr-1">
+                <Filter className="w-3.5 h-3.5 text-[#5A626F]" />
+                <span>Tingkat Keparahan:</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleSelectSeverityFilter([])}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                  isAll
+                    ? 'bg-[#1A1C21] text-white shadow-xs'
+                    : 'bg-[#F0F4F8] text-[#5A626F] hover:bg-[#E1E6EB]'
+                }`}
+              >
+                Semua
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectSeverityFilter(['CRITICAL', 'HIGH'])}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  isCritAndHigh
+                    ? 'bg-[#BD271E] text-white shadow-xs'
+                    : 'bg-[#FDE8E8] text-[#BD271E] hover:bg-[#FBD5D5]'
+                }`}
+                title="Tampilkan alert Critical dan High"
+              >
+                Critical + High ({sev.CRITICAL + sev.HIGH})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectSeverityFilter(['CRITICAL'])}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  isCritOnly
+                    ? 'bg-[#BD271E] text-white shadow-xs'
+                    : 'bg-[#FDF3F2] text-[#BD271E] hover:bg-[#FDE8E8]'
+                }`}
+                title="Filter hanya alert Critical"
+              >
+                Critical ({sev.CRITICAL})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectSeverityFilter(['HIGH'])}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  isHighOnly
+                    ? 'bg-[#D97706] text-white shadow-xs'
+                    : 'bg-[#FEF6E8] text-[#D97706] hover:bg-[#FDEFD4]'
+                }`}
+                title="Filter hanya alert High"
+              >
+                High ({sev.HIGH})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectSeverityFilter(['MEDIUM'])}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                  isMedOnly
+                    ? 'bg-[#00A389] text-white shadow-xs'
+                    : 'bg-[#F0FAF7] text-[#00A389] hover:bg-[#E1F7F2]'
+                }`}
+                title="Filter hanya alert Medium"
+              >
+                Medium ({sev.MEDIUM})
+              </button>
+            </div>
+
+            {selectedSeverities.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-[#5A626F]">
+                  Menampilkan {total} event (Keparahan:{' '}
+                  <span className="font-semibold text-[#1A1C21]">
+                    {selectedSeverities.join(', ')}
+                  </span>
+                  )
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleSelectSeverityFilter([])}
+                  className="inline-flex items-center gap-1 text-[11px] text-[#BD271E] hover:text-[#9E1F18] font-medium bg-[#FDE8E8] hover:bg-[#FBD5D5] px-2 py-0.5 rounded cursor-pointer transition-colors"
+                  title="Hapus filter keparahan"
+                >
+                  <X className="w-3 h-3" />
+                  <span>Reset filter</span>
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Security Alerts Data Table Card */}
       <ExpandableCard title="Security Alerts">
         <div className="overflow-x-auto border border-[#EBEFF5] rounded">
@@ -541,12 +744,35 @@ export function SecurityEventsDashboard({
             <tbody className="divide-y divide-[#EBEFF5]">
               {!visibleAlerts.length && (
                 <tr>
-                  <td colSpan={10} className="py-6 text-center text-[#8A94A6]">
-                    {loading
-                      ? 'memuat riwayat…'
-                      : tokens.length
-                      ? `tidak ada event cocok "${tokens.join(' + ')}"`
-                      : 'belum ada event pada periode ini'}
+                  <td colSpan={10} className="py-8 text-center text-[#8A94A6]">
+                    {loading ? (
+                      'memuat riwayat…'
+                    ) : (
+                      <div className="space-y-1">
+                        <div>
+                          {tokens.length
+                            ? `tidak ada event cocok "${tokens.join(' + ')}"${
+                                selectedSeverities.length
+                                  ? ` dengan keparahan ${selectedSeverities.join(', ')}`
+                                  : ''
+                              }`
+                            : selectedSeverities.length
+                            ? `tidak ada event dengan keparahan ${selectedSeverities.join(', ')} pada periode ini`
+                            : 'belum ada event pada periode ini'}
+                        </div>
+                        {selectedSeverities.length > 0 && (
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectSeverityFilter([])}
+                              className="text-[11px] text-[#006BB4] hover:underline font-medium cursor-pointer"
+                            >
+                              Reset filter keparahan &rarr;
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}

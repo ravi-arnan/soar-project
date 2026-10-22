@@ -9,10 +9,13 @@ import {
   HardDrive,
   Key,
   Shield,
+  ShieldCheck,
+  ShieldAlert,
   ChevronDown,
   X,
   ExternalLink,
-  Bot,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 import { formatWazuhTime, severityLevel, useEventHistory, periodToWindow } from '@/lib/fleet';
@@ -107,6 +110,16 @@ export function FimDashboard() {
   const [searchTerm, setSearchTerm] = useState('');
   const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
   const [arState, setArState] = useState<Record<string, string>>({});
+  const [copiedHash, setCopiedHash] = useState(false);
+
+  const handleCopyHash = (hash: string) => {
+    if (!hash || hash === '-') return;
+    try {
+      navigator.clipboard?.writeText(hash);
+      setCopiedHash(true);
+      setTimeout(() => setCopiedHash(false), 2000);
+    } catch {}
+  };
 
   const timeWindow = useMemo(() => periodToWindow(period), [period]);
   const { events } = useEventHistory(
@@ -461,20 +474,22 @@ export function FimDashboard() {
             </div>
           </div>
 
-          {/* AI Analysis & Threat Intel Card (Wazuh EUI Style) */}
+          {/* Threat Intelligence & Security Assessment Card (Taste Skill Anti-Slop / Wazuh EUI Native) */}
           <div className="bg-white border border-[#D3DAE6] rounded p-5 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EBEFF5] pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EBEFF5] pb-3">
               <div className="flex items-center gap-2">
                 <ChevronDown className="w-4 h-4 text-[#5A626F]" />
-                <span className="text-[13px] font-semibold text-[#1A1C21]">AI Analysis & Threat Intelligence</span>
+                <span className="text-[13px] font-semibold text-[#1A1C21]">
+                  Threat Intelligence &amp; Security Assessment
+                </span>
                 {latestEvent && (
                   <span
-                    className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                    className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
                       latestLevel >= 7
                         ? 'bg-[#FDF3F2] text-[#BD271E] border border-[#F5C2C0]'
                         : latestLevel >= 4
                         ? 'bg-[#FEF6E8] text-[#B25E09] border border-[#F5D9A8]'
-                        : 'bg-[#EBF5FB] text-[#006BB4] border border-[#B8D5E5]'
+                        : 'bg-[#F0F4F8] text-[#5A626F] border border-[#D3DAE6]'
                     }`}
                   >
                     Level {latestLevel} ({latestSeverity})
@@ -485,12 +500,17 @@ export function FimDashboard() {
               {/* Action Toolbar for Active Response */}
               {currentPath !== '-' && (
                 <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#8A94A6] hidden sm:inline">Active Response:</span>
                   <button
                     type="button"
                     disabled={Boolean(arState[currentPath]) || !agentId}
                     onClick={() => handleQueueAction(agentId, 'quarantine', currentPath)}
                     title={`Karantina ${currentPath} di agent ${agentId || '-'}`}
-                    className="text-[11px] font-medium text-[#BD271E] border border-[#F5C2C0] bg-[#FDF3F2] hover:bg-[#FDE8E8] px-2.5 py-1 rounded transition-colors disabled:opacity-50"
+                    className={`text-[11px] font-medium px-2.5 py-1 rounded transition-colors disabled:opacity-50 cursor-pointer ${
+                      latestLevel >= 7
+                        ? 'text-white bg-[#BD271E] hover:bg-[#9E1F18] font-semibold'
+                        : 'text-[#5A626F] border border-[#D3DAE6] bg-white hover:bg-[#F5F7FA] hover:text-[#1A1C21]'
+                    }`}
                   >
                     Karantina Berkas
                   </button>
@@ -499,7 +519,7 @@ export function FimDashboard() {
                     disabled={Boolean(arState[currentPath]) || !agentId}
                     onClick={() => handleQueueAction(agentId, 'restore', currentPath)}
                     title={`Pulihkan ${currentPath} dari karantina di agent ${agentId || '-'}`}
-                    className="text-[11px] font-medium text-[#006BB4] border border-[#B8D5E5] bg-[#F0F7FC] hover:bg-[#E1EFF8] px-2.5 py-1 rounded transition-colors disabled:opacity-50"
+                    className="text-[11px] font-medium text-[#5A626F] border border-[#D3DAE6] bg-white hover:bg-[#F5F7FA] hover:text-[#1A1C21] px-2.5 py-1 rounded transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     Pulihkan
                   </button>
@@ -512,96 +532,168 @@ export function FimDashboard() {
               )}
             </div>
 
-            {/* AI Explanation Callout Box (Elastic UI / Wazuh native style) */}
-            <div
-              className={`p-3.5 rounded-r border border-[#D3DAE6] border-l-4 bg-[#F8FAFC] space-y-1.5 ${
-                latestLevel >= 7
-                  ? 'border-l-[#BD271E]'
-                  : latestLevel >= 4
-                  ? 'border-l-[#B25E09]'
-                  : 'border-l-[#006BB4]'
-              }`}
-            >
-              <div className="flex items-start gap-2.5">
-                <Bot
-                  className={`w-4 h-4 mt-0.5 shrink-0 ${
-                    latestLevel >= 7
-                      ? 'text-[#BD271E]'
-                      : latestLevel >= 4
-                      ? 'text-[#B25E09]'
-                      : 'text-[#006BB4]'
-                  }`}
-                />
-                <div className="space-y-1">
-                  <div className="text-[12px] font-semibold text-[#1A1C21]">
-                    Rangkuman intelijen otomatis
+            {/* Assessment Panel (Flat 1px border, no thick left bar / chrome slop) */}
+            <div className="p-3.5 rounded border border-[#E1E6EB] bg-[#F8FAFC] space-y-1.5">
+              {latestEvent?.ai ? (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#EBF5FB] text-[#006BB4] border border-[#B8D5E5]">
+                      SOAR Threat Intel
+                    </span>
+                    <span className="text-[12px] font-semibold text-[#1A1C21]">
+                      Analisis Korelasi Ancaman
+                    </span>
                   </div>
-                  <p className="text-[12px] text-[#5A626F] leading-relaxed">
-                    {latestEvent?.ai ||
-                      (latestLevel >= 7
-                        ? `Berkas terindikasi berisiko tinggi (Level ${latestLevel}). Signature berkas cocok dengan artefak berbahaya pada basis data ancaman (MISP/Threat Intel). Disarankan segera lakukan karantina berkas dan isolasi endpoint dari jaringan.`
-                        : latestLevel >= 4
-                        ? `Perubahan integritas berkas terdeteksi (Level ${latestLevel}). Pastikan integritas konfigurasi dan identitas proses yang memodifikasi berkas.`
-                        : 'Tidak ada anomali atau ancaman terdeteksi pada berkas ini. Integritas berkas berada dalam parameter operasional normal.')}
+                  <p className="text-[12px] text-[#1A1C21] leading-relaxed">
+                    {latestEvent.ai}
                   </p>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2.5">
+                  {latestLevel >= 7 ? (
+                    <ShieldAlert className="w-4 h-4 text-[#BD271E] mt-0.5 shrink-0" />
+                  ) : latestLevel >= 4 ? (
+                    <ShieldAlert className="w-4 h-4 text-[#B25E09] mt-0.5 shrink-0" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4 text-[#00A389] mt-0.5 shrink-0" />
+                  )}
+                  <div className="space-y-1">
+                    <div className="text-[12px] font-semibold text-[#1A1C21] flex items-center gap-2">
+                      <span>
+                        {latestLevel >= 7
+                          ? 'Indikasi Perubahan Kritis'
+                          : latestLevel >= 4
+                          ? 'Perubahan Integritas Terdeteksi'
+                          : 'Integritas Berkas Terverifikasi'}
+                      </span>
+                      {latestEvent?.rule_id && (
+                        <span className="text-[10px] font-mono text-[#5A626F] bg-[#F0F4F8] px-1.5 py-0.5 rounded border border-[#E1E6EB]">
+                          Rule {latestEvent.rule_id}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-[#5A626F] leading-relaxed">
+                      {latestEvent?.rule_desc
+                        ? latestEvent.rule_desc
+                        : latestLevel >= 7
+                        ? `Perubahan integritas berkas terindikasi berisiko tinggi (Level ${latestLevel}). Periksa riwayat hash terhadap basis data ancaman dan verifikasi keabsahan proses pembuat berkas.`
+                        : latestLevel >= 4
+                        ? `Perubahan atribut atau konten berkas terdeteksi oleh Wazuh Syscheck (Level ${latestLevel}). Pastikan integritas konfigurasi sesuai baseline operasional.`
+                        : 'Integritas berkas tercatat pada baseline lokal Wazuh Syscheck daemon tanpa anomali atribut atau kecocokan indikator ancaman (IoC).'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Assessment Status & Detection Source Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[12px]">
+              <div className="bg-[#F8FAFC] border border-[#EBEFF5] rounded p-3 space-y-1">
+                <div className="text-[11px] font-medium text-[#8A94A6]">Status Asesmen &amp; Reputasi</div>
+                <div className="flex items-center gap-2 pt-0.5">
+                  {latestEvent?.verdict ? (
+                    <span className="font-semibold text-[#BD271E]">{latestEvent.verdict}</span>
+                  ) : latestLevel >= 7 ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FDF3F2] text-[#BD271E] border border-[#F5C2C0]">
+                      High Risk Anomaly
+                    </span>
+                  ) : latestLevel >= 4 ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FEF6E8] text-[#B25E09] border border-[#F5D9A8]">
+                      Suspicious / Changed
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#F0FAF7] text-[#00A389] border border-[#B2E6DC]">
+                      Clean / Normal Baseline
+                    </span>
+                  )}
+                  {latestEvent?.status && latestEvent.status !== 'detected' && (
+                    <span className="text-[#5A626F] text-[11px] font-mono">
+                      Event: {latestEvent.status}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-[#F8FAFC] border border-[#EBEFF5] rounded p-3 space-y-1">
+                <div className="text-[11px] font-medium text-[#8A94A6]">Sumber Deteksi &amp; ID Agen</div>
+                <div className="flex items-center gap-2 pt-0.5 text-[#1A1C21]">
+                  <span className="font-mono font-medium">Agent {agentId}</span>
+                  <span className="text-[#8A94A6]">&middot;</span>
+                  <span className="text-[#5A626F]">
+                    {latestEvent?.source === 'wazuh' ? 'Wazuh Syscheck (Indexer)' : 'SOAR FIM Pipeline'}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Threat Intel Indicators & Pivots */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-6 text-[12px] pt-1">
-              <div>
-                <div className="text-[11px] text-[#8A94A6]">Status verifikasi</div>
-                <div className="font-medium text-[#1A1C21] mt-0.5 flex items-center gap-2">
-                  {latestEvent?.verdict ? (
-                    <span className="font-semibold text-[#BD271E]">{latestEvent.verdict}</span>
-                  ) : latestLevel >= 7 ? (
-                    <span className="font-semibold text-[#BD271E]">Suspicious / High Risk</span>
-                  ) : (
-                    <span className="text-[#00A389] font-medium">Clean / Monitored</span>
-                  )}
-                  {latestEvent?.status && (
-                    <span className="text-[#5A626F] text-[11px] font-mono">({latestEvent.status})</span>
-                  )}
+            {/* External Threat Intel OSINT Pivots */}
+            <div className="bg-[#F8FAFC] border border-[#D3DAE6] rounded p-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
+                  External Threat Intel Pivot (OSINT)
                 </div>
-              </div>
-
-              <div>
-                <div className="text-[11px] text-[#8A94A6]">External threat intel pivot</div>
-                {fileHash && fileHash !== '-' ? (
-                  <div className="flex flex-wrap items-center gap-3 mt-0.5 font-mono text-[11px]">
-                    <a
-                      href={`https://www.virustotal.com/gui/file/${fileHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#006BB4] hover:underline flex items-center gap-1"
-                      title="Periksa hash di VirusTotal"
-                    >
-                      VirusTotal <ExternalLink className="w-3 h-3" />
-                    </a>
-                    <a
-                      href={`https://bazaar.abuse.ch/sample/${fileHash}/`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#006BB4] hover:underline flex items-center gap-1"
-                      title="Periksa hash di MalwareBazaar"
-                    >
-                      MalwareBazaar <ExternalLink className="w-3 h-3" />
-                    </a>
-                    <a
-                      href={`https://otx.alienvault.com/indicator/file/${fileHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#006BB4] hover:underline flex items-center gap-1"
-                      title="Periksa hash di AlienVault OTX"
-                    >
-                      AlienVault OTX <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                ) : (
-                  <span className="text-[#8A94A6] text-[11px] mt-0.5 block">-</span>
+                {fileHash && fileHash !== '-' && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyHash(fileHash)}
+                    className="inline-flex items-center gap-1 text-[11px] text-[#006BB4] hover:underline cursor-pointer"
+                    title="Salin hash ke clipboard"
+                  >
+                    {copiedHash ? (
+                      <>
+                        <Check className="w-3 h-3 text-[#00A389]" />
+                        <span className="text-[#00A389] font-medium">Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 text-[#5A626F]" />
+                        <span>Salin Hash</span>
+                      </>
+                    )}
+                  </button>
                 )}
               </div>
+
+              {fileHash && fileHash !== '-' ? (
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <a
+                    href={`https://www.virustotal.com/gui/file/${fileHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
+                    title="Periksa reputasi berkas di VirusTotal"
+                  >
+                    <span className="font-medium">VirusTotal</span>
+                    <ExternalLink className="w-3 h-3 text-[#8A94A6]" />
+                  </a>
+
+                  <a
+                    href={`https://bazaar.abuse.ch/sample/${fileHash}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
+                    title="Cek sampel malware di MalwareBazaar (abuse.ch)"
+                  >
+                    <span className="font-medium">MalwareBazaar</span>
+                    <ExternalLink className="w-3 h-3 text-[#8A94A6]" />
+                  </a>
+
+                  <a
+                    href={`https://otx.alienvault.com/indicator/file/${fileHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
+                    title="Penyelidikan ancaman di AlienVault Open Threat Exchange"
+                  >
+                    <span className="font-medium">AlienVault OTX</span>
+                    <ExternalLink className="w-3 h-3 text-[#8A94A6]" />
+                  </a>
+                </div>
+              ) : (
+                <div className="text-[11px] text-[#8A94A6] italic">
+                  Hash berkas belum dikalkulasi oleh agent untuk penelusuran OSINT eksternal.
+                </div>
+              )}
             </div>
           </div>
 

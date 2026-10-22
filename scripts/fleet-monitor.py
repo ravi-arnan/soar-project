@@ -1445,9 +1445,10 @@ def build_event_history(
         offset = 0
     source = source if source in ("all", "soar", "wazuh") else "all"
 
+    # Ambil baris tanpa filter severity dulu untuk menghitung agregasi stats yang akurat
     soar_rows = []
     if source in ("all", "soar"):
-        soar_rows = _event_store_query(since, until, severity, agent_id, q)
+        soar_rows = _event_store_query(since, until, None, agent_id, q)
 
     wazuh_rows = []
     indexer_ok = None
@@ -1458,8 +1459,6 @@ def build_event_history(
         wazuh_rows = [_indexer_map(h) for h in hits]
         if agent_id:
             wazuh_rows = [e for e in wazuh_rows if e.get("agent_id") == str(agent_id)]
-        if severity:
-            wazuh_rows = [e for e in wazuh_rows if e.get("severity") in severity]
         tokens = [t.lower() for t in (q or [])]
         if tokens:
             wazuh_rows = [
@@ -1475,17 +1474,34 @@ def build_event_history(
                 )
             ]
 
-    merged = _merge_history(soar_rows, wazuh_rows, dedup)
-    merged.sort(key=lambda e: e.get("ts") or "", reverse=True)
+    merged_all = _merge_history(soar_rows, wazuh_rows, dedup)
+    merged_all.sort(key=lambda e: e.get("ts") or "", reverse=True)
+
+    # Stats dihitung dari seluruh event dalam cakupan (sebelum post-filter severity)
+    # agar counter keparahan di UI tidak menjadi 0 saat filter tertentu aktif.
+    stats = _history_stats(merged_all)
+
+    # Filter keparahan diaplikasikan ke daftar event & total pagination
+    if severity:
+        sev_set = {s.upper() for s in severity}
+        filtered = [
+            e for e in merged_all if (e.get("severity") or "INFO").upper() in sev_set
+        ]
+    else:
+        filtered = merged_all
+
     return {
-        "events": merged[offset : offset + limit],
-        "total": len(merged),
+        "events": filtered[offset : offset + limit],
+        "total": len(filtered),
         "limit": limit,
         "offset": offset,
         "took_ms": int((time.time() - started) * 1000),
         "indexer_ok": indexer_ok,
-        "sources": {"soar": len(soar_rows), "wazuh": len(wazuh_rows)},
-        "stats": _history_stats(merged),
+        "sources": {
+            "soar": sum(1 for e in filtered if e.get("source") == "soar"),
+            "wazuh": sum(1 for e in filtered if e.get("source") == "wazuh"),
+        },
+        "stats": stats,
     }
 
 
