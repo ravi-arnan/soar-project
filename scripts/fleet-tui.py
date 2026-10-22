@@ -267,22 +267,31 @@ class Ui:
             y += 1
         return y
 
+    def filter_agents(self, agents):
+        if not self.filter:
+            return list(agents)
+        q = self.filter.lower()
+        return [
+            a
+            for a in agents
+            if q in a.get("name", "").lower()
+            or q in a.get("ip", "").lower()
+            or q in a.get("id", "").lower()
+        ]
+
+    def filter_events(self, events):
+        sev = SEV_ORDER[self.ev_sev]
+        if not sev:
+            return list(events)
+        return [e for e in events if e.get("severity") == sev]
+
     def draw_agents(self, y0):
         f = self.fleet
         if not f:
             return y0
         y = y0 + 1
         _, width = self.scr.getmaxyx()
-        agents = f.get("agents", [])
-        if self.filter:
-            q = self.filter.lower()
-            agents = [
-                a
-                for a in agents
-                if q in a.get("name", "").lower()
-                or q in a.get("ip", "").lower()
-                or q in a.get("id", "").lower()
-            ]
+        agents = self.filter_agents(f.get("agents", []))
 
         cols = [
             ("ID", 5),
@@ -337,11 +346,9 @@ class Ui:
         _, width = self.scr.getmaxyx()
         _, height = self.scr.getmaxyx()
         sev = SEV_ORDER[self.ev_sev]
-        evs = self.events
-        if sev:
-            evs = [e for e in evs if e.get("severity") == sev]
+        evs = self.filter_events(self.events)
         label = sev or "semua severity"
-        self.w(y, 2, f"Threat events — saring: {label} ({len(evs)} event)", curses.A_BOLD)
+        self.w(y, 2, f"Threat events (saring: {label}, {len(evs)} event)", curses.A_BOLD)
         y += 2
 
         # Terminal sempit (mis. SSH 80 kolom): tabel menyesuaikan lebar kolom

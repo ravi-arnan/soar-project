@@ -1,3 +1,41 @@
+# Handoff SOAR - 2026-10-22 Malam (Milestone M5: Penguatan Investigasi Multi-Sumber Dashboard & Unit Test TUI)
+
+## Status Terakhir (Checkpoint: 22 Oktober 2026, 21:35 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Tautan Investigasi Multi-Sumber Dashboard ([dashboard/src/components/wazuh/ThreatIntelView.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/ThreatIntelView.tsx) & [dashboard/src/components/wazuh/SecurityEventsDashboard.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/SecurityEventsDashboard.tsx))**:
+  - Menambahkan aksi investigasi eksternal langsung per baris hash: VirusTotal (`VT ↗`), MalwareBazaar (`MB ↗`), dan AlienVault OTX (`OTX ↗`).
+  - Menambahkan tautan investigasi hash yang sama pada panel detail event keamanan yang diekspansi (`SecurityEventsDashboard`) jika hash berkas tersedia.
+  - Memperbarui deskripsi dan footer modul Threat Intel di [dashboard/src/components/wazuh/ModulesHub.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/ModulesHub.tsx) agar mencerminkan 4 pilar intel (VT, MalwareBazaar, MISP OSINT, OTX).
+- **Refaktor & Unit Testing Fleet Monitor TUI ([scripts/fleet-tui.py](file:///home/ravi/Projects/soar-project/scripts/fleet-tui.py) & [scripts/test_fleet_tui.py](file:///home/ravi/Projects/soar-project/scripts/test_fleet_tui.py))**:
+  - Mengekstrak fungsi murni `filter_agents` dan `filter_events` pada kelas UI agar logika penyaringan agen (berdasarkan nama, IP, ID) dan siklus severity event dapat diuji secara independen tanpa inisialisasi curses window.
+  - Menambahkan unit test suite baru [scripts/test_fleet_tui.py](file:///home/ravi/Projects/soar-project/scripts/test_fleet_tui.py) (4 tests) yang menguji pemotongan path `left_trunc`, mapping warna/label severity, filter agent, dan filter event (100% PASS).
+- **Pengujian & Verifikasi Menyeluruh**:
+  - Python scripts unit tests: 110/110 PASS.
+  - Deploy scripts unit tests: 4/4 PASS.
+  - Rust agent: 9/9 PASS.
+  - Next.js dashboard: `npm run check` (commands, placeholder, events, session, rate-limit, lint, typecheck, build) 100% PASS.
+
+### 2. Daftar File Diubah & Status Git
+- `dashboard/src/components/wazuh/ModulesHub.tsx`: Sinkronisasi deskripsi intel 4 sumber dan pembersihan tanda baca.
+- `dashboard/src/components/wazuh/SecurityEventsDashboard.tsx`: Tombol investigasi eksternal intel (VT, MB, OTX) di row detail.
+- `dashboard/src/components/wazuh/ThreatIntelView.tsx`: Tombol aksi investigasi VT, MB, OTX per baris hash.
+- `scripts/fleet-tui.py`: Ekstraksi method filter murni untuk TUI testability.
+- `scripts/test_fleet_tui.py` (baru): Unit test suite TUI.
+- `HANDOFF.md`: Checkpoint malam 22 Okt 2026.
+
+### 3. Status Verifikasi
+- **Unit Test Scripts**: 110/110 tests PASS (`nice -n 19 python3 -m unittest discover -s scripts/ -p "test_*.py"`).
+- **Unit Test Deploy**: 4/4 tests PASS (`nice -n 19 python3 -m unittest discover -s deploy/ -p "test_*.py"`).
+- **Rust Agent**: 9/9 tests PASS (`cargo test`).
+- **Dashboard Next.js**: 100% PASS (check: commands, placeholder, events, session, rate-limit, lint, typecheck, build).
+- **Konektivitas Live Server (`ravi-debian`)**: Online (Tailscale direct, 10/10 container Docker Up, Cloudflare Tunnel `soar.raviarnan.dev` 200/302 OK, fleet API melayani agent 001/009/010 200 OK).
+
+### 4. Next Action
+Evaluasi opsi fungsional lanjutan (sinkronisasi build dashboard live ke remote host, penambahan sensor phishing/behavioral di agent endpoint, atau firewall subnet port Wazuh).
+
+---
+
 # Handoff SOAR - 2026-10-22 Malam (Milestone M5: Pengerasan Credential OTX, Proteksi AR & Bukti Agen Ringan)
 
 ## Status Terakhir (Checkpoint: 22 Oktober 2026, 21:25 WITA)
