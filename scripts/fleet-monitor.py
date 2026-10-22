@@ -1091,6 +1091,16 @@ def _event_row(ev):
         ev.get("rule_level"),
         ev.get("rule_desc", ""),
         ev.get("source", "soar"),
+        str(ev.get("size") or ""),
+        str(ev.get("perm") or ""),
+        str(ev.get("uname") or ""),
+        str(ev.get("uid") or ""),
+        str(ev.get("gname") or ""),
+        str(ev.get("gid") or ""),
+        str(ev.get("mtime") or ""),
+        str(ev.get("inode") or ""),
+        str(ev.get("md5") or ""),
+        str(ev.get("sha1") or ""),
     )
 
 
@@ -1113,9 +1123,17 @@ def _event_store_init():
                     agent TEXT, agent_id TEXT, path TEXT, hash TEXT,
                     severity TEXT, status TEXT, ai TEXT, url TEXT, verdict TEXT,
                     rule_id TEXT, rule_level INTEGER, rule_desc TEXT,
-                    source TEXT NOT NULL DEFAULT 'soar'
+                    source TEXT NOT NULL DEFAULT 'soar',
+                    size TEXT, perm TEXT, uname TEXT, uid TEXT,
+                    gname TEXT, gid TEXT, mtime TEXT, inode TEXT,
+                    md5 TEXT, sha1 TEXT
                 )"""
             )
+            for col in ("size", "perm", "uname", "uid", "gname", "gid", "mtime", "inode", "md5", "sha1"):
+                try:
+                    conn.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
+                except Exception:
+                    pass
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
@@ -1162,8 +1180,9 @@ def _event_store_insert(ev):
             conn.execute(
                 """INSERT OR IGNORE INTO events
                 (id, ts, agent, agent_id, path, hash, severity, status, ai, url,
-                 verdict, rule_id, rule_level, rule_desc, source)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 verdict, rule_id, rule_level, rule_desc, source,
+                 size, perm, uname, uid, gname, gid, mtime, inode, md5, sha1)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 _event_row(ev),
             )
         _events_insert_count += 1
@@ -1330,6 +1349,16 @@ def _indexer_map(hit):
         "rule_level": level,
         "rule_desc": rule.get("description", ""),
         "source": "wazuh",
+        "size": syscheck.get("size_after") or syscheck.get("size_before") or data.get("size") or "",
+        "perm": syscheck.get("perm_after") or syscheck.get("perm_before") or data.get("perm") or "",
+        "uname": syscheck.get("uname_after") or syscheck.get("uname_before") or data.get("uname") or "",
+        "uid": str(syscheck.get("uid_after") if syscheck.get("uid_after") is not None else syscheck.get("uid_before") or data.get("uid") or ""),
+        "gname": syscheck.get("gname_after") or syscheck.get("gname_before") or data.get("gname") or "",
+        "gid": str(syscheck.get("gid_after") if syscheck.get("gid_after") is not None else syscheck.get("gid_before") or data.get("gid") or ""),
+        "mtime": _to_utc_iso(syscheck.get("mtime_after") or syscheck.get("mtime_before") or data.get("mtime") or ""),
+        "inode": str(syscheck.get("inode_after") if syscheck.get("inode_after") is not None else syscheck.get("inode_before") or data.get("inode") or ""),
+        "md5": syscheck.get("md5_after") or syscheck.get("md5_before") or data.get("md5") or "",
+        "sha1": syscheck.get("sha1_after") or syscheck.get("sha1_before") or data.get("sha1") or "",
     }
 
 
@@ -1691,18 +1720,29 @@ class Handler(BaseHTTPRequestHandler):
             body = self.rfile.read(length) if length else b"{}"
             try:
                 j = json.loads(body)
+                sc = j.get("syscheck") or {}
                 ev = {
                     "id": uuid.uuid4().hex,
                     "ts": j.get("ts") or datetime.now(WITA).isoformat(),
                     "agent": j.get("agent", "-"),
                     "agent_id": j.get("agent_id", "-"),
-                    "path": j.get("path", "-"),
-                    "hash": j.get("hash", ""),
+                    "path": j.get("path") or sc.get("path") or "-",
+                    "hash": j.get("hash") or sc.get("sha256_after") or sc.get("sha256") or "",
                     "severity": j.get("severity", "INFO"),
                     "status": j.get("status", "alerted"),
                     "ai": j.get("ai", ""),
                     "url": j.get("url", ""),
                     "verdict": j.get("verdict", ""),
+                    "size": str(j.get("size") or sc.get("size_after") or sc.get("size") or ""),
+                    "perm": str(j.get("perm") or sc.get("perm_after") or sc.get("perm") or ""),
+                    "uname": str(j.get("uname") or sc.get("uname_after") or sc.get("uname") or ""),
+                    "uid": str(j.get("uid") if j.get("uid") is not None else sc.get("uid_after") or sc.get("uid") or ""),
+                    "gname": str(j.get("gname") or sc.get("gname_after") or sc.get("gname") or ""),
+                    "gid": str(j.get("gid") if j.get("gid") is not None else sc.get("gid_after") or sc.get("gid") or ""),
+                    "mtime": _to_utc_iso(j.get("mtime") or sc.get("mtime_after") or sc.get("mtime") or ""),
+                    "inode": str(j.get("inode") if j.get("inode") is not None else sc.get("inode_after") or sc.get("inode") or ""),
+                    "md5": str(j.get("md5") or sc.get("md5_after") or sc.get("md5") or ""),
+                    "sha1": str(j.get("sha1") or sc.get("sha1_after") or sc.get("sha1") or ""),
                 }
                 EVENTS.append(ev)
                 del EVENTS[:-EVENTS_MAX]

@@ -69,12 +69,25 @@ def main():
     print(f"hash sintetis di MISP: {sha}")
 
     # 2. injeksi alert FIM level 5 (< ambang HIGH) dengan hash tsb
+    iso_now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     payload = {
         "rule": {"id": "553", "level": 5, "description": "e2e misp check"},
-        "syscheck": {"path": f"/home/e2e/Downloads/e2e-misp-{stamp}.bin",
-                     "sha256_after": sha, "event": "added", "perm_after": "rw-r--r--"},
+        "syscheck": {
+            "path": f"/home/e2e/Downloads/e2e-misp-{stamp}.bin",
+            "sha256_after": sha,
+            "event": "added",
+            "perm_after": "rw-r--r--",
+            "size_after": "2048",
+            "uname_after": "e2e",
+            "gname_after": "e2e",
+            "uid_after": "1000",
+            "gid_after": "1000",
+            "inode_after": "142857",
+            "mtime_after": iso_now,
+            "mode": "realtime",
+        },
         "agent": {"id": "003", "name": "e2e-misp", "ip": "192.168.1.50"},
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "timestamp": iso_now,
     }
     t0 = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
     print("POST webhook ...", flush=True)

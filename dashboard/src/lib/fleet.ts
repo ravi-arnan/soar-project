@@ -49,6 +49,18 @@ export interface FleetEvent {
   rule_id?: string;
   rule_level?: number;
   rule_desc?: string;
+  mitre?: string;
+  // Field metadata FIM
+  size?: number | string;
+  perm?: string;
+  uname?: string;
+  uid?: string | number;
+  gname?: string;
+  gid?: string | number;
+  mtime?: string;
+  inode?: string | number;
+  md5?: string;
+  sha1?: string;
 }
 
 /** Satu file dalam laporan scan on-demand (`/api/scan-results`). */

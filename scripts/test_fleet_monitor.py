@@ -468,6 +468,42 @@ class HistoryEndpointTests(_ApiTestCase):
         self.assertEqual(status, 200)
         self.assertIsNone(body["indexer_ok"])
 
+    def test_fim_metadata_persistence(self):
+        payload = {
+            "agent_id": "003",
+            "path": "/home/e2e/Downloads/test.bin",
+            "hash": "8a3e295960e50827749561909e0072273cbbfc995510ef7852f3e632ff2d19df",
+            "severity": "HIGH",
+            "status": "modified",
+            "size": "2048",
+            "perm": "rw-r--r--",
+            "uname": "e2e",
+            "uid": "1000",
+            "gname": "e2e",
+            "gid": "1000",
+            "mtime": "2026-10-22T20:49:03Z",
+            "inode": "142857",
+            "md5": "d41d8cd98f00b204e9800998ecf8427e",
+            "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+        }
+        status, _, _ = self.request("POST", "/webhook-log", payload)
+        self.assertEqual(status, 200)
+
+        status, _, body = self.request("GET", "/api/events/history?limit=10")
+        self.assertEqual(status, 200)
+        matching = [e for e in body["events"] if e.get("path") == "/home/e2e/Downloads/test.bin"]
+        self.assertTrue(len(matching) > 0)
+        ev = matching[0]
+        self.assertEqual(ev.get("size"), "2048")
+        self.assertEqual(ev.get("perm"), "rw-r--r--")
+        self.assertEqual(ev.get("uname"), "e2e")
+        self.assertEqual(ev.get("uid"), "1000")
+        self.assertEqual(ev.get("gname"), "e2e")
+        self.assertEqual(ev.get("gid"), "1000")
+        self.assertEqual(ev.get("inode"), "142857")
+        self.assertEqual(ev.get("md5"), "d41d8cd98f00b204e9800998ecf8427e")
+        self.assertEqual(ev.get("sha1"), "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+
 
 if __name__ == "__main__":
     unittest.main()
