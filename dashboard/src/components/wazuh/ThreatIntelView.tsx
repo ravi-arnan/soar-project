@@ -78,15 +78,39 @@ export function ThreatIntelView() {
             <tbody>
               {intel.recent.map((e, i) => (
                 <tr key={`${e.hash}-${e.ts}-${i}`} className="border-b border-[#EDEEF2] last:border-0">
-                  <td className="px-4 py-2 font-mono text-[12px]" title={`${e.hash} (klik untuk buka di VirusTotal)`}>
-                    <a
-                      href={`https://www.virustotal.com/gui/file/${e.hash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#006BB4] hover:underline"
-                    >
-                      {e.hash.slice(0, 16)}...
-                    </a>
+                  <td className="px-4 py-2 font-mono text-[12px]" title={e.hash}>
+                    <span className="font-medium text-[#1A1C21]">{e.hash.slice(0, 16)}...</span>
+                    <div className="flex items-center gap-1.5 mt-0.5 text-[11px]">
+                      <a
+                        href={`https://www.virustotal.com/gui/file/${e.hash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#006BB4] hover:underline"
+                        title="Buka di VirusTotal"
+                      >
+                        VT ↗
+                      </a>
+                      <span className="text-[#D3DAE6]">|</span>
+                      <a
+                        href={`https://bazaar.abuse.ch/sample/${e.hash}/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#006BB4] hover:underline"
+                        title="Buka di MalwareBazaar"
+                      >
+                        MB ↗
+                      </a>
+                      <span className="text-[#D3DAE6]">|</span>
+                      <a
+                        href={`https://otx.alienvault.com/indicator/file/${e.hash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#006BB4] hover:underline"
+                        title="Buka di AlienVault OTX"
+                      >
+                        OTX ↗
+                      </a>
+                    </div>
                   </td>
                   <td className="px-4 py-2">{e.agent}</td>
                   <td className="px-4 py-2">
@@ -110,8 +134,7 @@ export function ThreatIntelView() {
           </table>
         )}
         <div className="px-4 py-2.5 text-[12px] text-[#5A626F] border-t border-[#D3DAE6]">
-          Verdict gabungan VirusTotal + OTX via workflow n8n. Rincian VT (malicious/total) ada di notifikasi
-          Telegram tiap alert.
+          Verdict gabungan multi-sumber (VirusTotal, MalwareBazaar, MISP OSINT, dan AlienVault OTX) via pipeline orkestrasi n8n.
         </div>
       </div>
     </div>

@@ -76,14 +76,14 @@ export const ModulesHub = React.memo(function ModulesHub({
           id: 'threat-intel',
           title: 'Threat Intel',
           description:
-            'Verdict gabungan VirusTotal + OTX atas file mencurigakan via pipeline n8n.',
+            'Verdict gabungan VirusTotal, MalwareBazaar, MISP, dan OTX atas file mencurigakan via pipeline n8n.',
           icon: Box,
         },
         {
           id: 'mitre',
           title: 'MITRE ATT&CK',
           description:
-            'Pemetaan playbook n8n ke teknik MITRE ATT&CK — 6 playbook, 10 teknik unik, 4 fase.',
+            'Pemetaan playbook n8n ke teknik MITRE ATT&CK (6 playbook, 10 teknik unik, 4 fase).',
           icon: ShieldCheck,
         },
         

@@ -655,6 +655,37 @@ export function SecurityEventsDashboard({
                             <div><strong>rule.level:</strong> {row.level}</div>
                             <div><strong>rule.description:</strong> &quot;{row.description}&quot;</div>
                             <div><strong>location:</strong> &quot;{row.source === 'wazuh' ? 'wazuh-alerts (indexer)' : 'wazuh-alerts'}&quot;</div>
+                            {row.hash && (
+                              <div className="pt-1.5 border-t border-[#EDEEF2] mt-2 flex items-center gap-2 font-sans text-[11px]">
+                                <span className="font-semibold text-[#5A626F]">Investigasi Intel:</span>
+                                <a
+                                  href={`https://www.virustotal.com/gui/file/${row.hash}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#006BB4] hover:underline"
+                                >
+                                  VirusTotal ↗
+                                </a>
+                                <span className="text-[#D3DAE6]">|</span>
+                                <a
+                                  href={`https://bazaar.abuse.ch/sample/${row.hash}/`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#006BB4] hover:underline"
+                                >
+                                  MalwareBazaar ↗
+                                </a>
+                                <span className="text-[#D3DAE6]">|</span>
+                                <a
+                                  href={`https://otx.alienvault.com/indicator/file/${row.hash}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#006BB4] hover:underline"
+                                >
+                                  AlienVault OTX ↗
+                                </a>
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
