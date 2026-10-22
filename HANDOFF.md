@@ -1,3 +1,36 @@
+# Handoff SOAR - 2026-10-22 (Penyelesaian Milestone M4: Uji Konsistensi & Ketahanan Inferensi LLM)
+
+## Status Terakhir (Checkpoint: 22 Oktober 2026, 13:46 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Suite Benchmark Konsistensi & Ketahanan Inferensi LLM ([benchmark-llm-consistency.py](file:///home/ravi/Projects/soar-project/scripts/benchmark-llm-consistency.py))**:
+  - Script pengujian komprehensif untuk mengevaluasi determinisme keluaran, kepatuhan batasan guardrail (negative & positive constraints), stabilitas leksikal/semantik via Jaccard similarity, kepatuhan batas 2-3 kalimat, dan sanitasi karakter markdown terlarang (`*`, `_`, ```, `[]`, `()`) pada model `DeepSeek-V4-Flash` (via HCNSEC API, `temperature=0.3`).
+  - Mencakup 6 skenario ancaman SOAR: Malware Kritis (EICAR), Malware Tingkat Tinggi (Trojan Emotet), Perubahan File Sistem (`hosts`), File Eksekutabel Baru Tak Dikenal, Rantai Proses Mencurigakan (LOLBin PowerShell), dan Phishing Kredensial (GSB/URLScan).
+- **Unit Test Suite ([test_benchmark_llm_consistency.py](file:///home/ravi/Projects/soar-project/scripts/test_benchmark_llm_consistency.py))**:
+  - 10 unit test komprehensif menguji sanitasi tag `<think>...</think>`, penghitungan kalimat, rumus Jaccard similarity, logika validasi batasan negatif per skenario, serta eksekusi benchmark offline via mode `--mock`. 100% PASS dalam 0.20 detik.
+- **Eksekusi Pengujian Nyata & Dokumentasi Kuantitatif**:
+  - Pengujian live N=5 per skenario (total 30 panggilan API) menghasilkan: **100,0% kepatuhan batasan aturan & guardrail**, **100,0% lolos sanitasi markdown**, stabilitas leksikal semantik rata-rata **Jaccard 0,464**, dan latensi inferensi rata-rata **11,78 detik** (median 10,23 detik).
+  - Hasil pengukuran dicatat lengkap pada [EVALUASI-METRIK.md §13](file:///home/ravi/Projects/soar-project/docs/evaluasi/EVALUASI-METRIK.md#L282-L334) dan artefak data mentah tersimpan di [bench-llm-consistency-20261022.json](file:///home/ravi/Projects/soar-project/docs/evaluasi/bench-llm-consistency-20261022.json).
+- **Penutupan Milestone M4**:
+  - Milestone M4 (Integrasi analisis LLM dan explainability) resmi selesai 100% (telah memenuhi syarat evaluasi konsistensi keluaran LLM pada alert identik). Status pada [ROADMAP.md](file:///home/ravi/Projects/soar-project/ROADMAP.md#L60-L84) telah diperbarui.
+
+### 2. Daftar File Diubah & Status Git
+- `scripts/benchmark-llm-consistency.py` (baru): Script runner pengujian kuantitatif LLM.
+- `scripts/test_benchmark_llm_consistency.py` (baru): Unit test suite pengujian benchmark.
+- `docs/evaluasi/bench-llm-consistency-20261022.json` (baru): Data mentah hasil 30 pengujian live.
+- `docs/evaluasi/EVALUASI-METRIK.md` (diperbarui): Penambahan bab §13 evaluasi konsistensi & ketahanan LLM.
+- `ROADMAP.md` (diperbarui): Penandaan Milestone M4 tuntas 100%.
+
+### 3. Status Verifikasi
+- **Unit Test Backend**: 99/99 tests PASS (`nice -n 19 python3 -m unittest discover -s scripts/ -p "test_*.py"`).
+- **Benchmark Live LLM**: 29/30 panggilan sukses (96,67%), 100% kepatuhan aturan, 100% sanitasi markdown, 0 kegagalan fatal (fail-safe n8n aktif).
+- **Konektivitas Live Server (`ravi-debian`)**: HTTP `:8080/api/fleet` 200 OK (sehat, n8n true, gemini true, wazuh_api true).
+
+### 4. Next Action
+Lanjutkan milestone M5 (migrasi OTX API Key hardcoded ke credential terkelola n8n via `httpHeaderAuth`, pembatasan firewall subnet endpoint port 1514/1515, dan sinkronisasi kredensial Wazuh) serta penyusunan bukti laporan TA pada sesi berikutnya.
+
+---
+
 # Handoff SOAR - 2026-10-17 (Audit UI, Interaktivitas Top Navbar & Optimalisasi Stack)
 
 ## Status Terakhir (Checkpoint: 17 Oktober 2026, 23:10 WIB - Sesi Ditutup & Pushed)

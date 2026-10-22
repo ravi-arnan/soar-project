@@ -279,3 +279,55 @@ selisih dalam rentang noise). Penyebabnya latensi pipeline **didominasi tahap no
 krusial untuk burst 100 PC dengan hash sama (kuota VT free 4 req/menit).
 
 Detail: `docs/evaluasi/bench-vt-cold-vs-cache-20261008.json`
+
+## 13. Evaluasi Konsistensi & Ketahanan Inferensi LLM (Milestone M4, 2026-10-22)
+
+Menutup gap milestone M4 (analisis LLM dan explainability): pengujian konsistensi dan determinisme keluaran LLM (`DeepSeek-V4-Flash` via HCNSEC API, `temperature=0.3`) pada alert identik yang dijalankan berulang (repeatability testing).
+
+Pengukuran dieksekusi melalui `scripts/benchmark-llm-consistency.py` terhadap 6 skenario representatif SOAR:
+1. **Malware Kritis**: Alert EICAR/ransomware, Wazuh rule level 12, VirusTotal 62/70.
+2. **Malware Tingkat Tinggi**: Trojan invoice macro, Wazuh rule level 10, VirusTotal 5/70 + MalwareBazaar Emotet.
+3. **Perubahan File Konfigurasi Sistem**: FIM checksum berubah pada `hosts`, rule 550 level 7 (konteks SOAR sinkhole).
+4. **Eksekutabel Baru / Hash Tak Dikenal**: File `.exe` baru pada Desktop, VirusTotal 0/0 NotFound (perlu review manual).
+5. **Rantai Proses Mencurigakan (LOLBin)**: Eksekusi PowerShell terenkripsi dari `cmd.exe`, Wazuh rule 110010 level 10.
+6. **Indikasi Phishing Kredensial**: URL phishing perbankan, Google Safe Browsing + URLScan hit.
+
+### 13.1 Metrik yang Diukur
+- **Kepatuhan Batasan & Konteks (Constraint Adherence Rate)**: Persentase respons yang memenuhi seluruh aturan larangan negatif (misal tidak menuduh file sistem sebagai malware, tidak menyarankan hapus binary OS Windows, tidak vonis malware definitif pada file tak dikenal) serta aturan positif (rekomendasi isolasi/karantina pada ancaman nyata).
+- **Stabilitas Leksikal & Semantik (Pairwise Jaccard Similarity)**: Rata-rata kesamaan kumpulan kata kunci unik non-stopword antar-iterasi pada skenario identik:
+  $$\text{Jaccard}(A, B) = \frac{|A \cap B|}{|A \cup B|}$$
+- **Kepatuhan Format (Markdown & Panjang Kalimat)**: Evaluasi kepatuhan batas 2-3 kalimat serta pembersihan karakter markdown terlarang (`*`, `_`, ```, `[]`, `()`) agar pesan Telegram parse mode Markdown tidak gagal render.
+- **Distribusi Latensi Inferensi**: Waktu tanggap panggilan API cloud (ms) meliputi rata-rata, median, rentang min-maks, dan standar deviasi.
+
+### 13.2 Hasil Pengukuran (N=5 per Skenario, Total 30 Panggilan)
+
+| Skenario Uji | N | Sukses | Kepatuhan Aturan | Jaccard Similarity | Panjang Kata ($\mu \pm \sigma$) | Rata-rata Latensi | Median Latensi |
+|---|---|---|---|---|---|---|---|
+| Malware Kritis (EICAR) | 5 | 5/5 | **100,0%** | 0,358 | 76,0 ± 3,7 | 9.630,8 ms | 8.874,6 ms |
+| Malware Tinggi (Trojan) | 5 | 5/5 | **100,0%** | 0,397 | 68,8 ± 2,2 | 12.537,5 ms | 10.231,8 ms |
+| File Konfigurasi Sistem (`hosts`) | 5 | 5/5 | **100,0%** | 0,557 | 48,0 ± 3,2 | 10.033,9 ms | 9.390,9 ms |
+| File Tak Dikenal (Review) | 5 | 4/5* | **100,0%** | 0,568 | 61,0 ± 1,8 | 14.969,6 ms | 14.072,5 ms |
+| Rantai Proses (LOLBin) | 5 | 5/5 | **100,0%** | 0,459 | 67,8 ± 3,0 | 10.831,0 ms | 10.155,0 ms |
+| Phishing Kredensial | 5 | 5/5 | **100,0%** | 0,446 | 69,6 ± 1,7 | 13.293,9 ms | 13.212,0 ms |
+| **Rangkuman Global** | **30** | **29/30 (96,7%)** | **100,0%** | **0,464** | **65,2 ± 9,6** | **11.776,4 ms** | **10.231,8 ms** |
+
+*\*Catatan: 1 panggilan pada skenario 4 mengalami timeout jaringan saat transfer data dan berhasil ditangani mekanisme fail-safe n8n.*
+
+### 13.3 Temuan dan Interpretasi Ilmiah
+
+1. **Konsistensi Guardrail Sempurna (100% Adherence)**:
+   - Pada alert **file sistem (`hosts`)**, model 100% konsisten mengaitkan perubahan dengan sinkhole SOAR/tugas admin, serta tidak pernah mengusulkan karantina atau penghapusan file OS.
+   - Pada alert **LOLBin**, model 100% konsisten menganalisis rantai proses dan tidak pernah merekomendasikan penghapusan binary sistem `powershell.exe`.
+   - Pada alert **file baru tak dikenal**, model 100% mematuhi instruksi peninjauan manual dan menahan diri dari vonis malware tergesa-gesa.
+   - Pada ancaman **kritis dan tinggi**, model 100% mengarahkan tindakan isolasi segera, penahanan lateral, dan mitigasi aktif.
+2. **Keseimbangan Determinisme Semantik dan Variasi Frasa (Jaccard ~0,46)**:
+   - Indeks Jaccard rata-rata 0,464 menunjukkan model mempertahankan korpus terminologi teknis yang stabil (kata kunci esensial selalu hadir), sekaligus memiliki variasi susunan kalimat alami yang wajar tanpa degradasi akurasi makna.
+   - Deviasi jumlah kata sangat rendah (standar deviasi ~1,7 hingga 3,7 kata per skenario), membuktikan kontrol panjang respons sangat stabil.
+3. **Kepatuhan Format dan Sanitasi (100% Clean)**:
+   - Evaluasi pasca-sanitasi regex n8n menghasilkan 100% bebas dari karakter markdown khusus yang berisiko merusak parser Telegram Bot.
+   - Struktur penjelasan konsisten berkisar pada 3 kalimat ringkas (analisis ancaman, alasan teknis, rekomendasi mitigasi).
+4. **Karakteristik Latensi Inferensi**:
+   - Rata-rata latensi inferensi cloud adalah **11,78 detik** (median 10,23 detik). Temuan ini selaras penuh dengan hasil pengukuran MTTR HITL pada §11 (komponen notifikasi ~21 detik, di mana latensi inferensi LLM mendominasi rantai eksekusi).
+
+Detail data pengujian mentah: `docs/evaluasi/bench-llm-consistency-20261022.json`
+
