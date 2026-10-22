@@ -136,6 +136,23 @@ class CommandApiTests(_ApiTestCase):
         )
         self.assertEqual(fleet_monitor.COMMANDS["009"][0]["by"], "dashboard")
 
+        # Uji aksi restore
+        status_res, _, body_res = self.request(
+            "POST",
+            "/api/commands",
+            {
+                "agent_id": "009",
+                "action": "restore",
+                "target": "/home/ravi/Downloads/eicar.com",
+                "by": "dashboard",
+            },
+            fleet_monitor.FLEET_COMMAND_TOKEN,
+        )
+        self.assertEqual(status_res, 200)
+        self.assertEqual(
+            body_res, {"status": "queued", "agent_id": "009", "action": "restore"}
+        )
+
     def test_post_rejects_invalid_target(self):
         status, _, body = self.request(
             "POST",

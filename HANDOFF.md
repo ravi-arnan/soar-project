@@ -1,3 +1,81 @@
+# Handoff SOAR - 2026-10-22 Malam (Milestone M5: Pemulihan Karantina, Canary Ransomware, & Badge MITRE Dashboard)
+
+## Status Terakhir (Checkpoint: 22 Oktober 2026, 22:45 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Mekanisme Pemulihan Karantina (*Unquarantine / Restore Action*) ([agent-rs/src/main.rs](file:///home/ravi/Projects/soar-project/agent-rs/src/main.rs))**:
+  - `do_quarantine` kini menyimpan metadata pemetaan berkas ke manifest persisten (`manifest.json` di direktori karantina: path asal, nama berkas karantina, timestamp).
+  - Penambahan fungsi `do_restore()` yang memvalidasi berkas karantina, memulihkan permission unix ke `0o644`, memindahkan berkas kembali ke lokasi asal, dan membersihkan manifest.
+  - Penambahan pengecekan *writability probe* (`is_writable_dir`) untuk mencegah kegagalan izin akses (*os error 13*) saat proses berjalan sebagai user non-root pada direktori `/var/ossec/quarantine`.
+  - Integrasi perintah `restore` / `unquarantine` pada loop polling command agen dan server lokal HTTP port 8787.
+  - Penambahan unit test `quarantine_manifest_and_restore_cycle` (100% PASS).
+- **Deteksi Ransomware Berbasis Canary File (*Decoy Early-Warning*) ([agent-rs/src/main.rs](file:///home/ravi/Projects/soar-project/agent-rs/src/main.rs))**:
+  - Penempatan otomatis berkas umpan `.soar-canary.docx` di setiap watch root (`init_canaries`).
+  - Pemantauan perubahan integritas hash berkas canary secara *realtime*. Jika ransomware memodifikasi/mengenkripsi canary, agen langsung memicu sinyal darurat **Rule 100004 Level 12 CRITICAL (MITRE T1486 Data Encrypted for Impact)** ke n8n.
+  - Penambahan unit test `canary_ransomware_tampering` (100% PASS).
+- **Dukungan End-to-End Command Queue Backend & API ([scripts/fleet-monitor.py](file:///home/ravi/Projects/soar-project/scripts/fleet-monitor.py), [dashboard/src/app/api/commands/route.ts](file:///home/ravi/Projects/soar-project/dashboard/src/app/api/commands/route.ts), [dashboard/src/lib/commands.ts](file:///home/ravi/Projects/soar-project/dashboard/src/lib/commands.ts))**:
+  - Mengizinkan aksi `"restore"` pada validasi payload command queue di backend Python dan API Next.js.
+  - Menambahkan unit test backend untuk aksi `restore` pada [scripts/test_fleet_monitor.py](file:///home/ravi/Projects/soar-project/scripts/test_fleet_monitor.py) (25/25 PASS).
+- **Visual Badge MITRE ATT&CK & Tombol Pulihkan di Dashboard ([dashboard/src/components/wazuh/SecurityEventsDashboard.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/SecurityEventsDashboard.tsx))**:
+  - Penambahan badge visual teknik MITRE ATT&CK (`[T1486]`, `[T1036.007]`, `[T1566.002]`, `[T1059.001]`, `[T1565.001]`) pada tabel *Security Events*.
+  - Penyertaan metadata teknik MITRE pada panel detail event yang diekspansi.
+  - Penambahan tombol aksi `Pulihkan` berdampingan dengan tombol `Karantina` pada baris event yang memiliki `rawPath`.
+
+### 2. Daftar File Diubah & Status Git
+- `agent-rs/src/main.rs`: Pemulihan karantina, manifest JSON, probe writability, canary ransomware T1486, dan unit tests.
+- `scripts/fleet-monitor.py`: Validasi command queue untuk aksi `restore`.
+- `scripts/test_fleet_monitor.py`: Unit test command `restore`.
+- `dashboard/src/lib/commands.ts`: Tipe `DashboardCommand` aksi `"restore"`.
+- `dashboard/src/app/api/commands/route.ts`: Allowlist `ACTIONS` aksi `"restore"`.
+- `dashboard/src/components/wazuh/SecurityEventsDashboard.tsx`: Badge visual MITRE ATT&CK dan tombol `Pulihkan`.
+- `HANDOFF.md`: Checkpoint malam 22 Okt 2026.
+
+### 3. Status Verifikasi
+- **Rust Agent**: 13/13 tests PASS (`nice -n 19 cargo test`). Binary release 4,1 MB.
+- **Python Unit Tests**: 110/110 tests PASS ([scripts/](file:///home/ravi/Projects/soar-project/scripts/)), 4/4 tests PASS ([deploy/](file:///home/ravi/Projects/soar-project/deploy/)).
+- **Next.js Dashboard**: `npm run check` 100% PASS (6 unit tests, lint, typecheck, build).
+- **Konektivitas Live Server**: 10 container Docker Up, Cloudflare Tunnel normal.
+
+### 4. Next Action
+Review berkas yang termodifikasi dan lakukan commit atas paket fitur pemulihan karantina, canary ransomware, dan badge MITRE dashboard.
+
+---
+
+# Handoff SOAR - 2026-10-22 Malam (Milestone M5: Rebuild Dashboard Live, Validasi E2E Pipeline, & Deteksi Ekstensi Ganda Agen Rust)
+
+## Status Terakhir (Checkpoint: 22 Oktober 2026, 21:55 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Deploy & Rebuild Dashboard Live Server ([dashboard/](file:///home/ravi/Projects/soar-project/dashboard/))**:
+  - Source tree Next.js yang memuat tombol investigasi intel multi-sumber (`VT ↗`, `MB ↗`, `OTX ↗`) dan deskripsi 4 pilar intel ditransfer ke server `ravi-debian`.
+  - Image Docker `soar-fleet-dashboard:latest` berhasil dikompilasi ulang via multi-stage build (Next.js standalone).
+  - Container `fleet-dashboard` di-recreate dan melayani traffic live (HTTP 200 di port 3000, terintegrasi Cloudflare Access `soar.raviarnan.dev`).
+- **Validasi E2E Pipeline Live Multi-Sumber**:
+  - Script pengujian `scripts/e2e-misp-check.py` dieksekusi langsung pada server `ravi-debian`.
+  - Terverifikasi 100% HIJAU: Hash sintetis diproses oleh node baru `OTX Lookup` (kredensial terkelola `httpHeaderAuth`) -> `MalwareBazaar Lookup` -> `MISP Lookup` -> `Rangkum Hasil` -> severity otomatis dinaikkan ke HIGH dan tercatat di service `alert-log` (:8091).
+- **Penguatan Sensor Endpoint & Deteksi Ekstensi Ganda ([agent-rs/src/main.rs](file:///home/ravi/Projects/soar-project/agent-rs/src/main.rs))**:
+  - Implementasi deteksi teknik penyamaran ekstensi ganda (*Masquerading: Double Extension* - MITRE ATT&CK T1036.007) via fungsi `has_deceptive_double_extension()`.
+  - File eksekutabel yang disamarkan dengan ekstensi dokumen/media (misal: `.pdf.exe`, `.docx.vbs`, `.xlsx.scr`, `.jpg.bat`) otomatis dinaikkan ke **Rule 100003 Level 8 (HIGH)** untuk mencegah blind spot spear-phishing zero-day.
+  - Memperluas sensor phishing URL agar mendukung shortcut desktop Linux (`.desktop`) dan shortcut Safari macOS (`.webloc`).
+  - Menambahkan 2 unit test baru (`deceptive_double_extension_detection` dan `extract_urls_dari_desktop_dan_webloc`).
+  - Kompilasi release binary Rust `soar-agent` berukuran 4,0 MB (`opt-level=3`, `lto=true`, stripped).
+
+### 2. Daftar File Diubah & Status Git
+- `agent-rs/src/main.rs`: Deteksi ekstensi ganda (T1036.007), sensor phishing `.desktop`/`.webloc`, dan 2 unit test baru.
+- `HANDOFF.md`: Checkpoint malam 22 Okt 2026.
+
+### 3. Status Verifikasi
+- **Rust Agent**: 11/11 tests PASS (`nice -n 19 cargo test`). Binary release 4,0 MB.
+- **Python Unit Tests**: 110/110 tests PASS ([scripts/](file:///home/ravi/Projects/soar-project/scripts/)), 4/4 tests PASS ([deploy/](file:///home/ravi/Projects/soar-project/deploy/)).
+- **Next.js Dashboard**: `npm run check` 100% PASS, image Docker container live di `ravi-debian` running healthy.
+- **Pipeline E2E Live**: 100% PASS (MISP -> OTX -> MB -> VT -> Alert Log).
+- **Konektivitas Live Server**: 10 container Docker Up, Cloudflare Tunnel `soar.raviarnan.dev` normal.
+
+### 4. Next Action
+Commit dan push perubahan sensor Agen Rust, atau lanjutkan pengerasan operasional host (firewall port 1514/1515 dan rotasi password default Wazuh).
+
+---
+
 # Handoff SOAR - 2026-10-22 Malam (Milestone M5: Penguatan Investigasi Multi-Sumber Dashboard & Unit Test TUI)
 
 ## Status Terakhir (Checkpoint: 22 Oktober 2026, 21:35 WITA)
