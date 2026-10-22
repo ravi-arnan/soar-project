@@ -53,6 +53,8 @@ export default function Home() {
   const [currentView, setCurrentView] = useState<string>('modules');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('004');
   const [eventsAgentFilter, setEventsAgentFilter] = useState<string | undefined>(undefined);
+  const [eventsSeverityFilter, setEventsSeverityFilter] = useState<string[] | undefined>(undefined);
+  const [eventsActiveTab, setEventsActiveTab] = useState<'dashboard' | 'events' | undefined>(undefined);
 
   const [refreshMs, setRefreshMs] = useState(() => {
     try {
@@ -144,6 +146,22 @@ export default function Home() {
     setCurrentView('agent-detail');
   };
 
+  const handleNavigate = (
+    viewId: string,
+    options?: { severity?: string[]; agentId?: string; tab?: 'dashboard' | 'events' }
+  ) => {
+    if (options?.severity !== undefined) {
+      setEventsSeverityFilter(options.severity);
+    }
+    if (options?.tab) {
+      setEventsActiveTab(options.tab);
+    }
+    if (options?.agentId) {
+      setEventsAgentFilter(options.agentId);
+    }
+    setCurrentView(viewId);
+  };
+
   return (
     <div className="min-h-screen bg-[#F5F7FA] text-[#1A1C21] flex flex-col font-sans antialiased">
       {/* Top Wazuh Global Header */}
@@ -153,7 +171,7 @@ export default function Home() {
         online={online}
         stats={stats}
         health={health}
-        onNavigate={(viewId) => setCurrentView(viewId)}
+        onNavigate={handleNavigate}
         onRefresh={refresh}
       />
 
@@ -205,6 +223,8 @@ export default function Home() {
             onOpenAgents={() => setCurrentView('agents')}
             onRefresh={refresh}
             initialAgentId={eventsAgentFilter}
+            initialSeverity={eventsSeverityFilter}
+            initialTab={eventsActiveTab}
           />
         )}
 

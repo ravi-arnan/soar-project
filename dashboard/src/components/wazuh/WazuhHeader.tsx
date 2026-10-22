@@ -28,7 +28,10 @@ interface WazuhHeaderProps {
   online?: boolean;
   stats?: FleetStats;
   health?: FleetHealth;
-  onNavigate?: (viewId: string) => void;
+  onNavigate?: (
+    viewId: string,
+    options?: { severity?: string[]; agentId?: string; tab?: 'dashboard' | 'events' }
+  ) => void;
   onRefresh?: () => void;
 }
 
@@ -365,30 +368,79 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                       Notifikasi Sistem
                     </div>
                     {totalThreats > 0 && (
-                      <span className="text-[10px] font-bold bg-[#BD271E] text-white px-2 py-0.5 rounded-full">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onNavigate?.('security-events', {
+                            severity: ['CRITICAL', 'HIGH'],
+                            tab: 'events',
+                          });
+                          setActiveMenu(null);
+                        }}
+                        className="text-[10px] font-bold bg-[#BD271E] text-white px-2 py-0.5 rounded-full hover:bg-[#9E1F18] transition-colors cursor-pointer"
+                        title="Klik untuk filter ancaman Critical & High"
+                      >
                         {totalThreats} Ancaman Aktif
-                      </span>
+                      </button>
                     )}
                   </div>
                   <div className="max-h-72 overflow-y-auto divide-y divide-[#E1E6EB] text-[12px]">
                     {/* Item 1: Threats */}
                     <div
-                      className="p-3 hover:bg-[#F8FAFC] cursor-pointer transition-colors"
+                      className="p-3 hover:bg-[#F8FAFC] cursor-pointer transition-colors group"
                       onClick={() => {
-                        onNavigate?.('security-events');
+                        onNavigate?.('security-events', {
+                          severity: ['CRITICAL', 'HIGH'],
+                          tab: 'events',
+                        });
                         setActiveMenu(null);
                       }}
                     >
                       <div className="flex items-start gap-2.5">
                         <ShieldAlert className="w-4 h-4 text-[#BD271E] mt-0.5 shrink-0" />
-                        <div>
-                          <div className="font-semibold text-[#1A1C21]">
-                            {stats?.severity?.CRITICAL || 0} Critical /{' '}
-                            {stats?.severity?.HIGH || 0} High Alerts
+                        <div className="flex-1">
+                          <div className="font-semibold text-[#1A1C21] flex items-center justify-between">
+                            <span>Alerts Keamanan Kritis</span>
+                            <span className="text-[10px] text-[#006BB4] group-hover:underline font-normal">
+                              Tinjau Events &rarr;
+                            </span>
                           </div>
-                          <div className="text-[11px] text-[#5A626F] mt-0.5 leading-snug">
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigate?.('security-events', {
+                                  severity: ['CRITICAL'],
+                                  tab: 'events',
+                                });
+                                setActiveMenu(null);
+                              }}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-[#FDE8E8] text-[#BD271E] hover:bg-[#FBD5D5] transition-colors cursor-pointer"
+                              title="Filter hanya alert Critical"
+                            >
+                              {stats?.severity?.CRITICAL || 0} Critical
+                            </button>
+                            <span className="text-[#8A94A6]">/</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigate?.('security-events', {
+                                  severity: ['HIGH'],
+                                  tab: 'events',
+                                });
+                                setActiveMenu(null);
+                              }}
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-[#FEF3C7] text-[#B45309] hover:bg-[#FDE68A] transition-colors cursor-pointer"
+                              title="Filter hanya alert High"
+                            >
+                              {stats?.severity?.HIGH || 0} High Alerts
+                            </button>
+                          </div>
+                          <div className="text-[11px] text-[#5A626F] mt-1 leading-snug">
                             Total {stats?.events_total?.toLocaleString('en-US') || 0} event
-                            terekam di database SOAR.
+                            terekam di database SOAR. Klik baris untuk memfilter keduanya.
                           </div>
                         </div>
                       </div>
@@ -437,10 +489,10 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                     <div className="p-2 border-t border-[#E1E6EB] bg-[#F8FAFC]">
                       <button
                         onClick={() => {
-                          onNavigate('security-events');
+                          onNavigate('security-events', { severity: [], tab: 'events' });
                           setActiveMenu(null);
                         }}
-                        className="w-full text-center py-1 text-[12px] font-semibold text-[#006BB4] hover:underline"
+                        className="w-full text-center py-1 text-[12px] font-semibold text-[#006BB4] hover:underline cursor-pointer"
                       >
                         Buka Semua Security Events &rarr;
                       </button>

@@ -1,3 +1,42 @@
+# Handoff SOAR - 2026-10-23 Dini Hari (Milestone M5: Notifikasi Interaktif, Anti-Slop Asesmen FIM, & Faceted Severity Stats)
+
+## Status Terakhir (Checkpoint: 23 Oktober 2026, 00:52 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Interaktivitas Notifikasi Sistem & Filter Cepat Security Events**:
+  - Di [dashboard/src/components/wazuh/WazuhHeader.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/WazuhHeader.tsx): Popover notifikasi kini mendukung klik baris ancaman serta pill individual (`Critical`, `High`, atau `Ancaman Aktif`) yang langsung mengarahkan navigasi ke tab `events` dengan filter keparahan terkait.
+  - Di [dashboard/src/app/page.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/app/page.tsx): Pengelolaan state navigasi filter terpusat (`eventsSeverityFilter`, `eventsActiveTab`).
+  - Di [dashboard/src/components/wazuh/SecurityEventsDashboard.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/SecurityEventsDashboard.tsx):
+    - Penambahan bilah filter keparahan cepat (`Semua`, `Critical + High`, `Critical`, `High`, `Medium`) dengan state interaksi deterministik.
+    - 4 Kartu KPI Counter dan legend Donut Breakdown kini interaktif (klik untuk filter langsung di tab Events).
+    - Serialisasi perbandingan prop filter untuk mencegah re-render mereset pilihan pengguna.
+- **Perbaikan Faceted Severity Stats di Backend ([scripts/fleet-monitor.py](file:///home/ravi/Projects/soar-project/scripts/fleet-monitor.py))**:
+  - Memisahkan kalkulasi agregasi `stats` dari post-filter `severity` pada endpoint `/api/events/history`.
+  - Angka counter pada tombol filter keparahan tidak lagi menjadi 0 saat filter tertentu sedang aktif, menjaga visualisasi facet tetap akurat dan stabil.
+- **Redesain Anti-Slop Panel Asesmen FIM ([dashboard/src/components/wazuh/FimDashboard.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/FimDashboard.tsx))**:
+  - Menghilangkan ornamen `border-l-4` garis vertikal biru tebal dan ikon bot generik, diganti dengan panel flat 1px border (`border-[#E1E6EB] bg-[#F8FAFC] rounded`).
+  - Mengeliminasi teks sintetis AI boilerplate, digantikan dengan status faktual Wazuh Syscheck daemon dan narasi asli SOAR.
+  - Memperbaiki hierarki tombol Active Response (tombol netral untuk berkas normal, tombol peringatan tegas untuk level >= 7).
+  - Merestrukturisasi status verifikasi tanpa teks `(detected)` yang cacat, serta merapikan konsol pivot OSINT (VirusTotal, MalwareBazaar, AlienVault OTX) dengan tombol salin hash.
+
+### 2. Daftar File Diubah & Status Git
+- `dashboard/src/app/page.tsx`: Navigasi filter terpusat.
+- `dashboard/src/components/wazuh/WazuhHeader.tsx`: Interaktivitas klik notifikasi ancaman.
+- `dashboard/src/components/wazuh/SecurityEventsDashboard.tsx`: Bilah filter keparahan cepat dan KPI interaktif.
+- `dashboard/src/components/wazuh/FimDashboard.tsx`: Redesain anti-slop panel asesmen dan konsol OSINT.
+- `scripts/fleet-monitor.py`: Pemisahan agregasi faceted stats dari post-filter severity.
+- `HANDOFF.md`: Checkpoint sesi 23 Oktober 2026.
+
+### 3. Status Verifikasi
+- **Python Unit Tests**: 26/26 tests PASS (`scripts/test_fleet_monitor.py`).
+- **Next.js Dashboard**: `npm run check` 100% PASS (16 tests, ESLint, TypeScript check, Next.js production build).
+- **Server Deployment**: Sinkronisasi dan restart container `fleet-monitor` serta `fleet-dashboard` di server `ravi-debian` (HTTP 200 OK live).
+
+### 4. Next Action
+Sesi kerja selesai, seluruh fitur terverifikasi dan siap di-commit dan di-push.
+
+---
+
 # Handoff SOAR - 2026-10-22 Malam (Milestone M5: Panel Analisis AI FIM, Threat Intel Pivot, & Resolusi Metadata Berkas Lengkap)
 
 ## Status Terakhir (Checkpoint: 22 Oktober 2026, 23:45 WITA)
