@@ -1,0 +1,1631 @@
+{
+  "meta": {
+    "model": "DeepSeek-V4-Flash",
+    "endpoint": "https://api.hcnsec.cn/v1/chat/completions",
+    "temperature": 0.3,
+    "n_per_scenario": 5,
+    "is_mock": false
+  },
+  "global_summary": {
+    "timestamp": "2026-10-22T05:45:11.549815+00:00",
+    "total_duration_sec": 397.66,
+    "total_calls": 30,
+    "total_successes": 29,
+    "success_rate_pct": 96.67,
+    "overall_constraint_adherence_pct": 100.0,
+    "overall_jaccard_lexical_similarity": 0.4643,
+    "overall_latency_ms": {
+      "mean": 11776.36,
+      "median": 10231.81,
+      "min": 7707.69,
+      "max": 30591.07,
+      "stdev": 5149.27
+    }
+  },
+  "scenarios": {
+    "malware_critical": {
+      "scenario_id": "malware_critical",
+      "title": "Malware Kritis (EICAR / Ransomware)",
+      "severity": "CRITICAL",
+      "total_runs": 5,
+      "success_count": 5,
+      "error_count": 0,
+      "latency_stats": {
+        "mean_ms": 9630.83,
+        "median_ms": 9636.92,
+        "min_ms": 8357.95,
+        "max_ms": 10914.89,
+        "stdev_ms": 904.23
+      },
+      "metrics": {
+        "constraint_adherence_pct": 100.0,
+        "sentence_length_adherence_pct": 100.0,
+        "raw_no_markdown_pct": 100.0,
+        "sanitized_no_markdown_pct": 100.0,
+        "avg_jaccard_lexical_similarity": 0.3585,
+        "word_count_mean": 75.6,
+        "word_count_stdev": 4.6
+      },
+      "runs": [
+        {
+          "run_index": 1,
+          "status": "SUCCESS",
+          "latency_ms": 9647.73,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 78,
+          "constraint_passed": true,
+          "clean_text": "Laporan ini mengonfirmasi keberadaan file berbahaya eicar.com dengan tingkat keparahan kritis, terdeteksi oleh Wazuh level 12 dan 62 dari 70 mesin antivirus di VirusTotal, sehingga sistem harus segera diisolasi dari jaringan untuk mencegah penyebaran. Tindakan eradikasi wajib dilakukan dengan menghapus file tersebut secara permanen, memindai seluruh endpoint untuk indikator kompromi, dan memulihkan sistem dari cadangan bersih yang terverifikasi. Setelah pembersihan, lakukan audit menyeluruh terhadap log akses dan aktivitas untuk memastikan tidak ada persistensi atau pergerakan lateral yang tersisa.",
+          "tokens_count": 52,
+          "api_usage": {
+            "prompt_tokens": 182,
+            "total_tokens": 334,
+            "completion_tokens": 152,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.804e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.804e-05,
+              "upstream_inference_prompt_cost": 2.548e-05,
+              "upstream_inference_completions_cost": 4.256e-05,
+              "total_cost": 6.804e-05,
+              "input_cost": 2.548e-05,
+              "output_cost": 4.256e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.3399999999999998e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 2,
+          "status": "SUCCESS",
+          "latency_ms": 8357.95,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 74,
+          "constraint_passed": true,
+          "clean_text": "Peringatan ini menunjukkan deteksi malware kritis dengan skor ancaman tinggi, di mana file eicar.com terkonfirmasi berbahaya oleh mayoritas mesin antivirus dan harus segera ditangani. Langkah pertama adalah mengisolasi sistem yang terinfeksi dari jaringan untuk mencegah penyebaran, kemudian menghapus file tersebut secara permanen dan melakukan pemindaian menyeluruh pada seluruh endpoint. Setelah eradikasi, lakukan audit keamanan untuk memastikan tidak ada indikasi kompromi lanjutan dan perbarui kebijakan deteksi ancaman agar kejadian serupa dapat dicegah di masa mendatang.",
+          "tokens_count": 52,
+          "api_usage": {
+            "prompt_tokens": 182,
+            "total_tokens": 324,
+            "completion_tokens": 142,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.524e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.523999999999999e-05,
+              "upstream_inference_prompt_cost": 2.548e-05,
+              "upstream_inference_completions_cost": 3.976e-05,
+              "total_cost": 6.524e-05,
+              "input_cost": 2.548e-05,
+              "output_cost": 3.976e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.2400000000000003e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 3,
+          "status": "SUCCESS",
+          "latency_ms": 10914.89,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 70,
+          "constraint_passed": true,
+          "clean_text": "Laporan ini mengonfirmasi deteksi kritis terhadap file eicar.com dengan skor ancaman 62 dari 70, menandakan tingkat bahaya sangat tinggi yang memerlukan respons segera. Langkah pertama adalah mengisolasi sistem yang terinfeksi dari jaringan untuk mencegah penyebaran, kemudian menghapus file tersebut secara permanen dan melakukan pemindaian menyeluruh pada seluruh endpoint. Setelah eradikasi, lakukan audit log dan verifikasi integritas sistem untuk memastikan tidak ada indikasi kompromi tambahan sebelum mengembalikan sistem ke operasional normal.",
+          "tokens_count": 49,
+          "api_usage": {
+            "prompt_tokens": 182,
+            "total_tokens": 311,
+            "completion_tokens": 129,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.16e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.16e-05,
+              "upstream_inference_prompt_cost": 2.548e-05,
+              "upstream_inference_completions_cost": 3.612e-05,
+              "total_cost": 6.16e-05,
+              "input_cost": 2.548e-05,
+              "output_cost": 3.612e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.1100000000000003e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 4,
+          "status": "SUCCESS",
+          "latency_ms": 9636.92,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 82,
+          "constraint_passed": true,
+          "clean_text": "Laporan ini mengonfirmasi deteksi file eicar.com dengan tingkat keparahan kritis, di mana skor deteksi VirusTotal sebesar 62 dari 70 menunjukkan indikasi malware yang sangat kuat dan memerlukan penanganan segera. Tindakan pertama yang wajib dilakukan adalah mengisolasi sistem yang terinfeksi dari jaringan untuk mencegah penyebaran lateral, kemudian memindahkan file ke karantina dan menghapusnya secara permanen dari seluruh titik akhir. Setelah eradikasi, lakukan pemindaian menyeluruh pada sistem dan tinjau log keamanan untuk memastikan tidak ada aktivitas mencurigakan lainnya sebelum mengembalikan sistem ke operasional normal.",
+          "tokens_count": 56,
+          "api_usage": {
+            "prompt_tokens": 182,
+            "total_tokens": 335,
+            "completion_tokens": 153,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.832e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.832e-05,
+              "upstream_inference_prompt_cost": 2.548e-05,
+              "upstream_inference_completions_cost": 4.284e-05,
+              "total_cost": 6.832e-05,
+              "input_cost": 2.548e-05,
+              "output_cost": 4.284e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.35e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 5,
+          "status": "SUCCESS",
+          "latency_ms": 9596.66,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 74,
+          "constraint_passed": true,
+          "clean_text": "Berdasarkan deteksi Wazuh level 12 dan skor VirusTotal 62 dari 70, file eicar.com dengan hash tersebut merupakan indikator kompromi yang sangat berbahaya dan memerlukan tindakan segera. Langkah pertama adalah mengisolasi sistem yang terinfeksi dari jaringan untuk mencegah penyebaran lateral, kemudian hentikan proses terkait dan karantina file tersebut. Selanjutnya, lakukan eradikasi menyeluruh dengan menghapus file, memindai seluruh sistem menggunakan solusi keamanan terbaru, serta pulihkan sistem dari cadangan bersih setelah memastikan tidak ada indikator sisa serangan.",
+          "tokens_count": 50,
+          "api_usage": {
+            "prompt_tokens": 182,
+            "total_tokens": 326,
+            "completion_tokens": 144,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.58e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.58e-05,
+              "upstream_inference_prompt_cost": 2.548e-05,
+              "upstream_inference_completions_cost": 4.032e-05,
+              "total_cost": 6.58e-05,
+              "input_cost": 2.548e-05,
+              "output_cost": 4.032e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.26e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ]
+    },
+    "malware_high": {
+      "scenario_id": "malware_high",
+      "title": "Malware Tingkat Tinggi (Trojan / MalwareBazaar Hit)",
+      "severity": "HIGH",
+      "total_runs": 5,
+      "success_count": 5,
+      "error_count": 0,
+      "latency_stats": {
+        "mean_ms": 12537.5,
+        "median_ms": 11553.0,
+        "min_ms": 10653.68,
+        "max_ms": 17163.1,
+        "stdev_ms": 2667.8
+      },
+      "metrics": {
+        "constraint_adherence_pct": 100.0,
+        "sentence_length_adherence_pct": 100.0,
+        "raw_no_markdown_pct": 0.0,
+        "sanitized_no_markdown_pct": 100.0,
+        "avg_jaccard_lexical_similarity": 0.397,
+        "word_count_mean": 71.8,
+        "word_count_stdev": 8.8
+      },
+      "runs": [
+        {
+          "run_index": 1,
+          "status": "SUCCESS",
+          "latency_ms": 11553.0,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 70,
+          "constraint_passed": true,
+          "clean_text": "Berkas invoicemacro.docm dengan hash c1f2e3d4b5a67890123456789abcdef0123456789abcdef0123456789abcdef0 terkonfirmasi sebagai Emotet dengan tingkat bahaya tinggi, sehingga wajib dianggap sebagai ancaman aktif yang memerlukan tindakan segera. Dalam 24 jam, lakukan verifikasi menyeluruh terhadap endpoint yang terpapar, isolasi sistem yang terdampak dari jaringan, dan nonaktifkan koneksi internet serta berbagi berkas untuk mencegah penyebaran lateral. Selanjutnya, kumpulkan artefak digital untuk analisis forensik, pulihkan sistem dari cadangan bersih, dan perbarui kebijakan keamanan untuk memblokir lampiran makro berbahaya.",
+          "tokens_count": 52,
+          "api_usage": {
+            "prompt_tokens": 188,
+            "total_tokens": 362,
+            "completion_tokens": 174,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.504e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.504e-05,
+              "upstream_inference_prompt_cost": 2.632e-05,
+              "upstream_inference_completions_cost": 4.872e-05,
+              "total_cost": 7.504e-05,
+              "input_cost": 2.632e-05,
+              "output_cost": 4.872e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.62e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 2,
+          "status": "SUCCESS",
+          "latency_ms": 10948.1,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 87,
+          "constraint_passed": true,
+          "clean_text": "Berdasarkan analisis, file invoicemacro.docm dengan hash c1f2e3d4b5a67890123456789abcdef0123456789abcdef0123456789abcdef0 terkonfirmasi sebagai Emotet dengan tingkat bahaya tinggi karena mengandung makro berbahaya dan terdeteksi oleh 5 dari 70 antivirus. Tindakan yang harus diambil dalam 24 jam adalah segera isolasi host yang terkena dampak dari jaringan, nonaktifkan koneksi internet, dan lakukan verifikasi menyeluruh terhadap sistem serta lakukan pemindaian forensik untuk memastikan tidak ada penyebaran lateral. Selain itu, blokir hash file pada semua titik akhir, edukasi pengguna tentang risiko makro, dan laporkan insiden ini ke tim respons insiden untuk tindakan kontainmen lebih lanjut.",
+          "tokens_count": 54,
+          "api_usage": {
+            "prompt_tokens": 188,
+            "total_tokens": 374,
+            "completion_tokens": 186,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.84e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.840000000000001e-05,
+              "upstream_inference_prompt_cost": 2.632e-05,
+              "upstream_inference_completions_cost": 5.208e-05,
+              "total_cost": 7.84e-05,
+              "input_cost": 2.632e-05,
+              "output_cost": 5.208e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.7399999999999998e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 3,
+          "status": "SUCCESS",
+          "latency_ms": 17163.1,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 70,
+          "constraint_passed": true,
+          "clean_text": "Berkas invoicemacro.docm dengan hash c1f2e3d4b5a67890123456789abcdef0123456789abcdef0123456789abcdef0 terkonfirmasi sebagai Emotet dengan tingkat bahaya tinggi, sehingga wajib dianggap sebagai ancaman aktif yang memerlukan tindakan segera. Dalam 24 jam, lakukan verifikasi menyeluruh terhadap endpoint yang terpapar, isolasi sistem yang terdampak dari jaringan, dan blokir indikator kompromi pada perimeter keamanan. Selanjutnya, kumpulkan bukti digital untuk analisis forensik, reset kredensial pengguna yang berpotensi terekspos, dan terapkan pembaruan serta kebijakan pemblokiran makro untuk mencegah penyebaran lebih lanjut.",
+          "tokens_count": 53,
+          "api_usage": {
+            "prompt_tokens": 188,
+            "total_tokens": 362,
+            "completion_tokens": 174,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.504e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.504e-05,
+              "upstream_inference_prompt_cost": 2.632e-05,
+              "upstream_inference_completions_cost": 4.872e-05,
+              "total_cost": 7.504e-05,
+              "input_cost": 2.632e-05,
+              "output_cost": 4.872e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.62e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 4,
+          "status": "SUCCESS",
+          "latency_ms": 10653.68,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 65,
+          "constraint_passed": true,
+          "clean_text": "Temuan ini menunjukkan tingkat bahaya tinggi karena file invoicemacro.docm terdeteksi sebagai Emotet oleh MalwareBazaar dan memiliki skor Wazuh level 10, sehingga berpotensi menginfeksi jaringan melalui makro berbahaya. Dalam 24 jam, segera isolasi host yang terpapar, nonaktifkan koneksi jaringan, dan lakukan verifikasi menyeluruh terhadap hash c1f2e3d4b5a67890123456789abcdef0123456789abcdef0123456789abcdef0 pada seluruh endpoint. Selanjutnya, karantina file, pulihkan sistem dari cadangan bersih, dan perbarui aturan deteksi untuk mencegah penyebaran lebih lanjut.",
+          "tokens_count": 49,
+          "api_usage": {
+            "prompt_tokens": 188,
+            "total_tokens": 345,
+            "completion_tokens": 157,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.028e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.028e-05,
+              "upstream_inference_prompt_cost": 2.632e-05,
+              "upstream_inference_completions_cost": 4.396e-05,
+              "total_cost": 7.028e-05,
+              "input_cost": 2.632e-05,
+              "output_cost": 4.396e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.45e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 5,
+          "status": "SUCCESS",
+          "latency_ms": 12369.64,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 67,
+          "constraint_passed": true,
+          "clean_text": "File invoicemacro.docm dengan hash c1f2e3d4b5a67890123456789abcdef0123456789abcdef0123456789abcdef0 terkonfirmasi sebagai Emotet dengan tingkat bahaya tinggi, sehingga harus dianggap sebagai ancaman aktif yang memerlukan tindakan segera. Dalam 24 jam, lakukan verifikasi menyeluruh pada endpoint yang terpapar, isolasi sistem yang terinfeksi dari jaringan, dan blokir indikator kompromi terkait pada firewall serta sistem keamanan. Selain itu, kumpulkan artefak digital untuk analisis forensik dan laporkan insiden ini kepada tim respons insiden sesuai prosedur organisasi.",
+          "tokens_count": 47,
+          "api_usage": {
+            "prompt_tokens": 188,
+            "total_tokens": 341,
+            "completion_tokens": 153,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.916e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.916e-05,
+              "upstream_inference_prompt_cost": 2.632e-05,
+              "upstream_inference_completions_cost": 4.284e-05,
+              "total_cost": 6.916e-05,
+              "input_cost": 2.632e-05,
+              "output_cost": 4.284e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.41e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ]
+    },
+    "system_file_hosts": {
+      "scenario_id": "system_file_hosts",
+      "title": "Perubahan File Konfigurasi Sistem (hosts / FIM)",
+      "severity": "MEDIUM",
+      "total_runs": 5,
+      "success_count": 5,
+      "error_count": 0,
+      "latency_stats": {
+        "mean_ms": 10033.96,
+        "median_ms": 9965.08,
+        "min_ms": 8435.3,
+        "max_ms": 11325.32,
+        "stdev_ms": 1107.89
+      },
+      "metrics": {
+        "constraint_adherence_pct": 100.0,
+        "sentence_length_adherence_pct": 100.0,
+        "raw_no_markdown_pct": 100.0,
+        "sanitized_no_markdown_pct": 100.0,
+        "avg_jaccard_lexical_similarity": 0.5573,
+        "word_count_mean": 58.6,
+        "word_count_stdev": 6.4
+      },
+      "runs": [
+        {
+          "run_index": 1,
+          "status": "SUCCESS",
+          "latency_ms": 9669.4,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 48,
+          "constraint_passed": true,
+          "clean_text": "Perubahan pada file hosts terdeteksi dengan hash a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90, yang dapat berasal dari mekanisme sinkhole SOAR atau penyesuaian administratif. Verifikasi riwayat perubahan dan log automasi untuk memastikan sumber modifikasi, serta bandingkan dengan entri berkomentar soar-sinkhole. Jangan melakukan karantina atau penghapusan file, cukup konfirmasi integritas konfigurasi melalui audit jejak sistem.",
+          "tokens_count": 35,
+          "api_usage": {
+            "prompt_tokens": 225,
+            "total_tokens": 371,
+            "completion_tokens": 146,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.238e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.238000000000001e-05,
+              "upstream_inference_prompt_cost": 3.15e-05,
+              "upstream_inference_completions_cost": 4.088e-05,
+              "total_cost": 7.238e-05,
+              "input_cost": 3.15e-05,
+              "output_cost": 4.088e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.7100000000000005e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 2,
+          "status": "SUCCESS",
+          "latency_ms": 9965.08,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 60,
+          "constraint_passed": true,
+          "clean_text": "Perubahan pada file hosts terdeteksi dengan hash a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90, yang berpotensi berasal dari penulisan otomatis sistem SOAR untuk blokir domain phishing atau konfigurasi administratif. Verifikasi riwayat perubahan dan log sistem untuk memastikan apakah entri tersebut ditandai komentar soar-sinkhole atau merupakan tindakan manual administrator. Jangan melakukan karantina atau penghapusan file hosts, melainkan konfirmasi sumber perubahan melalui audit log dan kebijakan manajemen konfigurasi.",
+          "tokens_count": 41,
+          "api_usage": {
+            "prompt_tokens": 225,
+            "total_tokens": 388,
+            "completion_tokens": 163,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.714e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.714e-05,
+              "upstream_inference_prompt_cost": 3.15e-05,
+              "upstream_inference_completions_cost": 4.564e-05,
+              "total_cost": 7.714e-05,
+              "input_cost": 3.15e-05,
+              "output_cost": 4.564e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.88e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 3,
+          "status": "SUCCESS",
+          "latency_ms": 8435.3,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 64,
+          "constraint_passed": true,
+          "clean_text": "Perubahan pada file hosts terdeteksi dengan hash a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90, yang perlu diverifikasi apakah berasal dari penulisan otomatis sistem SOAR untuk blokir domain phishing atau dari konfigurasi administratif jaringan. Lakukan pemeriksaan log SOAR dan riwayat sesi admin untuk memastikan sumber perubahan, serta bandingkan entri saat ini dengan pola komentar soar-sinkhole. Jangan melakukan karantina atau penghapusan file hosts, karena tindakan tersebut dapat mengganggu fungsi keamanan yang sah.",
+          "tokens_count": 43,
+          "api_usage": {
+            "prompt_tokens": 225,
+            "total_tokens": 388,
+            "completion_tokens": 163,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.714e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.714e-05,
+              "upstream_inference_prompt_cost": 3.15e-05,
+              "upstream_inference_completions_cost": 4.564e-05,
+              "total_cost": 7.714e-05,
+              "input_cost": 3.15e-05,
+              "output_cost": 4.564e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.88e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 4,
+          "status": "SUCCESS",
+          "latency_ms": 11325.32,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 58,
+          "constraint_passed": true,
+          "clean_text": "Perubahan pada file hosts terdeteksi dengan hash a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90, yang berpotensi berasal dari penulisan otomatis sistem SOAR untuk blokir domain phishing atau konfigurasi administratif. Verifikasi riwayat perubahan dan log sistem untuk memastikan apakah entri tersebut ditandai komentar soar-sinkhole atau dibuat oleh administrator jaringan. Jangan melakukan karantina atau penghapusan file ini; fokus pada audit sumber perubahan untuk memastikan integritas konfigurasi.",
+          "tokens_count": 37,
+          "api_usage": {
+            "prompt_tokens": 225,
+            "total_tokens": 381,
+            "completion_tokens": 156,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.518e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.518e-05,
+              "upstream_inference_prompt_cost": 3.15e-05,
+              "upstream_inference_completions_cost": 4.368e-05,
+              "total_cost": 7.518e-05,
+              "input_cost": 3.15e-05,
+              "output_cost": 4.368e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.81e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 5,
+          "status": "SUCCESS",
+          "latency_ms": 10774.7,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 63,
+          "constraint_passed": true,
+          "clean_text": "Perubahan pada file hosts terdeteksi dengan hash a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90, yang berpotensi berasal dari penulisan otomatis sistem SOAR untuk blokir domain phishing atau modifikasi administratif jaringan. Verifikasi riwayat perubahan dan log sistem untuk memastikan apakah entri tersebut ditandai komentar soar-sinkhole atau merupakan tindakan manual administrator. Jangan melakukan karantina atau penghapusan file hosts; cukup konfirmasi sumber perubahan dan pastikan tidak ada indikasi aktivitas tidak sah lainnya.",
+          "tokens_count": 43,
+          "api_usage": {
+            "prompt_tokens": 225,
+            "total_tokens": 384,
+            "completion_tokens": 159,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.602e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.602e-05,
+              "upstream_inference_prompt_cost": 3.15e-05,
+              "upstream_inference_completions_cost": 4.452e-05,
+              "total_cost": 7.602e-05,
+              "input_cost": 3.15e-05,
+              "output_cost": 4.452e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.8400000000000005e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ]
+    },
+    "unknown_executable": {
+      "scenario_id": "unknown_executable",
+      "title": "Eksekutabel Baru / Hash Tak Dikenal (Perlu Review)",
+      "severity": "MEDIUM",
+      "total_runs": 5,
+      "success_count": 4,
+      "error_count": 1,
+      "latency_stats": {
+        "mean_ms": 14969.61,
+        "median_ms": 10661.6,
+        "min_ms": 7964.19,
+        "max_ms": 30591.07,
+        "stdev_ms": 10496.83
+      },
+      "metrics": {
+        "constraint_adherence_pct": 100.0,
+        "sentence_length_adherence_pct": 75.0,
+        "raw_no_markdown_pct": 0.0,
+        "sanitized_no_markdown_pct": 100.0,
+        "avg_jaccard_lexical_similarity": 0.5682,
+        "word_count_mean": 60.8,
+        "word_count_stdev": 1.3
+      },
+      "runs": [
+        {
+          "run_index": 1,
+          "status": "ERROR",
+          "error_message": "The read operation timed out",
+          "latency_ms": 0.0,
+          "constraint_passed": false,
+          "sentence_passed": false,
+          "clean_text": ""
+        },
+        {
+          "run_index": 2,
+          "status": "SUCCESS",
+          "latency_ms": 30591.07,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 61,
+          "constraint_passed": true,
+          "clean_text": "Berdasarkan analisis awal, berkas updatepatch.exe memiliki hash e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 yang tidak terdaftar di VirusTotal, sehingga status keamanannya belum dapat ditentukan. Oleh karena itu, berkas ini memerlukan peninjauan manual yang mencakup verifikasi sumber perolehan, validasi tanda tangan digital, serta pemeriksaan izin eksekusi sebelum digunakan. Keputusan akhir tidak boleh didasarkan pada kecurigaan semata, melainkan pada hasil audit menyeluruh terhadap integritas dan asal-usul berkas tersebut.",
+          "tokens_count": 45,
+          "api_usage": {
+            "prompt_tokens": 183,
+            "total_tokens": 338,
+            "completion_tokens": 155,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.902e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.902e-05,
+              "upstream_inference_prompt_cost": 2.562e-05,
+              "upstream_inference_completions_cost": 4.34e-05,
+              "total_cost": 6.902e-05,
+              "input_cost": 2.562e-05,
+              "output_cost": 4.34e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.38e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 3,
+          "status": "SUCCESS",
+          "latency_ms": 11065.8,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 59,
+          "constraint_passed": true,
+          "clean_text": "Berdasarkan analisis awal, berkas updatepatch.exe memiliki hash e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 yang tidak terdaftar di VirusTotal, sehingga status keamanannya belum dapat ditentukan. Oleh karena itu, berkas ini memerlukan peninjauan manual yang mendalam, termasuk verifikasi asal-usul, keabsahan tanda tangan digital, serta kebijakan izin eksekusi pada sistem target. Keputusan akhir tidak boleh didasarkan pada otomatisasi, melainkan pada analisis kontekstual oleh analis keamanan yang berwenang.",
+          "tokens_count": 42,
+          "api_usage": {
+            "prompt_tokens": 183,
+            "total_tokens": 337,
+            "completion_tokens": 154,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.874e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.874e-05,
+              "upstream_inference_prompt_cost": 2.562e-05,
+              "upstream_inference_completions_cost": 4.312e-05,
+              "total_cost": 6.874e-05,
+              "input_cost": 2.562e-05,
+              "output_cost": 4.312e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.37e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 4,
+          "status": "SUCCESS",
+          "latency_ms": 7964.19,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 4,
+          "sentence_passed": false,
+          "word_count": 62,
+          "constraint_passed": true,
+          "clean_text": "Berdasarkan analisis awal, berkas updatepatch.exe memiliki hash e3b0c442... yang tidak terdaftar di VirusTotal, sehingga statusnya belum dapat diklasifikasikan sebagai aman maupun berbahaya. Saya menilai berkas ini memerlukan peninjauan manual yang mendalam, termasuk verifikasi sumber unduhan, keabsahan tanda tangan digital, serta kebijakan izin eksekusi pada sistem target. Keputusan akhir tidak boleh didasarkan pada otomatisasi, melainkan pada investigasi forensik yang cermat oleh analis keamanan.",
+          "tokens_count": 48,
+          "api_usage": {
+            "prompt_tokens": 183,
+            "total_tokens": 313,
+            "completion_tokens": 130,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.202e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.201999999999999e-05,
+              "upstream_inference_prompt_cost": 2.562e-05,
+              "upstream_inference_completions_cost": 3.64e-05,
+              "total_cost": 6.202e-05,
+              "input_cost": 2.562e-05,
+              "output_cost": 3.64e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.13e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 5,
+          "status": "SUCCESS",
+          "latency_ms": 10257.4,
+          "has_think_tag": false,
+          "raw_markdown_violations": [
+            "_"
+          ],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 61,
+          "constraint_passed": true,
+          "clean_text": "Berdasarkan analisis awal, berkas updatepatch.exe memiliki hash e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 yang tidak terdaftar di VirusTotal, sehingga status keamanannya belum dapat ditentukan. Oleh karena itu, berkas ini memerlukan peninjauan manual yang mencakup verifikasi sumber perolehan, pemeriksaan tanda tangan digital, serta evaluasi izin eksekusi sebelum digunakan. Keputusan akhir tidak boleh didasarkan pada kecurigaan semata, melainkan pada hasil audit menyeluruh terhadap atribut dan perilaku berkas tersebut.",
+          "tokens_count": 45,
+          "api_usage": {
+            "prompt_tokens": 183,
+            "total_tokens": 335,
+            "completion_tokens": 152,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 6.818e-05,
+            "cost_details": {
+              "upstream_inference_cost": 6.818e-05,
+              "upstream_inference_prompt_cost": 2.562e-05,
+              "upstream_inference_completions_cost": 4.256e-05,
+              "total_cost": 6.818e-05,
+              "input_cost": 2.562e-05,
+              "output_cost": 4.256e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 3.35e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ]
+    },
+    "lolbin_powershell": {
+      "scenario_id": "lolbin_powershell",
+      "title": "Rantai Proses Mencurigakan / LOLBin (PowerShell Obfuscated)",
+      "severity": "HIGH",
+      "total_runs": 5,
+      "success_count": 5,
+      "error_count": 0,
+      "latency_stats": {
+        "mean_ms": 10831.0,
+        "median_ms": 10000.17,
+        "min_ms": 8676.78,
+        "max_ms": 16482.18,
+        "stdev_ms": 3236.44
+      },
+      "metrics": {
+        "constraint_adherence_pct": 100.0,
+        "sentence_length_adherence_pct": 100.0,
+        "raw_no_markdown_pct": 100.0,
+        "sanitized_no_markdown_pct": 100.0,
+        "avg_jaccard_lexical_similarity": 0.4587,
+        "word_count_mean": 74,
+        "word_count_stdev": 14.0
+      },
+      "runs": [
+        {
+          "run_index": 1,
+          "status": "SUCCESS",
+          "latency_ms": 10231.81,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 65,
+          "constraint_passed": true,
+          "clean_text": "Pola eksekusi PowerShell dengan perintah terenkode dari cmd.exe mengindikasikan aktivitas mencurigakan yang berpotensi malware, bukan sekadar LOLBin, karena rantai proses ini umum digunakan untuk memuat muatan berbahaya. Segera isolasi host 003-ravi-pc dari jaringan, hentikan proses PowerShell aktif, dan kumpulkan artefak memori serta log untuk analisis forensik. Verifikasi dengan memeriksa hash file yang diunduh, koneksi jaringan keluar, dan riwayat perintah pada endpoint menggunakan EDR atau Sysmon.",
+          "tokens_count": 46,
+          "api_usage": {
+            "prompt_tokens": 274,
+            "total_tokens": 403,
+            "completion_tokens": 129,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.448e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.448e-05,
+              "upstream_inference_prompt_cost": 3.836e-05,
+              "upstream_inference_completions_cost": 3.612e-05,
+              "total_cost": 7.448e-05,
+              "input_cost": 3.836e-05,
+              "output_cost": 3.612e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 4.0299999999999995e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 2,
+          "status": "SUCCESS",
+          "latency_ms": 8676.78,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 64,
+          "constraint_passed": true,
+          "clean_text": "Pola eksekusi PowerShell dengan perintah terenkode dari cmd.exe mengindikasikan aktivitas mencurigakan yang berpotensi sebagai malware, bukan sekadar LOLBin, karena rantai proses ini umum digunakan untuk memuat muatan berbahaya. Segera isolasi host 003-ravi-pc dari jaringan, hentikan proses PowerShell aktif, dan kumpulkan artefak memori serta log untuk analisis forensik. Verifikasi muatan terdekripsi dari perintah terenkode tersebut dan periksa koneksi jaringan keluar untuk menentukan indikator kompromi tambahan.",
+          "tokens_count": 43,
+          "api_usage": {
+            "prompt_tokens": 274,
+            "total_tokens": 404,
+            "completion_tokens": 130,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.476e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.476e-05,
+              "upstream_inference_prompt_cost": 3.836e-05,
+              "upstream_inference_completions_cost": 3.64e-05,
+              "total_cost": 7.476e-05,
+              "input_cost": 3.836e-05,
+              "output_cost": 3.64e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 4.04e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 3,
+          "status": "SUCCESS",
+          "latency_ms": 16482.18,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 74,
+          "constraint_passed": true,
+          "clean_text": "Rantai proses ini mengindikasikan kemungkinan besar aktivitas malware karena penggunaan perintah encoded yang mencurigakan untuk mengunduh dan mengeksekusi muatan dari jarak jauh, meskipun cmd.exe sebagai parent dapat dimanfaatkan sebagai LOLBin oleh penyerang. Segera isolasi host 003-ravi-pc dari jaringan, matikan proses PowerShell yang berjalan, dan kumpulkan artefak memori serta log untuk analisis forensik. Verifikasi lanjutan meliputi pemeriksaan hash file yang diunduh, koneksi jaringan keluar, dan pencarian indikator kompromi tambahan pada sistem serta riwayat eksekusi perintah.",
+          "tokens_count": 53,
+          "api_usage": {
+            "prompt_tokens": 274,
+            "total_tokens": 426,
+            "completion_tokens": 152,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 8.092e-05,
+            "cost_details": {
+              "upstream_inference_cost": 8.092e-05,
+              "upstream_inference_prompt_cost": 3.836e-05,
+              "upstream_inference_completions_cost": 4.256e-05,
+              "total_cost": 8.092e-05,
+              "input_cost": 3.836e-05,
+              "output_cost": 4.256e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 4.26e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 4,
+          "status": "SUCCESS",
+          "latency_ms": 8764.04,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 69,
+          "constraint_passed": true,
+          "clean_text": "Peringatan ini mengindikasikan potensi aktivitas malware karena PowerShell dieksekusi dengan perintah terenkode dari cmd.exe, yang merupakan pola umum untuk menghindari deteksi, bukan sekadar LOLBin. Segera isolasi host 003-ravi-pc dari jaringan, hentikan proses PowerShell yang mencurigakan, dan kumpulkan artefak memori serta log untuk analisis forensik. Verifikasi dengan memeriksa koneksi jaringan keluar, hash file yang diunduh, dan riwayat eksekusi pengguna, lalu tinjau kebijakan eksekusi PowerShell dan whitelist aplikasi untuk mencegah pengulangan.",
+          "tokens_count": 49,
+          "api_usage": {
+            "prompt_tokens": 274,
+            "total_tokens": 419,
+            "completion_tokens": 145,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 7.896e-05,
+            "cost_details": {
+              "upstream_inference_cost": 7.895999999999999e-05,
+              "upstream_inference_prompt_cost": 3.836e-05,
+              "upstream_inference_completions_cost": 4.06e-05,
+              "total_cost": 7.896e-05,
+              "input_cost": 3.836e-05,
+              "output_cost": 4.06e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 4.19e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 5,
+          "status": "SUCCESS",
+          "latency_ms": 10000.17,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 98,
+          "constraint_passed": true,
+          "clean_text": "Rantai proses ini mengindikasikan kemungkinan besar aktivitas malware karena penggunaan perintah encoded yang mengeksekusi unduhan dari jaringan melalui PowerShell, meskipun cmd.exe sebagai parent dapat menyerupai pola LOLBin namun muatan perintahnya jelas mencurigakan. Rekomendasi tindakan dalam 24 jam adalah segera isolasi host 003-ravi-pc dari jaringan, matikan proses PowerShell yang berjalan, dan kumpulkan artefak memori serta log untuk analisis forensik. Verifikasi lanjutan meliputi pemeriksaan koneksi jaringan keluar ke alamat IP atau domain yang tidak dikenal, analisis skrip yang didekode dari perintah encoded, serta pemindaian menyeluruh dengan solusi keamanan yang diperbarui untuk memastikan tidak ada persistensi atau muatan tambahan yang tertanam.",
+          "tokens_count": 62,
+          "api_usage": {
+            "prompt_tokens": 274,
+            "total_tokens": 463,
+            "completion_tokens": 189,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 9.128e-05,
+            "cost_details": {
+              "upstream_inference_cost": 9.128000000000001e-05,
+              "upstream_inference_prompt_cost": 3.836e-05,
+              "upstream_inference_completions_cost": 5.292e-05,
+              "total_cost": 9.128e-05,
+              "input_cost": 3.836e-05,
+              "output_cost": 5.292e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 4.63e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ]
+    },
+    "phishing_credential": {
+      "scenario_id": "phishing_credential",
+      "title": "Indikasi Phishing Kredensial (GSB / URLScan Hit)",
+      "severity": "HIGH",
+      "total_runs": 5,
+      "success_count": 5,
+      "error_count": 0,
+      "latency_stats": {
+        "mean_ms": 13293.91,
+        "median_ms": 9384.64,
+        "min_ms": 7707.69,
+        "max_ms": 26397.93,
+        "stdev_ms": 7672.33
+      },
+      "metrics": {
+        "constraint_adherence_pct": 100.0,
+        "sentence_length_adherence_pct": 100.0,
+        "raw_no_markdown_pct": 100.0,
+        "sanitized_no_markdown_pct": 100.0,
+        "avg_jaccard_lexical_similarity": 0.4463,
+        "word_count_mean": 67.6,
+        "word_count_stdev": 9.6
+      },
+      "runs": [
+        {
+          "run_index": 1,
+          "status": "SUCCESS",
+          "latency_ms": 26397.93,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 70,
+          "constraint_passed": true,
+          "clean_text": "URL tersebut merupakan situs phishing berisiko tinggi yang menyamar sebagai halaman verifikasi BCA untuk mencuri kredensial nasabah, dengan indikasi kuat dari Google Safe Browsing dan URLScan.io. Kami merekomendasikan agar segera memblokir akses ke domain ini di seluruh infrastruktur jaringan dan melaporkannya ke tim CSIRT internal serta BCA resmi untuk tindakan takedown. Jangan pernah memasukkan data pribadi atau perbankan pada halaman tersebut, dan lakukan pemindaian menyeluruh pada perangkat yang pernah mengaksesnya.",
+          "tokens_count": 47,
+          "api_usage": {
+            "prompt_tokens": 142,
+            "total_tokens": 273,
+            "completion_tokens": 131,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 5.656e-05,
+            "cost_details": {
+              "upstream_inference_cost": 5.656e-05,
+              "upstream_inference_prompt_cost": 1.988e-05,
+              "upstream_inference_completions_cost": 3.668e-05,
+              "total_cost": 5.656e-05,
+              "input_cost": 1.988e-05,
+              "output_cost": 3.668e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 2.73e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 2,
+          "status": "SUCCESS",
+          "latency_ms": 7707.69,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 76,
+          "constraint_passed": true,
+          "clean_text": "URL tersebut merupakan situs phishing berbahaya yang menyamar sebagai portal perbankan BCA untuk mencuri kredensial nasabah, dengan konfirmasi dari Google Safe Browsing dan URLScan.io sebagai target rekayasa sosial. Disarankan untuk segera memblokir akses ke domain ini di seluruh perimeter jaringan, serta melakukan edukasi kepada pengguna agar tidak memasukkan data pribadi atau perbankan pada halaman yang tidak resmi. Jika ada pengguna yang telah mengaksesnya, segera lakukan reset kata sandi dan aktifkan autentikasi dua faktor pada akun terkait.",
+          "tokens_count": 50,
+          "api_usage": {
+            "prompt_tokens": 142,
+            "total_tokens": 277,
+            "completion_tokens": 135,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 5.768e-05,
+            "cost_details": {
+              "upstream_inference_cost": 5.768e-05,
+              "upstream_inference_prompt_cost": 1.988e-05,
+              "upstream_inference_completions_cost": 3.78e-05,
+              "total_cost": 5.768e-05,
+              "input_cost": 1.988e-05,
+              "output_cost": 3.78e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 2.77e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 3,
+          "status": "SUCCESS",
+          "latency_ms": 13807.43,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 57,
+          "constraint_passed": true,
+          "clean_text": "URL tersebut merupakan situs phishing berbahaya yang menyamar sebagai halaman verifikasi BCA untuk mencuri kredensial perbankan korban. Disarankan untuk segera memblokir akses ke domain ini pada firewall dan gateway, serta melaporkan IP sumber ke penyedia layanan internet terkait. Jangan pernah memasukkan data pribadi atau perbankan pada halaman tersebut, dan lakukan pemindaian menyeluruh pada perangkat yang telah mengaksesnya.",
+          "tokens_count": 37,
+          "api_usage": {
+            "prompt_tokens": 142,
+            "total_tokens": 249,
+            "completion_tokens": 107,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 4.984e-05,
+            "cost_details": {
+              "upstream_inference_cost": 4.984e-05,
+              "upstream_inference_prompt_cost": 1.988e-05,
+              "upstream_inference_completions_cost": 2.996e-05,
+              "total_cost": 4.984e-05,
+              "input_cost": 1.988e-05,
+              "output_cost": 2.996e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 2.49e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 4,
+          "status": "SUCCESS",
+          "latency_ms": 9171.87,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 3,
+          "sentence_passed": true,
+          "word_count": 77,
+          "constraint_passed": true,
+          "clean_text": "URL tersebut merupakan situs phishing berbahaya yang menyamar sebagai halaman verifikasi BCA untuk mencuri kredensial nasabah, dengan indikasi kuat dari Google Safe Browsing dan URLScan.io sebagai target rekayasa sosial perbankan. Disarankan untuk segera memblokir akses ke domain ini di seluruh perimeter jaringan, serta menginformasikan pengguna agar tidak memasukkan data pribadi atau perbankan apa pun pada halaman tersebut. Jika ada pengguna yang telah mengaksesnya, segera lakukan reset kata sandi dan hubungi layanan resmi BCA untuk langkah pengamanan lanjutan.",
+          "tokens_count": 50,
+          "api_usage": {
+            "prompt_tokens": 142,
+            "total_tokens": 282,
+            "completion_tokens": 140,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 5.908e-05,
+            "cost_details": {
+              "upstream_inference_cost": 5.908e-05,
+              "upstream_inference_prompt_cost": 1.988e-05,
+              "upstream_inference_completions_cost": 3.92e-05,
+              "total_cost": 5.908e-05,
+              "input_cost": 1.988e-05,
+              "output_cost": 3.92e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 2.82e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        },
+        {
+          "run_index": 5,
+          "status": "SUCCESS",
+          "latency_ms": 9384.64,
+          "has_think_tag": false,
+          "raw_markdown_violations": [],
+          "clean_markdown_violations": [],
+          "sentence_count": 2,
+          "sentence_passed": true,
+          "word_count": 58,
+          "constraint_passed": true,
+          "clean_text": "URL tersebut merupakan situs phishing berbahaya yang menyamar sebagai halaman verifikasi BCA untuk mencuri kredensial perbankan korban, dengan indikasi kuat dari Google Safe Browsing dan URLScan.io. Kami merekomendasikan agar segera memblokir akses ke domain ini di seluruh infrastruktur jaringan, serta menginformasikan pengguna untuk tidak memasukkan data apa pun dan melaporkan insiden ini ke tim respons insiden keamanan internal.",
+          "tokens_count": 41,
+          "api_usage": {
+            "prompt_tokens": 142,
+            "total_tokens": 248,
+            "completion_tokens": 106,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "cache_write_tokens": 0,
+              "audio_tokens": 0,
+              "video_tokens": 0,
+              "image_tokens": 0
+            },
+            "reasoning_tokens": 0,
+            "cost": 4.956e-05,
+            "cost_details": {
+              "upstream_inference_cost": 4.956e-05,
+              "upstream_inference_prompt_cost": 1.988e-05,
+              "upstream_inference_completions_cost": 2.968e-05,
+              "total_cost": 4.956e-05,
+              "input_cost": 1.988e-05,
+              "output_cost": 2.968e-05,
+              "cached_input_cost": 0,
+              "cache_write_input_cost": 0,
+              "request_cost": 0,
+              "web_search_cost": 0,
+              "image_input_cost": null,
+              "image_output_cost": null,
+              "audio_input_cost": null,
+              "data_storage_cost": 2.48e-06
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "image_tokens": 0,
+              "audio_tokens": 0
+            }
+          }
+        }
+      ]
+    }
+  }
+}
