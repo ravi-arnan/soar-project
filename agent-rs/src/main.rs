@@ -70,19 +70,49 @@ fn sha256_file(path: &Path) -> Result<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn get_perm(path: &Path) -> String {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::metadata(path)
-            .map(|m| format!("{:o}", m.permissions().mode() & 0o777))
-            .unwrap_or_else(|_| "644".to_string())
+fn extract_file_metadata(path: &Path) -> (String, String, String, String, String, String, String, String) {
+    let mut size = "0".to_string();
+    let mut perm = "0644".to_string();
+    let mut uid = "1000".to_string();
+    let mut gid = "1000".to_string();
+    let mut inode = "0".to_string();
+    let mut mtime = chrono::Utc::now().to_rfc3339();
+    let mut uname = "root".to_string();
+    let mut gname = "root".to_string();
+
+    let p_str = path.to_string_lossy();
+    if let Some(rest) = p_str.strip_prefix("/home/") {
+        if let Some((user_part, _)) = rest.split_once('/') {
+            if !user_part.is_empty() {
+                uname = user_part.to_string();
+                gname = user_part.to_string();
+            }
+        }
     }
-    #[cfg(windows)]
-    {
-        let _ = path;
-        "644".to_string()
+
+    if let Ok(meta) = std::fs::metadata(path) {
+        size = meta.len().to_string();
+        if let Ok(mod_time) = meta.modified() {
+            mtime = chrono::DateTime::<chrono::Utc>::from(mod_time).to_rfc3339();
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            perm = format!("{:04o}", meta.permissions().mode() & 0o7777);
+            let u = meta.uid();
+            let g = meta.gid();
+            uid = u.to_string();
+            gid = g.to_string();
+            inode = meta.ino().to_string();
+            if u == 0 {
+                uname = "root".to_string();
+                gname = "root".to_string();
+            }
+        }
     }
+
+    (size, perm, uid, gid, inode, mtime, uname, gname)
 }
 
 /// Deteksi penyamaran ekstensi ganda (MITRE ATT&CK T1036.007 Masquerading: Double Extension).
@@ -115,10 +145,7 @@ fn has_deceptive_double_extension(path: &Path) -> bool {
 }
 
 fn build_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
-    let perm = get_perm(path);
-    let size = std::fs::metadata(path)
-        .map(|m| m.len().to_string())
-        .unwrap_or_else(|_| "0".to_string());
+    let (size, perm, uid, gid, inode, mtime, uname, gname) = extract_file_metadata(path);
     let is_double_ext = has_deceptive_double_extension(path);
 
     serde_json::json!({
@@ -137,7 +164,15 @@ fn build_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
             "sha256_after": hash,
             "path": path.to_string_lossy(),
             "srcip": "0.0.0.0",
-            "is_double_extension": is_double_ext
+            "is_double_extension": is_double_ext,
+            "size": size,
+            "perm": perm,
+            "uid": uid,
+            "gid": gid,
+            "uname": uname,
+            "gname": gname,
+            "inode": inode,
+            "mtime": mtime
         },
         "syscheck": {
             "path": path.to_string_lossy(),
@@ -145,6 +180,12 @@ fn build_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
             "event": "added",
             "size_after": size,
             "perm_after": perm,
+            "uid_after": uid,
+            "gid_after": gid,
+            "uname_after": uname,
+            "gname_after": gname,
+            "inode_after": inode,
+            "mtime_after": mtime,
             "mode": "realtime"
         }
     })
@@ -153,6 +194,7 @@ fn build_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
 /// Payload darurat ransomware: terpicu saat berkas umpan (canary decoy) termodifikasi/terenkripsi.
 /// Rule 100004 Level 12 (CRITICAL) langsung mengaktifkan isolasi darurat sebelum berkas lain terenkripsi.
 fn build_canary_ransomware_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
+    let (size, perm, uid, gid, inode, mtime, uname, gname) = extract_file_metadata(path);
     serde_json::json!({
         "rule": {
             "id": "100004",
@@ -166,12 +208,28 @@ fn build_canary_ransomware_payload(args: &Args, path: &Path, hash: &str) -> serd
             "path": path.to_string_lossy(),
             "srcip": "0.0.0.0",
             "is_canary_tampered": true,
-            "attack_technique": "T1486"
+            "attack_technique": "T1486",
+            "size": size,
+            "perm": perm,
+            "uid": uid,
+            "gid": gid,
+            "uname": uname,
+            "gname": gname,
+            "inode": inode,
+            "mtime": mtime
         },
         "syscheck": {
             "path": path.to_string_lossy(),
             "sha256_after": hash,
             "event": "modified",
+            "size_after": size,
+            "perm_after": perm,
+            "uid_after": uid,
+            "gid_after": gid,
+            "uname_after": uname,
+            "gname_after": gname,
+            "inode_after": inode,
+            "mtime_after": mtime,
             "mode": "realtime"
         }
     })

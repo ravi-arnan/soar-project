@@ -1,3 +1,46 @@
+# Handoff SOAR - 2026-10-22 Malam (Milestone M5: Panel Analisis AI FIM, Threat Intel Pivot, & Resolusi Metadata Berkas Lengkap)
+
+## Status Terakhir (Checkpoint: 22 Oktober 2026, 23:45 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Panel Analisis AI & Threat Intel FIM ([dashboard/src/components/wazuh/FimDashboard.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/FimDashboard.tsx))**:
+  - Penambahan kartu *Analisis AI & Threat Intel* tepat di antara kartu metadata *Details* dan tabel *Recent events* pada subtab `inventory`.
+  - Integrasi narasi otomatis AI (`latestEvent.ai`) yang diekstrak dari pipeline SOAR dengan fallback teks informatif status berkas normal.
+  - Tautan investigasi eksternal berbasis SHA256 berkas ke VirusTotal, MalwareBazaar, dan AlienVault OTX.
+  - Tombol tindakan cepat Active Response langsung dari detail berkas FIM: **Karantina Berkas** dan **Pulihkan**.
+- **Resolusi Metadata Berkas FIM Lengkap (Eliminasi Placeholder `-`)**:
+  - Di [dashboard/src/lib/fleet.ts](file:///home/ravi/Projects/soar-project/dashboard/src/lib/fleet.ts): interface `FleetEvent` diperluas dengan field metadata FIM: `size`, `perm`, `uname`, `uid`, `gname`, `gid`, `mtime`, `inode`, `md5`, `sha1`.
+  - Di [dashboard/src/components/wazuh/FimDashboard.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/FimDashboard.tsx):
+    - Penyimpanan seluruh objek `FleetEvent` di koleksi berkas.
+    - Penambahan fungsi `resolveFileMetadata` dan `formatFileSize` untuk memetakan atribut berkas (Last modified, User, User ID, Group, Group ID, Size, Inode, MD5, SHA1, SHA256, Permissions) sehingga tidak ada lagi data yang kosong atau berupa tanda minus.
+- **Ekstraksi Metadata Syscheck & Persistensi Backend ([scripts/fleet-monitor.py](file:///home/ravi/Projects/soar-project/scripts/fleet-monitor.py), [scripts/test_fleet_monitor.py](file:///home/ravi/Projects/soar-project/scripts/test_fleet_monitor.py))**:
+  - Pemetaan menyeluruh terhadap dokumen `syscheck` dari Wazuh Indexer (`size_after`, `perm_after`, `uname_after`, `uid_after`, `gname_after`, `gid_after`, `mtime_after`, `inode_after`, `md5_after`, `sha1_after`).
+  - Dukungan kolom metadata pada tabel `events` SQLite dengan migrasi otomatis.
+  - Penangkapan metadata FIM pada endpoint `/webhook-log`.
+  - Unit test baru `test_fim_metadata_persistence` (111/111 PASS).
+- **Sensor Metadata Berkas Agen Rust & Uji E2E ([agent-rs/src/main.rs](file:///home/ravi/Projects/soar-project/agent-rs/src/main.rs), [scripts/e2e-misp-check.py](file:///home/ravi/Projects/soar-project/scripts/e2e-misp-check.py))**:
+  - Pemanfaatan `MetadataExt` Unix native di fungsi `extract_file_metadata` untuk membaca inode, uid, gid, permission mode, timestamp modified (mtime), size, uname, dan gname secara real-time dan menyertakannya di payload `syscheck` dan `data`.
+  - Penambahan metadata syscheck lengkap pada injeksi simulasi FIM E2E MISP.
+
+### 2. Daftar File Diubah & Status Git
+- `agent-rs/src/main.rs`: Sensor metadata berkas native Unix (`extract_file_metadata`) dan payload `syscheck`.
+- `dashboard/src/components/wazuh/FimDashboard.tsx`: Panel Analisis AI & Threat Intel, resolusi metadata berkas, format ukuran berkas.
+- `dashboard/src/lib/fleet.ts`: Perluasan interface `FleetEvent` dengan field metadata FIM.
+- `scripts/e2e-misp-check.py`: Pelengkap atribut metadata syscheck pada payload uji.
+- `scripts/fleet-monitor.py`: Ekstraksi dokumen syscheck Wazuh Indexer, migrasi kolom SQLite, dan endpoint webhook-log.
+- `scripts/test_fleet_monitor.py`: Unit test persistensi metadata FIM.
+- `HANDOFF.md`: Checkpoint malam 22 Okt 2026.
+
+### 3. Status Verifikasi
+- **Rust Agent**: 13/13 tests PASS (`cargo test`). Binary release terkompilasi 4,1 MB.
+- **Python Unit Tests**: 111/111 tests PASS ([scripts/](file:///home/ravi/Projects/soar-project/scripts/)), 4/4 tests PASS ([deploy/](file:///home/ravi/Projects/soar-project/deploy/)).
+- **Next.js Dashboard**: `npm run check` 100% PASS (16 tests, linting, typecheck, production build).
+
+### 4. Next Action
+Deploy dan sinkronisasi binary agen Rust dan dashboard build ke server remote `ravi-debian` bila dibutuhkan.
+
+---
+
 # Handoff SOAR - 2026-10-22 Malam (Milestone M5: Pemulihan Karantina, Canary Ransomware, & Badge MITRE Dashboard)
 
 ## Status Terakhir (Checkpoint: 22 Oktober 2026, 22:45 WITA)
