@@ -1,6 +1,6 @@
 export interface DashboardCommand {
   agent_id: string;
-  action: "quarantine" | "sinkhole" | "scan";
+  action: "quarantine" | "sinkhole" | "scan" | "restore";
   target: string;
 }
 

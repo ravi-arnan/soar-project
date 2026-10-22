@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 const MAX_BODY_BYTES = 8 * 1024;
 const MAX_AGENT_ID_LENGTH = 64;
 const MAX_TARGET_LENGTH = 4096;
-const ACTIONS = new Set(["quarantine", "sinkhole", "scan"]);
+const ACTIONS = new Set(["quarantine", "sinkhole", "scan", "restore"]);
 
 type CommandPayload = {
   agent_id: string;

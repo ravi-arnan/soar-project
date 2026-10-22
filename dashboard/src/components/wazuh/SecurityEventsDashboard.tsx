@@ -36,6 +36,27 @@ const DONUT_CIRCUMFERENCE = 240;
 
 const DEFAULT_PERIOD_VALUE: PeriodValue = { preset: '7d', since: null, until: null };
 
+function getMitreBadge(ruleId: string, description: string) {
+  const d = description.toLowerCase();
+  const r = ruleId.toLowerCase();
+  if (r === '100004' || d.includes('ransomware') || d.includes('canary')) {
+    return { id: 'T1486', name: 'Ransomware', bg: 'bg-[#FDE8E8]', text: 'text-[#BD271E]' };
+  }
+  if (r === '100003' || d.includes('double extension') || d.includes('masquerading')) {
+    return { id: 'T1036.007', name: 'Masquerading', bg: 'bg-[#FEF3C7]', text: 'text-[#B45309]' };
+  }
+  if (r === '100002' || r === '100001' || d.includes('phishing')) {
+    return { id: 'T1566.002', name: 'Phishing', bg: 'bg-[#EBF5FB]', text: 'text-[#006BB4]' };
+  }
+  if (r.startsWith('1100') || d.includes('powershell') || d.includes('lolbin') || d.includes('cmd.exe')) {
+    return { id: 'T1059.001', name: 'Command & Script', bg: 'bg-[#F3E8FF]', text: 'text-[#7E22CE]' };
+  }
+  if (r === '550' || r === '554' || d.includes('syscheck') || d.includes('file added') || d.includes('checksum')) {
+    return { id: 'T1565.001', name: 'FIM / File Mod', bg: 'bg-[#F1F5F9]', text: 'text-[#475569]' };
+  }
+  return null;
+}
+
 export function SecurityEventsDashboard({
   onSelectAgent,
   onOpenAgents,
@@ -163,11 +184,15 @@ export function SecurityEventsDashboard({
   async function queueCommand(
     rowId: string,
     agentId: string,
-    action: 'quarantine' | 'sinkhole',
+    action: 'quarantine' | 'restore' | 'sinkhole',
     target: string
   ) {
     const label =
-      action === 'quarantine' ? `karantina file ${target}` : `sinkhole domain ${target}`;
+      action === 'quarantine'
+        ? `karantina file ${target}`
+        : action === 'restore'
+        ? `pulihkan file ${target}`
+        : `sinkhole domain ${target}`;
     if (!window.confirm(`Antrekan ${label} di agent ${agentId}?`)) return;
     setArState((s) => ({ ...s, [rowId]: 'mengirim...' }));
     try {
@@ -527,6 +552,7 @@ export function SecurityEventsDashboard({
               )}
               {visibleAlerts.map((row) => {
                 const isExpanded = expandedRow === row.id;
+                const mitre = getMitreBadge(row.ruleId, row.description);
                 return (
                   <React.Fragment key={row.id}>
                     <tr className="hover:bg-[#F8FAFC] transition-colors">
@@ -582,7 +608,19 @@ export function SecurityEventsDashboard({
                           '-'
                         )}
                       </td>
-                      <td className="py-2 px-3 text-[#1A1C21] max-w-md truncate">{row.description}</td>
+                      <td className="py-2 px-3 text-[#1A1C21] max-w-md">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {mitre && (
+                            <span
+                              className={`inline-flex shrink-0 items-center px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono ${mitre.bg} ${mitre.text}`}
+                              title={`${mitre.id} - ${mitre.name}`}
+                            >
+                              {mitre.id}
+                            </span>
+                          )}
+                          <span className="truncate">{row.description}</span>
+                        </div>
+                      </td>
                       <td className="py-2 px-3 text-center">
                         <span
                           className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold ${
@@ -606,17 +644,30 @@ export function SecurityEventsDashboard({
                           return (
                             <span className="inline-flex items-center gap-1.5">
                               {row.rawPath && (
-                                <button
-                                  type="button"
-                                  disabled={Boolean(st) || row.agentId === '-'}
-                                  onClick={() =>
-                                    queueCommand(row.id, row.agentId, 'quarantine', row.rawPath)
-                                  }
-                                  title={`Karantina ${row.rawPath} di agent ${row.agentId}`}
-                                  className="text-[11px] font-medium text-[#BD271E] border border-[#F5C2C0] bg-[#FDF3F2] hover:bg-[#FDE8E8] px-1.5 py-0.5 rounded disabled:opacity-50"
-                                >
-                                  Karantina
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={Boolean(st) || row.agentId === '-'}
+                                    onClick={() =>
+                                      queueCommand(row.id, row.agentId, 'quarantine', row.rawPath)
+                                    }
+                                    title={`Karantina ${row.rawPath} di agent ${row.agentId}`}
+                                    className="text-[11px] font-medium text-[#BD271E] border border-[#F5C2C0] bg-[#FDF3F2] hover:bg-[#FDE8E8] px-1.5 py-0.5 rounded disabled:opacity-50"
+                                  >
+                                    Karantina
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={Boolean(st) || row.agentId === '-'}
+                                    onClick={() =>
+                                      queueCommand(row.id, row.agentId, 'restore', row.rawPath)
+                                    }
+                                    title={`Pulihkan ${row.rawPath} dari karantina di agent ${row.agentId}`}
+                                    className="text-[11px] font-medium text-[#006BB4] border border-[#B8D5E5] bg-[#F0F7FC] hover:bg-[#E1EFF8] px-1.5 py-0.5 rounded disabled:opacity-50"
+                                  >
+                                    Pulihkan
+                                  </button>
+                                </>
                               )}
                               {dom && (
                                 <button
@@ -655,6 +706,15 @@ export function SecurityEventsDashboard({
                             <div><strong>rule.level:</strong> {row.level}</div>
                             <div><strong>rule.description:</strong> &quot;{row.description}&quot;</div>
                             <div><strong>location:</strong> &quot;{row.source === 'wazuh' ? 'wazuh-alerts (indexer)' : 'wazuh-alerts'}&quot;</div>
+                            {mitre && (
+                              <div className="pt-1.5 border-t border-[#EDEEF2] mt-2 flex items-center gap-2 font-sans text-[11px]">
+                                <span className="font-semibold text-[#5A626F]">MITRE Technique:</span>
+                                <span className={`px-1.5 py-0.5 rounded font-mono font-semibold ${mitre.bg} ${mitre.text}`}>
+                                  {mitre.id}
+                                </span>
+                                <span className="text-[#1A1C21] font-medium">{mitre.name}</span>
+                              </div>
+                            )}
                             {row.hash && (
                               <div className="pt-1.5 border-t border-[#EDEEF2] mt-2 flex items-center gap-2 font-sans text-[11px]">
                                 <span className="font-semibold text-[#5A626F]">Investigasi Intel:</span>

@@ -85,20 +85,59 @@ fn get_perm(path: &Path) -> String {
     }
 }
 
+/// Deteksi penyamaran ekstensi ganda (MITRE ATT&CK T1036.007 Masquerading: Double Extension).
+/// Penyerang sering menyamarkan file eksekutabel berbahaya sebagai dokumen atau media,
+/// misalnya: `invoice.pdf.exe`, `pembayaran.docx.vbs`, `foto.jpg.bat`, `order.xlsx.scr`.
+fn has_deceptive_double_extension(path: &Path) -> bool {
+    let lower_raw = path.to_string_lossy().to_lowercase();
+    let lower = lower_raw.replace('\\', "/");
+    let fname = match lower.split('/').last() {
+        Some(f) => f,
+        None => return false,
+    };
+
+    const DANGEROUS_EXT: &[&str] = &[
+        ".exe", ".bat", ".cmd", ".vbs", ".vbe", ".js", ".jse",
+        ".wsf", ".wsh", ".ps1", ".scr", ".pif", ".hta", ".cpl", ".msi",
+    ];
+    const DECEPTIVE_DOC_EXT: &[&str] = &[
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+        ".jpg", ".jpeg", ".png", ".gif", ".mp3", ".mp4", ".txt", ".zip", ".rar",
+    ];
+
+    if let Some(&ext) = DANGEROUS_EXT.iter().find(|&&e| fname.ends_with(e)) {
+        let stem = &fname[..fname.len() - ext.len()];
+        if DECEPTIVE_DOC_EXT.iter().any(|&doc| stem.ends_with(doc)) {
+            return true;
+        }
+    }
+    false
+}
+
 fn build_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
     let perm = get_perm(path);
     let size = std::fs::metadata(path)
         .map(|m| m.len().to_string())
         .unwrap_or_else(|_| "0".to_string());
+    let is_double_ext = has_deceptive_double_extension(path);
 
     serde_json::json!({
-        "rule": {"id": "554", "level": 5, "description": "File added to the system."},
+        "rule": {
+            "id": if is_double_ext { "100003" } else { "554" },
+            "level": if is_double_ext { 8 } else { 5 },
+            "description": if is_double_ext {
+                "Deceptive double extension detected (T1036.007)."
+            } else {
+                "File added to the system."
+            }
+        },
         "agent": {"id": args.agent_id, "name": args.agent_name},
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "data": {
             "sha256_after": hash,
             "path": path.to_string_lossy(),
-            "srcip": "0.0.0.0"
+            "srcip": "0.0.0.0",
+            "is_double_extension": is_double_ext
         },
         "syscheck": {
             "path": path.to_string_lossy(),
@@ -109,6 +148,56 @@ fn build_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
             "mode": "realtime"
         }
     })
+}
+
+/// Payload darurat ransomware: terpicu saat berkas umpan (canary decoy) termodifikasi/terenkripsi.
+/// Rule 100004 Level 12 (CRITICAL) langsung mengaktifkan isolasi darurat sebelum berkas lain terenkripsi.
+fn build_canary_ransomware_payload(args: &Args, path: &Path, hash: &str) -> serde_json::Value {
+    serde_json::json!({
+        "rule": {
+            "id": "100004",
+            "level": 12,
+            "description": "Ransomware canary file tampered (T1486 Data Encrypted for Impact)."
+        },
+        "agent": {"id": args.agent_id, "name": args.agent_name},
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "data": {
+            "sha256_after": hash,
+            "path": path.to_string_lossy(),
+            "srcip": "0.0.0.0",
+            "is_canary_tampered": true,
+            "attack_technique": "T1486"
+        },
+        "syscheck": {
+            "path": path.to_string_lossy(),
+            "sha256_after": hash,
+            "event": "modified",
+            "mode": "realtime"
+        }
+    })
+}
+
+/// Inisialisasi berkas umpan (decoy canary file) di seluruh direktori pantau.
+/// Mengembalikan mapping path canary ke hash sha256 resminya.
+fn init_canaries(watch_paths: &[PathBuf]) -> HashMap<PathBuf, String> {
+    let mut map = HashMap::new();
+    const CANARY_NAME: &str = ".soar-canary.docx";
+    const CANARY_BYTES: &[u8] = b"PK\x03\x04\x14\x00\x06\x00SOAR-CANARY-DECOY-BALI-HANDMADE-EARLY-WARNING\x00";
+
+    for root in watch_paths {
+        if !root.is_dir() {
+            continue;
+        }
+        let canary_path = root.join(CANARY_NAME);
+        if !canary_path.exists() {
+            let _ = std::fs::write(&canary_path, CANARY_BYTES);
+        }
+        if let Ok(hash) = sha256_file(&canary_path) {
+            info!(path = %canary_path.display(), hash = %hash, "canary ransomware aktif");
+            map.insert(canary_path, hash);
+        }
+    }
+    map
 }
 
 /// Sensor URL phishing: ekstrak http(s) dari file pointer/attachment.
@@ -424,6 +513,10 @@ fn resolve_scan_roots(scan_roots: &Option<Vec<String>>, watch: &[PathBuf]) -> Ve
 }
 
 fn command_target_allowed(target: &Path, roots: &[PathBuf], action: &str) -> bool {
+    if action == "restore" || action == "unquarantine" {
+        return target.is_absolute()
+            && !target.components().any(|c| matches!(c, std::path::Component::ParentDir));
+    }
     let Ok(metadata) = std::fs::symlink_metadata(target) else {
         return false;
     };
@@ -514,6 +607,8 @@ async fn main() -> Result<()> {
             Err(e) => warn!(path = %p.display(), error = %e, "gagal watch, skip"),
         }
     }
+
+    let mut canaries = init_canaries(&watch_paths);
 
     // Drive/mount watcher (saran dospem: deteksi file malware dipindah dari
     // flashdisk). Parity lintas OS via `candidate_mounts()`: Linux `/run/media/
@@ -704,7 +799,7 @@ async fn main() -> Result<()> {
                                 if target.is_empty() {
                                     continue;
                                 }
-                                if action == "quarantine" || action == "scan" {
+                                if action == "quarantine" || action == "scan" || action == "restore" || action == "unquarantine" {
                                     let mut roots = command_roots.clone();
                                     roots.extend(command_mounts.lock().unwrap().iter().cloned());
                                     if !command_target_allowed(Path::new(target), &roots, action) {
@@ -716,6 +811,10 @@ async fn main() -> Result<()> {
                                     "quarantine" => match do_quarantine(target) {
                                         Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah dashboard OK"),
                                         Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
+                                    },
+                                    "restore" | "unquarantine" => match do_restore(target) {
+                                        Ok(d) => info!(action = %action, target = %target, detail = %d, "perintah restore OK"),
+                                        Err(e) => warn!(action = %action, target = %target, error = %e, "perintah restore gagal"),
                                     },
                                     "sinkhole" => match do_sinkhole(target) {
                                         Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah dashboard OK"),
@@ -833,25 +932,49 @@ async fn main() -> Result<()> {
             }
             last_sent.insert(path.clone(), now);
 
+            // Deteksi dini Ransomware (Canary Decoy File Tampering - MITRE T1486)
+            if let Some(expected_hash) = canaries.get(&path) {
+                let current_hash = sha256_file(&path).unwrap_or_default();
+                if current_hash != *expected_hash {
+                    error!(path = %path.display(), "CANARY FILE TAMPERED! Indikasi serangan ransomware (MITRE T1486)");
+                    let payload = build_canary_ransomware_payload(&args, &path, &current_hash);
+                    post_with_retry(&http, &args.webhook, &payload, &path).await;
+                    // Reset canary kembali ke konten awal agar siap mendeteksi serangan lanjutan
+                    let _ = std::fs::write(&path, b"PK\x03\x04\x14\x00\x06\x00SOAR-CANARY-DECOY-BALI-HANDMADE-EARLY-WARNING\x00");
+                    if let Ok(new_h) = sha256_file(&path) {
+                        canaries.insert(path.clone(), new_h);
+                    }
+                }
+                continue;
+            }
+
             info!(path = %path.display(), "file event -> cek sensor phishing");
 
             let lower = path.to_string_lossy().to_lowercase();
-            let is_url_file = lower.ends_with(".url");
+            let is_url_file = lower.ends_with(".url")
+                || lower.ends_with(".desktop")
+                || lower.ends_with(".webloc");
             let is_html = lower.ends_with(".html") || lower.ends_with(".htm");
 
             // Sensor URL phishing (jalur reaktif Deteksi Phishing): ekstrak
-            // http(s) dari shortcut/attachment lalu POST per URL.
-            // .url = pointer saja -> phishing only (hash file-nya tak bermakna
-            // buat VT). .html/.htm = attachment -> dua jalur (hash + URL).
+            // http(s) dari shortcut/attachment (.url, .desktop, .webloc, .html)
+            // lalu POST per URL.
+            // Shortcut file = pointer saja -> phishing only jika URL ditemukan.
+            // .html/.htm = attachment -> dua jalur (hash + URL).
             if is_url_file || is_html {
-                for url in extract_urls(&path) {
+                let urls = extract_urls(&path);
+                for url in &urls {
                     info!(url = %url, path = %path.display(), "URL -> webhook phishing");
-                    let payload = build_phishing_payload(&args, &path, &url);
+                    let payload = build_phishing_payload(&args, &path, url);
                     post_with_retry(&http, &args.phishing_webhook, &payload, &path).await;
                 }
-                if is_url_file {
+                if is_url_file && !urls.is_empty() {
                     continue;
                 }
+            }
+
+            if has_deceptive_double_extension(&path) {
+                warn!(path = %path.display(), "terdeteksi penyamaran ekstensi ganda (T1036.007)");
             }
 
             info!(path = %path.display(), "file event -> hitung hash");
@@ -904,22 +1027,38 @@ async fn quarantine_server(
                     serde_json::json!({"error": "unauthorized"}).to_string(),
                 )
             } else {
-                let path_opt = extract_path(&req);
+                let (action_opt, path_opt) = extract_action_and_path(&req);
+                let action = action_opt.unwrap_or_else(|| "quarantine".to_string());
                 match path_opt {
                     Some(p) if {
                         let mut roots = request_roots.clone();
                         roots.extend(request_mounts.lock().unwrap().iter().cloned());
-                        command_target_allowed(Path::new(&p), &roots, "quarantine")
-                    } => match do_quarantine(&p) {
-                        Ok(dest) => (
-                            "200 OK",
-                            serde_json::json!({"status": "quarantined", "dest": dest}).to_string(),
-                        ),
-                        Err(e) => (
-                            "500 Internal Server Error",
-                            serde_json::json!({"error": e.to_string()}).to_string(),
-                        ),
-                    },
+                        command_target_allowed(Path::new(&p), &roots, &action)
+                    } => {
+                        if action == "restore" || action == "unquarantine" {
+                            match do_restore(&p) {
+                                Ok(detail) => (
+                                    "200 OK",
+                                    serde_json::json!({"status": "restored", "detail": detail}).to_string(),
+                                ),
+                                Err(e) => (
+                                    "500 Internal Server Error",
+                                    serde_json::json!({"error": e.to_string()}).to_string(),
+                                ),
+                            }
+                        } else {
+                            match do_quarantine(&p) {
+                                Ok(dest) => (
+                                    "200 OK",
+                                    serde_json::json!({"status": "quarantined", "dest": dest}).to_string(),
+                                ),
+                                Err(e) => (
+                                    "500 Internal Server Error",
+                                    serde_json::json!({"error": e.to_string()}).to_string(),
+                                ),
+                            }
+                        }
+                    }
                     Some(_) => (
                         "400 Bad Request",
                         serde_json::json!({"error": "target di luar watch root"}).to_string(),
@@ -950,12 +1089,24 @@ fn request_has_bearer(request: &str, token: &str) -> bool {
     })
 }
 
-fn extract_path(req: &str) -> Option<String> {
-    // Cari body setelah \r\n\r\n
-    let body_start = req.find("\r\n\r\n").map(|i| i + 4)?;
+fn extract_action_and_path(req: &str) -> (Option<String>, Option<String>) {
+    let body_start = match req.find("\r\n\r\n").map(|i| i + 4) {
+        Some(s) => s,
+        None => return (None, None),
+    };
     let body = &req[body_start..];
-    let v: serde_json::Value = serde_json::from_str(body.trim()).ok()?;
-    v.get("path")?.as_str().map(|s| s.to_string())
+    let v: serde_json::Value = match serde_json::from_str(body.trim()) {
+        Ok(val) => val,
+        Err(_) => return (None, None),
+    };
+    let action = v.get("action").and_then(|a| a.as_str()).map(ToString::to_string);
+    let path = v.get("path").and_then(|p| p.as_str()).map(ToString::to_string);
+    (action, path)
+}
+
+#[allow(dead_code)]
+fn extract_path(req: &str) -> Option<String> {
+    extract_action_and_path(req).1
 }
 
 /// Sinkhole domain ke 0.0.0.0 di hosts file (perintah dashboard via queue).
@@ -992,10 +1143,27 @@ fn do_sinkhole(domain: &str) -> Result<String> {
     Ok(entry)
 }
 
-fn do_quarantine(path: &str) -> Result<String> {    let src = Path::new(path);
-    if !src.exists() {
-        anyhow::bail!("file tidak ada: {}", path);
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+struct QuarantineRecord {
+    quarantined: String,
+    original: String,
+    timestamp: i64,
+}
+
+fn is_writable_dir(p: &Path) -> bool {
+    if std::fs::create_dir_all(p).is_err() {
+        return false;
     }
+    let probe = p.join(format!(".write-probe-{}", std::process::id()));
+    if std::fs::write(&probe, b"").is_ok() {
+        let _ = std::fs::remove_file(probe);
+        true
+    } else {
+        false
+    }
+}
+
+fn get_quarantine_dir() -> PathBuf {
     #[cfg(unix)]
     let candidates = {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
@@ -1015,12 +1183,38 @@ fn do_quarantine(path: &str) -> Result<String> {    let src = Path::new(path);
             PathBuf::from("C:\\ProgramData\\soar-quarantine"),
         ]
     };
-    let quarantine_dir = candidates.iter().find(|p| {
-        std::fs::create_dir_all(p).is_ok()
-    }).unwrap_or(&candidates[0]);
-    std::fs::create_dir_all(quarantine_dir)?;
+    candidates
+        .into_iter()
+        .find(|p| is_writable_dir(p))
+        .unwrap_or_else(|| PathBuf::from("/tmp/soar-quarantine"))
+}
+
+fn read_quarantine_manifest(qdir: &Path) -> Vec<QuarantineRecord> {
+    let mpath = qdir.join("manifest.json");
+    if let Ok(content) = std::fs::read_to_string(&mpath) {
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        vec![]
+    }
+}
+
+fn write_quarantine_manifest(qdir: &Path, records: &[QuarantineRecord]) -> Result<()> {
+    let mpath = qdir.join("manifest.json");
+    let content = serde_json::to_string_pretty(records)?;
+    std::fs::write(mpath, content)?;
+    Ok(())
+}
+
+fn do_quarantine(path: &str) -> Result<String> {
+    let src = Path::new(path);
+    if !src.exists() {
+        anyhow::bail!("file tidak ada: {}", path);
+    }
+    let quarantine_dir = get_quarantine_dir();
+    std::fs::create_dir_all(&quarantine_dir)?;
     let filename = src.file_name().unwrap_or_default().to_string_lossy();
-    let dest = quarantine_dir.join(format!("{}.{}.quarantined", filename, chrono::Utc::now().timestamp()));
+    let ts = chrono::Utc::now().timestamp();
+    let dest = quarantine_dir.join(format!("{}.{}.quarantined", filename, ts));
     std::fs::rename(src, &dest).or_else(|e: std::io::Error| {
         if e.raw_os_error() != Some(18) {
             return Err(e);
@@ -1034,8 +1228,87 @@ fn do_quarantine(path: &str) -> Result<String> {    let src = Path::new(path);
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o000));
     }
+
+    // Catat ke manifest untuk mendukung pemulihan (unquarantine / restore)
+    let mut records = read_quarantine_manifest(&quarantine_dir);
+    records.retain(|r| r.original != path);
+    records.push(QuarantineRecord {
+        quarantined: dest.to_string_lossy().to_string(),
+        original: path.to_string(),
+        timestamp: ts,
+    });
+    let _ = write_quarantine_manifest(&quarantine_dir, &records);
+
     info!(src = %path, dest = %dest.display(), "quarantined");
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// Memulihkan berkas dari karantina kembali ke lokasi aslinya.
+/// Mendukung pencarian via original_path atau quarantined_path di manifest,
+/// dengan fallback pemulihan berkas berakhiran .quarantined langsung.
+fn do_restore(target: &str) -> Result<String> {
+    let quarantine_dir = get_quarantine_dir();
+    let mut records = read_quarantine_manifest(&quarantine_dir);
+
+    let record_idx = records.iter().position(|r| r.original == target || r.quarantined == target);
+    if let Some(idx) = record_idx {
+        let record = records.remove(idx);
+        let qpath = Path::new(&record.quarantined);
+        let orig_path = Path::new(&record.original);
+
+        if !qpath.exists() {
+            anyhow::bail!("berkas karantina tidak ditemukan: {}", record.quarantined);
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(qpath, std::fs::Permissions::from_mode(0o644));
+        }
+
+        if let Some(parent) = orig_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        std::fs::rename(qpath, orig_path).or_else(|e: std::io::Error| {
+            if e.raw_os_error() != Some(18) {
+                return Err(e);
+            }
+            std::fs::copy(qpath, orig_path)?;
+            std::fs::remove_file(qpath)?;
+            Ok(())
+        })?;
+
+        let _ = write_quarantine_manifest(&quarantine_dir, &records);
+        info!(quarantined = %record.quarantined, original = %record.original, "restored");
+        return Ok(format!("restored {} to {}", record.quarantined, record.original));
+    }
+
+    // Fallback: jika target adalah path berkas .quarantined langsung
+    let qpath = Path::new(target);
+    if qpath.exists() && target.ends_with(".quarantined") {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(qpath, std::fs::Permissions::from_mode(0o644));
+        }
+        let fname = qpath.file_name().unwrap_or_default().to_string_lossy();
+        let stripped = if let Some(last_dot) = fname.rfind(".quarantined") {
+            let without_ext = &fname[..last_dot];
+            if let Some(ts_dot) = without_ext.rfind('.') {
+                &without_ext[..ts_dot]
+            } else {
+                without_ext
+            }
+        } else {
+            &fname
+        };
+        let orig = qpath.with_file_name(stripped);
+        std::fs::rename(qpath, &orig)?;
+        return Ok(format!("restored {} to {}", target, orig.display()));
+    }
+
+    anyhow::bail!("tidak ditemukan catatan karantina untuk target: {}", target)
 }
 
 /// Batas file per scan on-demand. Folder pilihan (bukan full disk): cukup besar
@@ -1384,5 +1657,175 @@ mod tests {
             resolve_scan_roots(&explicit, &watch),
             vec!["C:\\".to_string(), "D:\\data".to_string()]
         );
+    }
+
+    #[test]
+    fn extract_urls_dari_desktop_dan_webloc() {
+        let dir = std::env::temp_dir();
+
+        // 1. Linux .desktop shortcut
+        let desktop_path = dir.join("soar-test-login.desktop");
+        std::fs::write(
+            &desktop_path,
+            "[Desktop Entry]\nEncoding=UTF-8\nType=Link\nName=HRD Portal\nURL=https://phish-portal.example.com/hrd\n",
+        )
+        .unwrap();
+        assert_eq!(
+            extract_urls(&desktop_path),
+            vec!["https://phish-portal.example.com/hrd".to_string()]
+        );
+
+        // 2. macOS .webloc XML plist
+        let webloc_path = dir.join("soar-test-doc.webloc");
+        std::fs::write(
+            &webloc_path,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict><key>URL</key><string>https://verify.appleid-phish.net/login</string></dict></plist>",
+        )
+        .unwrap();
+        assert_eq!(
+            extract_urls(&webloc_path),
+            vec!["https://verify.appleid-phish.net/login".to_string()]
+        );
+
+        std::fs::remove_file(&desktop_path).ok();
+        std::fs::remove_file(&webloc_path).ok();
+    }
+
+    #[test]
+    fn deceptive_double_extension_detection() {
+        // Positif terdeteksi (T1036.007 Masquerading)
+        for p in [
+            "invoice.pdf.exe",
+            "pembayaran.docx.vbs",
+            "foto_karyawan.jpg.bat",
+            "daftar_gaji.xlsx.scr",
+            "tagihan.pdf.cmd",
+            "faktur.png.pif",
+            "C:\\Users\\User\\Downloads\\surat.doc.exe",
+            "/home/user/Downloads/slip.pdf.js",
+        ] {
+            assert!(
+                has_deceptive_double_extension(Path::new(p)),
+                "harus terdeteksi ekstensi ganda: {p}"
+            );
+        }
+
+        // Negatif / bersih (bukan penyamaran berbahaya)
+        for p in [
+            "dokumen.pdf",
+            "laporan.docx",
+            "program.exe",
+            "arsip.tar.gz",
+            "catatan.doc.txt",
+            "style.min.js",
+            "/usr/bin/python3",
+            "C:\\Windows\\notepad.exe",
+        ] {
+            assert!(
+                !has_deceptive_double_extension(Path::new(p)),
+                "jangan terdeteksi sebagai ekstensi ganda berbahaya: {p}"
+            );
+        }
+
+        // Verifikasi integrasi build_payload
+        let args = Args {
+            agent_id: "009".to_string(),
+            agent_name: "test-agent".to_string(),
+            webhook: "http://127.0.0.1:5678/webhook/test".to_string(),
+            phishing_webhook: "http://127.0.0.1:5678/webhook/phish".to_string(),
+            fleet_url: "http://127.0.0.1:8080/api/heartbeat".to_string(),
+            watch: None,
+            listen_port: 8787,
+            fleet_poll_token_file: "".to_string(),
+            heartbeat_secs: 60,
+            scan_interval_secs: 0,
+            scan_roots: None,
+        };
+
+        let normal_payload = build_payload(&args, Path::new("/tmp/test.exe"), "abc123hash");
+        assert_eq!(normal_payload["rule"]["id"], "554");
+        assert_eq!(normal_payload["rule"]["level"], 5);
+        assert_eq!(normal_payload["data"]["is_double_extension"], false);
+
+        let deceptive_payload = build_payload(&args, Path::new("/tmp/invoice.pdf.exe"), "bad123hash");
+        assert_eq!(deceptive_payload["rule"]["id"], "100003");
+        assert_eq!(deceptive_payload["rule"]["level"], 8);
+        assert_eq!(deceptive_payload["data"]["is_double_extension"], true);
+    }
+
+    #[test]
+    fn quarantine_manifest_and_restore_cycle() {
+        let dir = std::env::temp_dir().join("soar-test-quar-restore");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let sample_file = dir.join("malicious_test.exe");
+        std::fs::write(&sample_file, b"DUMMY_MALWARE_PAYLOAD").unwrap();
+        assert!(sample_file.exists());
+
+        // Jalankan karantina
+        let q_dest = do_quarantine(&sample_file.to_string_lossy()).unwrap();
+        assert!(!sample_file.exists(), "file sumber harus dipindahkan");
+        assert!(Path::new(&q_dest).exists(), "file tujuan karantina harus ada");
+
+        // Periksa manifest karantina
+        let qdir = get_quarantine_dir();
+        let records = read_quarantine_manifest(&qdir);
+        let found = records.iter().any(|r| r.original == sample_file.to_string_lossy());
+        assert!(found, "manifest harus mencatat path asal");
+
+        // Jalankan pemulihan (restore) via original path
+        let restore_res = do_restore(&sample_file.to_string_lossy()).unwrap();
+        assert!(restore_res.contains("restored"));
+        assert!(sample_file.exists(), "file harus kembali ke lokasi asal");
+        assert!(!Path::new(&q_dest).exists(), "file karantina harus sudah dipindahkan");
+
+        // Entri harus terhapus dari manifest setelah restore
+        let records_after = read_quarantine_manifest(&qdir);
+        assert!(!records_after.iter().any(|r| r.original == sample_file.to_string_lossy()));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn canary_ransomware_tampering() {
+        let dir = std::env::temp_dir().join("soar-test-canary");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let canaries = init_canaries(&[dir.clone()]);
+        let canary_path = dir.join(".soar-canary.docx");
+        assert!(canary_path.exists());
+        assert!(canaries.contains_key(&canary_path));
+
+        let initial_hash = canaries.get(&canary_path).unwrap();
+        assert_eq!(sha256_file(&canary_path).unwrap(), *initial_hash);
+
+        // Simulasi ransomware: modifikasi/enkripsi file canary
+        std::fs::write(&canary_path, b"ENCRYPTED_BY_RANSOMWARE_LOCKED").unwrap();
+        let tampered_hash = sha256_file(&canary_path).unwrap();
+        assert_ne!(tampered_hash, *initial_hash);
+
+        let args = Args {
+            agent_id: "009".to_string(),
+            agent_name: "test-agent".to_string(),
+            webhook: "http://127.0.0.1:5678/webhook/test".to_string(),
+            phishing_webhook: "http://127.0.0.1:5678/webhook/phish".to_string(),
+            fleet_url: "http://127.0.0.1:8080/api/heartbeat".to_string(),
+            watch: None,
+            listen_port: 8787,
+            fleet_poll_token_file: "".to_string(),
+            heartbeat_secs: 60,
+            scan_interval_secs: 0,
+            scan_roots: None,
+        };
+
+        let canary_payload = build_canary_ransomware_payload(&args, &canary_path, &tampered_hash);
+        assert_eq!(canary_payload["rule"]["id"], "100004");
+        assert_eq!(canary_payload["rule"]["level"], 12);
+        assert_eq!(canary_payload["data"]["is_canary_tampered"], true);
+        assert_eq!(canary_payload["data"]["attack_technique"], "T1486");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

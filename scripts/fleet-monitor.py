@@ -310,14 +310,14 @@ def _validate_command(value):
     actor = str(value.get("by", "dashboard")).strip() or "dashboard"
     if not _valid_agent_id(agent_id):
         raise ValueError("agent_id tidak valid")
-    if action in ("quarantine", "scan"):
+    if action in ("quarantine", "scan", "restore"):
         if not _valid_path_target(target):
             raise ValueError(f"target {action} harus path absolut tanpa traversal")
     elif action == "sinkhole":
         if not _valid_domain_target(target):
             raise ValueError("target sinkhole harus domain valid")
     else:
-        raise ValueError("action harus quarantine|sinkhole|scan")
+        raise ValueError("action harus quarantine|sinkhole|scan|restore")
     if len(actor) > 64 or any(ord(char) < 32 for char in actor):
         raise ValueError("by tidak valid")
     return {"agent_id": agent_id, "action": action, "target": target, "by": actor}
