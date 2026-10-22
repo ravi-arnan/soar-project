@@ -17,6 +17,7 @@ RUN npm ci --no-audit --no-fund
 
 FROM node:24-slim AS builder
 ARG FLEET_API_URL=http://host.docker.internal:8080
+ARG CACHEBUST=1
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

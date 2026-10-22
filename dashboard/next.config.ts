@@ -17,7 +17,8 @@ const nextConfig: NextConfig = {
   // dipakai adalah yang ada di env build. Lihat Dockerfile: ARG FLEET_API_URL
   // (default host.docker.internal:8080) wajib lolos ke builder lewat ENV/ARG.
   async rewrites() {
-    const base = process.env.FLEET_API_URL || "http://host.docker.internal:8080";
+    const rawBase = process.env.FLEET_API_URL || "http://host.docker.internal:8080";
+    const base = rawBase.split("?")[0].replace(/\/$/, "");
     return [
       {
         source: "/api/:path*",
