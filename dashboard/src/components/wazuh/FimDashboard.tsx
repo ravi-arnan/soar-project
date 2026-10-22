@@ -12,7 +12,6 @@ import {
   ChevronDown,
   X,
   ExternalLink,
-  Sparkles,
   Bot,
 } from 'lucide-react';
 
@@ -462,15 +461,15 @@ export function FimDashboard() {
             </div>
           </div>
 
-          {/* AI Analysis & Threat Intel Card */}
+          {/* AI Analysis & Threat Intel Card (Wazuh EUI Style) */}
           <div className="bg-white border border-[#D3DAE6] rounded p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EBEFF5] pb-3">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-[#7C3AED]" />
-                <span className="text-[14px] font-semibold text-[#1A1C21]">Analisis AI & Threat Intel</span>
+                <ChevronDown className="w-4 h-4 text-[#5A626F]" />
+                <span className="text-[13px] font-semibold text-[#1A1C21]">AI Analysis & Threat Intelligence</span>
                 {latestEvent && (
                   <span
-                    className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
+                    className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
                       latestLevel >= 7
                         ? 'bg-[#FDF3F2] text-[#BD271E] border border-[#F5C2C0]'
                         : latestLevel >= 4
@@ -513,25 +512,47 @@ export function FimDashboard() {
               )}
             </div>
 
-            {/* AI Explanation Box */}
-            <div className="bg-[#FAF5FF] border border-[#E9D5FF] rounded p-3.5 space-y-2">
+            {/* AI Explanation Callout Box (Elastic UI / Wazuh native style) */}
+            <div
+              className={`p-3.5 rounded-r border border-[#D3DAE6] border-l-4 bg-[#F8FAFC] space-y-1.5 ${
+                latestLevel >= 7
+                  ? 'border-l-[#BD271E]'
+                  : latestLevel >= 4
+                  ? 'border-l-[#B25E09]'
+                  : 'border-l-[#006BB4]'
+              }`}
+            >
               <div className="flex items-start gap-2.5">
-                <Bot className="w-4 h-4 text-[#7C3AED] mt-0.5 shrink-0" />
+                <Bot
+                  className={`w-4 h-4 mt-0.5 shrink-0 ${
+                    latestLevel >= 7
+                      ? 'text-[#BD271E]'
+                      : latestLevel >= 4
+                      ? 'text-[#B25E09]'
+                      : 'text-[#006BB4]'
+                  }`}
+                />
                 <div className="space-y-1">
-                  <div className="text-[12px] font-semibold text-[#581C87]">Rangkuman Intelijen Otomatis</div>
-                  <p className="text-[12px] text-[#3B0764] leading-relaxed">
+                  <div className="text-[12px] font-semibold text-[#1A1C21]">
+                    Rangkuman intelijen otomatis
+                  </div>
+                  <p className="text-[12px] text-[#5A626F] leading-relaxed">
                     {latestEvent?.ai ||
-                      'Tidak ada anomali atau ancaman terdeteksi pada berkas ini. Integritas berkas berada dalam parameter normal.'}
+                      (latestLevel >= 7
+                        ? `Berkas terindikasi berisiko tinggi (Level ${latestLevel}). Signature berkas cocok dengan artefak berbahaya pada basis data ancaman (MISP/Threat Intel). Disarankan segera lakukan karantina berkas dan isolasi endpoint dari jaringan.`
+                        : latestLevel >= 4
+                        ? `Perubahan integritas berkas terdeteksi (Level ${latestLevel}). Pastikan integritas konfigurasi dan identitas proses yang memodifikasi berkas.`
+                        : 'Tidak ada anomali atau ancaman terdeteksi pada berkas ini. Integritas berkas berada dalam parameter operasional normal.')}
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Threat Intel Indicators & Pivots */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[12px] pt-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-6 text-[12px] pt-1">
               <div>
-                <div className="text-[11px] text-[#8A94A6] uppercase font-bold mb-1">Status Verifikasi</div>
-                <div className="text-[12px] text-[#1A1C21]">
+                <div className="text-[11px] text-[#8A94A6]">Status verifikasi</div>
+                <div className="font-medium text-[#1A1C21] mt-0.5 flex items-center gap-2">
                   {latestEvent?.verdict ? (
                     <span className="font-semibold text-[#BD271E]">{latestEvent.verdict}</span>
                   ) : latestLevel >= 7 ? (
@@ -540,20 +561,20 @@ export function FimDashboard() {
                     <span className="text-[#00A389] font-medium">Clean / Monitored</span>
                   )}
                   {latestEvent?.status && (
-                    <span className="text-[#5A626F] ml-2 font-mono">({latestEvent.status})</span>
+                    <span className="text-[#5A626F] text-[11px] font-mono">({latestEvent.status})</span>
                   )}
                 </div>
               </div>
 
               <div>
-                <div className="text-[11px] text-[#8A94A6] uppercase font-bold mb-1">External Threat Intel Pivot</div>
+                <div className="text-[11px] text-[#8A94A6]">External threat intel pivot</div>
                 {fileHash && fileHash !== '-' ? (
-                  <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3 mt-0.5 font-mono text-[11px]">
                     <a
                       href={`https://www.virustotal.com/gui/file/${fileHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[#006BB4] hover:underline flex items-center gap-1 font-mono text-[11px]"
+                      className="text-[#006BB4] hover:underline flex items-center gap-1"
                       title="Periksa hash di VirusTotal"
                     >
                       VirusTotal <ExternalLink className="w-3 h-3" />
@@ -562,7 +583,7 @@ export function FimDashboard() {
                       href={`https://bazaar.abuse.ch/sample/${fileHash}/`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[#006BB4] hover:underline flex items-center gap-1 font-mono text-[11px]"
+                      className="text-[#006BB4] hover:underline flex items-center gap-1"
                       title="Periksa hash di MalwareBazaar"
                     >
                       MalwareBazaar <ExternalLink className="w-3 h-3" />
@@ -571,14 +592,14 @@ export function FimDashboard() {
                       href={`https://otx.alienvault.com/indicator/file/${fileHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[#006BB4] hover:underline flex items-center gap-1 font-mono text-[11px]"
+                      className="text-[#006BB4] hover:underline flex items-center gap-1"
                       title="Periksa hash di AlienVault OTX"
                     >
                       AlienVault OTX <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
                 ) : (
-                  <span className="text-[#8A94A6]">Hash berkas belum tersedia</span>
+                  <span className="text-[#8A94A6] text-[11px] mt-0.5 block">-</span>
                 )}
               </div>
             </div>
