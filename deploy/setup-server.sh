@@ -93,12 +93,14 @@ else
 fi
 
 : > "$ENV_FILE.tmp"
-grep -vE '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|GSB_API_KEY|URLSCAN_API_KEY|GEMINI_API_KEY|WAZUH_API_PASS|N8N_ENCRYPTION_KEY|CADDY_BASIC_AUTH_USER|CADDY_BASIC_AUTH_HASH|FLEET_COMMAND_TOKEN|FLEET_AGENT_POLL_TOKENS_JSON|DASHBOARD_LOGIN_TOKEN|DASHBOARD_ALLOWED_ORIGINS)=' "$ENV_FILE" >> "$ENV_FILE.tmp" 2>/dev/null || true
+grep -vE '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|GSB_API_KEY|URLSCAN_API_KEY|MALWAREBAZAAR_API_KEY|OTX_API_KEY|GEMINI_API_KEY|WAZUH_API_PASS|N8N_ENCRYPTION_KEY|CADDY_BASIC_AUTH_USER|CADDY_BASIC_AUTH_HASH|FLEET_COMMAND_TOKEN|FLEET_AGENT_POLL_TOKENS_JSON|DASHBOARD_LOGIN_TOKEN|DASHBOARD_ALLOWED_ORIGINS)=' "$ENV_FILE" >> "$ENV_FILE.tmp" 2>/dev/null || true
 
 ask TELEGRAM_BOT_TOKEN "Token bot Telegram (dari @BotFather, format 123456:ABC-...)" ""
 ask TELEGRAM_CHAT_ID   "Chat ID tujuan alert (dari @get_id_bot; grup = -100...)" ""
 ask GSB_API_KEY        "Google Safe Browsing API key (untuk phishing) [kosong=skip dulu]" ""
 ask URLSCAN_API_KEY    "urlscan.io API key [kosong=skip dulu]" ""
+ask MALWAREBAZAAR_API_KEY "MalwareBazaar Auth-Key (bazaar.abuse.ch) [kosong=skip dulu]" ""
+ask OTX_API_KEY        "AlienVault OTX API key (otx.alienvault.com) [kosong=skip dulu]" ""
 ask GEMINI_API_KEY     "Gemini API key (aistudio.google.com/app/apikey, gratis 60 req/menit)" ""
 CUR_WAZUH_PASS="$(grep -E '^WAZUH_API_PASS=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
 if [ -z "$CUR_WAZUH_PASS" ] || [ "$CUR_WAZUH_PASS" = "change-me" ] || [ "$CUR_WAZUH_PASS" = "MyS3cr37P450r.*-" ]; then
@@ -221,7 +223,7 @@ N8N_BASE="${N8N_URL:-http://127.0.0.1:5678}"
 if [ -n "${N8N_OWNER_API_KEY:-}" ]; then
   log "Step 7/7 — sinkron credentials + import workflow (deploy/n8n-setup.py)"
   if python3 "$REPO_ROOT/deploy/n8n-setup.py" --url "$N8N_BASE" --all; then
-     log "  credentials (Telegram/Wazuh/GSB/urlscan/VT) + 4 workflow tersinkron,"
+     log "  credentials (Telegram/Wazuh/GSB/urlscan/MB/VT/OTX) + 4 workflow tersinkron,"
      log "  credential ID di-remap by name -> node tidak merah, tanpa setup UI."
      log "  Workflow live yang berbeda dari snapshot tidak ditimpa."
 

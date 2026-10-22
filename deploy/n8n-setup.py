@@ -89,6 +89,16 @@ CREDENTIALS = [
         "extra": {"name": "x-apikey"},
         "secret_source": "VT_API_KEY",  # dari flag/env/prompt, bukan .env
     },
+    {
+        # AlienVault OTX: node "OTX Lookup" pakai httpHeaderAuth X-OTX-API-KEY.
+        # Fallback saat VT rate-limit / 429 — key dari .env OTX_API_KEY.
+        "name": "OTX API Key",
+        "aliases": ["OTX Header Auth"],
+        "type": "httpHeaderAuth",
+        "env": {"OTX_API_KEY": "value", "_OTX_HEADER": "name"},
+        "keys_env": ["OTX_API_KEY"],
+        "extra": {"name": "X-OTX-API-KEY"},
+    },
 ]
 
 
@@ -101,6 +111,9 @@ def load_env():
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
                     env[k.strip()] = v.strip().strip('"').strip("'")
+    for k, v in os.environ.items():
+        if k not in env or not env[k]:
+            env[k] = v
     return env
 
 
@@ -326,17 +339,27 @@ def push_credentials(base, key, env, vt_key, dry=False):
         if dry:
             print(f"  [dry] {cred['name']} ({cred['type']})")
             name_to_id[cred["name"]] = (cred["type"], "DRY")
+            for alias in cred.get("aliases", []):
+                name_to_id[alias] = (cred["type"], "DRY")
             continue
-        if cred["name"] in have:
-            cid = have[cred["name"]]["id"]
+        target_name = cred["name"]
+        match_c = have.get(target_name)
+        if not match_c:
+            for alias in cred.get("aliases", []):
+                if alias in have:
+                    match_c = have[alias]
+                    target_name = alias
+                    break
+        if match_c:
+            cid = match_c["id"]
             api(
                 base,
                 key,
                 "PATCH",
                 f"/api/v1/credentials/{cid}",
-                {"name": cred["name"], "type": cred["type"], "data": data},
+                {"name": target_name, "type": cred["type"], "data": data},
             )
-            print(f"  [update] {cred['name']} (id={cid})")
+            print(f"  [update] {target_name} (id={cid})")
         else:
             created = api(
                 base,
@@ -348,6 +371,8 @@ def push_credentials(base, key, env, vt_key, dry=False):
             cid = created.get("id") or (created.get("data") or {}).get("id")
             print(f"  [create] {cred['name']} (id={cid})")
         name_to_id[cred["name"]] = (cred["type"], cid)
+        for alias in cred.get("aliases", []):
+            name_to_id[alias] = (cred["type"], cid)
     return name_to_id
 
 

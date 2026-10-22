@@ -1,3 +1,55 @@
+# Handoff SOAR - 2026-10-22 Malam (Milestone M5: Pengerasan Credential OTX, Proteksi AR & Bukti Agen Ringan)
+
+## Status Terakhir (Checkpoint: 22 Oktober 2026, 21:25 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Migrasi Credential Terkelola OTX ([scripts/patch-n8n-otx.py](file:///home/ravi/Projects/soar-project/scripts/patch-n8n-otx.py))**:
+  - Mengeliminasi penulisan OTX API Key mentah (inline) pada parameter node `headerParameters`.
+  - Mengintegrasikan credential terkelola n8n tipe `httpHeaderAuth` (`OTX API Key` dengan alias `OTX Header Auth`).
+  - Menambahkan fungsi sanitasi otomatis (`sanitize_otx_node`) untuk membersihkan node lama bila ditemukan membawa API key plaintext di parameter nodenya.
+  - Menyesuaikan penataan ulang rute koneksi (*rewire*) yang sadar konteks workflow modern (mendukung keberadaan `Simpan Cache VT` dan `MalwareBazaar Lookup`).
+- **Pengerasan Proteksi Active Response Karantina ([scripts/quarantine-file](file:///home/ravi/Projects/soar-project/scripts/quarantine-file))**:
+  - Menambahkan *defense-in-depth* berupa blocklist direktori sistem OS (`/etc/*`, `/boot/*`, `/sys/*`, `/proc/*`, `/usr/*`, `/lib/*`, `/bin/*`, direktori Windows System) pada script Active Response Wazuh, melengkapi proteksi batas watch root (`command_target_allowed`) pada agen Rust.
+  - Perubahan telah disinkronkan dan dimuat ke dalam container manager Wazuh (`single-node-wazuh.manager-1`).
+- **Penyusunan Bukti Ilmiah & Arsitektur Agen Ringan Rust ([docs/ilmiah/PERBANDINGAN-PENELITIAN.md](file:///home/ravi/Projects/soar-project/docs/ilmiah/PERBANDINGAN-PENELITIAN.md))**:
+  - Menambahkan sub-bab komprehensif terkait arsitektur, karakteristik jejak memori (<10 MB RAM vs Wazuh ~80-150 MB), mekanisme FIM realtime inotify/ReadDirectoryChangesW, proteksi path karantina, dan bukti empiris benchmark MTTR malware (0,04s, `bench-rust-mttr-malware.json`) serta uji beban (29,49 req/s, `bench-rust-load.json`).
+- **Sinkronisasi Otomasi Setup n8n ([deploy/n8n-setup.py](file:///home/ravi/Projects/soar-project/deploy/n8n-setup.py))**:
+  - Mendaftarkan skema credential `OTX API Key` (header `X-OTX-API-KEY`) dan memetakan alias `OTX Header Auth` ke dalam mapping credential n8n.
+  - Memperbolehkan fallback pembacaan environment variable langsung dari sistem/proses bila belum tercantum di file `.env`.
+- **Unit Test Suite Lengkap**:
+  - [scripts/test_patch_n8n_otx.py](file:///home/ravi/Projects/soar-project/scripts/test_patch_n8n_otx.py) (baru): 7 unit test komprehensif menguji pembuatan node credential, sanitasi parameter ber-key inline, patch JS `Rangkum Hasil`, rewire struktur modern, idempotensi eksekusi ganda, dan resolver credential n8n. 100% PASS dalam 0.002 detik.
+  - [deploy/test_n8n_setup.py](file:///home/ravi/Projects/soar-project/deploy/test_n8n_setup.py): Penambahan unit test `test_push_credentials_maps_otx_and_aliases` untuk memastikan mapping credential OTX dan aliasnya berjalan sempurna. 100% PASS.
+- **Pembaruan Template & Dokumentasi**:
+  - [.env.example](file:///home/ravi/Projects/soar-project/.env.example): Penambahan variabel `OTX_API_KEY` beserta dokumentasi URL pendaftaran key AlienVault OTX.
+  - [deploy/setup-server.sh](file:///home/ravi/Projects/soar-project/deploy/setup-server.sh): Menambahkan pertanyaan interaktif dan ekstraksi untuk `MALWAREBAZAAR_API_KEY` dan `OTX_API_KEY`.
+  - [deploy/README.md](file:///home/ravi/Projects/soar-project/deploy/README.md): Memperbarui dokumentasi 7 kredensial otomatis n8n.
+  - [ROADMAP.md](file:///home/ravi/Projects/soar-project/ROADMAP.md): Menandai status penyelesaian migrasi OTX key, proteksi AR karantina, penutupan drift fleet-monitor, dan bukti Agen Ringan.
+
+### 2. Daftar File Diubah & Status Git
+- `scripts/patch-n8n-otx.py`: Refaktor manajemen credential OTX dan sanitasi inline key.
+- `scripts/test_patch_n8n_otx.py` (baru): Unit test suite pengujian patch OTX.
+- `scripts/quarantine-file`: Proteksi blocklist direktori sistem pada Active Response.
+- `docs/ilmiah/PERBANDINGAN-PENELITIAN.md`: Sub-bab arsitektur dan bukti kuantitatif Agen Ringan Rust.
+- `deploy/n8n-setup.py`: Registrasi credential `OTX API Key` + alias `OTX Header Auth`.
+- `deploy/test_n8n_setup.py`: Unit test mapping credential OTX.
+- `deploy/setup-server.sh`: Integrasi OTX key dan MalwareBazaar pada prompt setup server.
+- `deploy/README.md`: Sinkronisasi deskripsi credential.
+- `.env.example`: Dokumentasi variabel `OTX_API_KEY`.
+- `ROADMAP.md`: Update capaian M5 dan penutupan backlog live.
+- `HANDOFF.md`: Checkpoint progress sesi malam 22 Okt 2026.
+
+### 3. Status Verifikasi
+- **Unit Test Scripts**: 106/106 tests PASS (`nice -n 19 python3 -m unittest discover -s scripts/ -p "test_*.py"`).
+- **Unit Test Deploy**: 4/4 tests PASS (`nice -n 19 python3 -m unittest discover -s deploy/ -p "test_*.py"`).
+- **Rust Agent**: 9/9 tests PASS (`cargo test`).
+- **Dashboard Next.js**: 100% PASS (check: commands, placeholder, events, session, rate-limit, lint, typecheck, build).
+- **Konektivitas Live Server (`ravi-debian`)**: Online (Tailscale direct, 10/10 container Docker Up, Cloudflare Tunnel `soar.raviarnan.dev` 200/302 OK, fleet API melayani agent 001/009/010 200 OK).
+
+### 4. Next Action
+Lanjutkan pengerasan operasional host (pembatasan port 1514/1515 di firewall hanya untuk subnet endpoint dan rotasi password default Wazuh dashboard) atau penyusunan dokumen laporan Tugas Akhir.
+
+---
+
 # Handoff SOAR - 2026-10-22 (Penyelesaian Milestone M4: Uji Konsistensi & Ketahanan Inferensi LLM)
 
 ## Status Terakhir (Checkpoint: 22 Oktober 2026, 13:46 WITA)

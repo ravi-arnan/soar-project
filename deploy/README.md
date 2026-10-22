@@ -25,9 +25,10 @@ N8N_OWNER_API_KEY=xxx VT_API_KEY=yyy python3 deploy/n8n-setup.py --all
 N8N_OWNER_API_KEY=xxx python3 deploy/n8n-setup.py --all
 ```
 
-Yang dilakukan: buat/reuse 5 credentials dari `.env` (Telegram, Wazuh basic-auth,
-GSB query-auth, urlscan header-auth, VirusTotal `x-apikey`) lalu import 4
-workflow dengan **remap credential ID by name** — kelemahan import-from-file UI
+Yang dilakukan: buat/reuse 7 credentials dari `.env` (Telegram, Wazuh basic-auth,
+GSB query-auth, urlscan header-auth, MalwareBazaar Auth, VirusTotal `x-apikey`,
+dan AlienVault OTX `X-OTX-API-KEY`) lalu import 4 workflow dengan
+**remap credential ID by name** — kelemahan import-from-file UI
 (file bawa ID dari mesin lama → node merah) otomatis teratasi. Idempoten:
 credential/workflow dengan nama sama di-update, bukan diduplikat.
 `--dry-run` untuk lihat rencana tanpa API key.

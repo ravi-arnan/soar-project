@@ -28,6 +28,14 @@ if [ -z "$FILE" ]; then
   exit 1
 fi
 
+# Pengaman direktori sistem (defense-in-depth): tolak karantina file OS kritis
+case "$FILE" in
+  /etc/*|/boot/*|/sys/*|/proc/*|/usr/*|/lib/*|/lib64/*|/bin/*|/sbin/*|[A-Za-z]:\\[Ww][Ii][Nn][Dd][Oo][Ww][Ss]*|[A-Za-z]:\\[Pp][Rr][Oo][Gg][Rr][Aa][Mm]*)
+    echo "$(ts) quarantine-file: DITOLAK path sistem terlarang $FILE" >> "$LOG"
+    exit 1
+    ;;
+esac
+
 mkdir -p "$QUARANTINE_DIR"
 chmod 700 "$QUARANTINE_DIR"
 
