@@ -30,6 +30,15 @@ function originAllowed(request: Request): boolean {
     .includes(origin);
 }
 
+/**
+ * Kunci per-IP dari header Cloudflare (diisi edge, tidak bisa dipalsukan klien
+ * lewat tunnel). Header forwarding biasa sengaja diabaikan.
+ */
+function clientKey(request: Request): string {
+  const cf = request.headers.get("cf-connecting-ip")?.trim();
+  return cf ? `dashboard-login:${cf}` : "dashboard-login:local";
+}
+
 function rateLimitState(key: string, now: number): { blocked: boolean; retryAfter: number } {
   const current = rateLimit.get(key);
   if (!current || current.resetAt <= now) {
@@ -123,7 +132,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!validLoginToken(expectedToken)) {
     return errorResponse("dashboard auth belum dikonfigurasi", 503);
   }
-  const key = "dashboard-login";
+  const key = clientKey(request);
   const now = Date.now();
   const state = rateLimitState(key, now);
   if (state.blocked) {

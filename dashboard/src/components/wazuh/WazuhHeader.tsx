@@ -19,7 +19,12 @@ import {
   X,
 } from 'lucide-react';
 import { WazuhLogo } from './WazuhLogo';
-import type { FleetHealth, FleetStats } from '@/lib/fleet';
+import type {
+  FleetHealth,
+  FleetStats,
+  HistorySource,
+  PeriodPreset,
+} from '@/lib/fleet';
 
 interface WazuhHeaderProps {
   breadcrumbs: { label: string; href?: string; onClick?: () => void }[];
@@ -30,7 +35,13 @@ interface WazuhHeaderProps {
   health?: FleetHealth;
   onNavigate?: (
     viewId: string,
-    options?: { severity?: string[]; agentId?: string; tab?: 'dashboard' | 'events' }
+    options?: {
+      severity?: string[];
+      agentId?: string;
+      tab?: 'dashboard' | 'events';
+      period?: PeriodPreset;
+      source?: HistorySource;
+    }
   ) => void;
   onRefresh?: () => void;
 }
@@ -374,13 +385,15 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                           onNavigate?.('security-events', {
                             severity: ['CRITICAL', 'HIGH'],
                             tab: 'events',
+                            period: 'all',
+                            source: 'soar',
                           });
                           setActiveMenu(null);
                         }}
                         className="text-[10px] font-bold bg-[#BD271E] text-white px-2 py-0.5 rounded-full hover:bg-[#9E1F18] transition-colors cursor-pointer"
-                        title="Klik untuk filter ancaman Critical & High"
+                        title="Total Critical + High di database SOAR (semua waktu)"
                       >
-                        {totalThreats} Ancaman Aktif
+                        {totalThreats} Kritis/High
                       </button>
                     )}
                   </div>
@@ -392,6 +405,8 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                         onNavigate?.('security-events', {
                           severity: ['CRITICAL', 'HIGH'],
                           tab: 'events',
+                          period: 'all',
+                          source: 'soar',
                         });
                         setActiveMenu(null);
                       }}
@@ -413,6 +428,8 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                                 onNavigate?.('security-events', {
                                   severity: ['CRITICAL'],
                                   tab: 'events',
+                                  period: 'all',
+                                  source: 'soar',
                                 });
                                 setActiveMenu(null);
                               }}
@@ -429,6 +446,8 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                                 onNavigate?.('security-events', {
                                   severity: ['HIGH'],
                                   tab: 'events',
+                                  period: 'all',
+                                  source: 'soar',
                                 });
                                 setActiveMenu(null);
                               }}
@@ -439,8 +458,9 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                             </button>
                           </div>
                           <div className="text-[11px] text-[#5A626F] mt-1 leading-snug">
-                            Total {stats?.events_total?.toLocaleString('en-US') || 0} event
-                            terekam di database SOAR. Klik baris untuk memfilter keduanya.
+                            {totalThreats} Kritis/High dari{' '}
+                            {stats?.events_total?.toLocaleString('en-US') || 0} event di database
+                            SOAR (semua waktu). Events memakai periode 7 hari secara default.
                           </div>
                         </div>
                       </div>

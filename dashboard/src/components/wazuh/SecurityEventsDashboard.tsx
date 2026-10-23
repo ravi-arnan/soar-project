@@ -17,6 +17,7 @@ import type {
   EventHistoryQuery,
   FleetEvent,
   HistorySource,
+  PeriodPreset,
   PeriodValue,
 } from '@/lib/fleet';
 
@@ -28,6 +29,8 @@ interface SecurityEventsDashboardProps {
   initialAgentId?: string;
   initialSeverity?: string[];
   initialTab?: 'dashboard' | 'events';
+  initialPeriod?: PeriodPreset;
+  initialSource?: HistorySource;
 }
 
 /** Warna seri untuk donut Top 5, disamakan dengan desain Wazuh. */
@@ -66,20 +69,25 @@ export function SecurityEventsDashboard({
   initialAgentId,
   initialSeverity,
   initialTab,
+  initialPeriod,
+  initialSource,
 }: SecurityEventsDashboardProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>(
     () => initialTab || 'dashboard'
   );
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [activeFilters, setActiveFilters] = useState<string[]>(() =>
-    initialAgentId ? [initialAgentId] : []
-  );
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [agentFilter, setAgentFilter] = useState<string | null>(initialAgentId || null);
   const [selectedSeverities, setSelectedSeverities] = useState<string[]>(
     () => initialSeverity || []
   );
-  const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD_VALUE);
-  const [source, setSource] = useState<HistorySource>('all');
+  const [period, setPeriod] = useState<PeriodValue>(() =>
+    initialPeriod
+      ? { preset: initialPeriod, since: null, until: null }
+      : DEFAULT_PERIOD_VALUE
+  );
+  const [source, setSource] = useState<HistorySource>(initialSource || 'all');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   /** Status antrean AR per baris: queued | gagal | mengirim. */
@@ -90,6 +98,8 @@ export function SecurityEventsDashboard({
   const [prevSeverityPropKey, setPrevSeverityPropKey] = useState(() => serializeArray(initialSeverity));
   const [prevTabProp, setPrevTabProp] = useState(initialTab);
   const [prevAgentProp, setPrevAgentProp] = useState(initialAgentId);
+  const [prevPeriodProp, setPrevPeriodProp] = useState(initialPeriod);
+  const [prevSourceProp, setPrevSourceProp] = useState(initialSource);
 
   const currentSeverityPropKey = serializeArray(initialSeverity);
   if (currentSeverityPropKey !== prevSeverityPropKey) {
@@ -100,17 +110,29 @@ export function SecurityEventsDashboard({
 
   if (initialTab !== prevTabProp) {
     setPrevTabProp(initialTab);
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
+    setActiveTab(initialTab || 'dashboard');
   }
 
   if (initialAgentId !== prevAgentProp) {
     setPrevAgentProp(initialAgentId);
-    if (initialAgentId) {
-      setActiveFilters([initialAgentId]);
-      setPage(0);
-    }
+    setAgentFilter(initialAgentId || null);
+    setPage(0);
+  }
+
+  if (initialPeriod !== prevPeriodProp) {
+    setPrevPeriodProp(initialPeriod);
+    setPeriod(
+      initialPeriod
+        ? { preset: initialPeriod, since: null, until: null }
+        : DEFAULT_PERIOD_VALUE
+    );
+    setPage(0);
+  }
+
+  if (initialSource !== prevSourceProp) {
+    setPrevSourceProp(initialSource);
+    setSource(initialSource || 'all');
+    setPage(0);
   }
 
   const timeWindow = useMemo(() => periodToWindow(period), [period]);
@@ -125,11 +147,21 @@ export function SecurityEventsDashboard({
       until: timeWindow.until,
       q: tokens,
       severity: selectedSeverities.length ? selectedSeverities : undefined,
+      agentId: agentFilter || undefined,
       source,
       limit: rowsPerPage,
       offset: page * rowsPerPage,
     }),
-    [timeWindow.since, timeWindow.until, tokens, selectedSeverities, source, rowsPerPage, page]
+    [
+      timeWindow.since,
+      timeWindow.until,
+      tokens,
+      selectedSeverities,
+      agentFilter,
+      source,
+      rowsPerPage,
+      page,
+    ]
   );
 
   const {
@@ -139,6 +171,7 @@ export function SecurityEventsDashboard({
     loading,
     error,
     indexerOk,
+    indexerMatched,
     sources,
     refresh: refreshHistory,
   } = useEventHistory(historyQuery, 20000);
@@ -181,6 +214,11 @@ export function SecurityEventsDashboard({
   };
 
   const pageCount = Math.max(1, Math.ceil(total / rowsPerPage));
+
+  // total bisa menyusut setelah filter/periode berubah; tarik page kembali ke rentang valid.
+  if (page > pageCount - 1) {
+    setPage(pageCount - 1);
+  }
   const safePage = Math.min(page, pageCount - 1);
 
   // Riwayat (sudah terfilter + terpaginasi di server) -> baris tabel ala Wazuh.
@@ -206,7 +244,12 @@ export function SecurityEventsDashboard({
 
   /** Unduh event yang tampil (halaman + filter aktif) sebagai CSV. */
   const exportCsv = () => {
-    const cell = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+    // Cegah formula injection di Excel/Sheets untuk sel yang diawali = + - @.
+    const cell = (v: string | number) => {
+      let s = String(v).replace(/"/g, '""');
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return `"${s}"`;
+    };
     const header = ['time', 'agent_id', 'agent_name', 'hash', 'description', 'level', 'rule', 'source'];
     const lines = visibleAlerts.map((r) =>
       [r.time, r.agentId, r.agentName, r.hash, r.description, r.level, r.ruleId, r.source]
@@ -261,6 +304,8 @@ export function SecurityEventsDashboard({
   }
 
   const sev = historyStats.severity;
+  const statsTotal =
+    sev.CRITICAL + sev.HIGH + sev.MEDIUM + sev.UNVERIFIED + sev.INFO;
   const topAgents = historyStats.top_agents.map((a) => [a.key, a.count] as [string, number]);
   const topPaths = historyStats.top_paths.map((p) => [p.key, p.count] as [string, number]);
   const topPathTotal = topPaths.reduce((sum, [, n]) => sum + n, 0) || 1;
@@ -325,7 +370,12 @@ export function SecurityEventsDashboard({
       <WazuhFilterBar
         onRefresh={refresh}
         onSearch={handleSearch}
-        initialFilters={activeFilters}
+        filters={activeFilters}
+        agentFilter={agentFilter || undefined}
+        onClearAgentFilter={() => {
+          setAgentFilter(null);
+          setPage(0);
+        }}
         periodSlot={
           <PeriodFilter
             value={period}
@@ -340,6 +390,11 @@ export function SecurityEventsDashboard({
       <div className="text-[11px] text-[#8A94A6] -mt-2">
         Riwayat: {total.toLocaleString('en-US')} event · pipeline SOAR {sources.soar} ·
         Wazuh {sources.wazuh}
+        {indexerMatched !== null && indexerMatched > sources.wazuh && (
+          <span className="text-[#B25E09]">
+            {' '}(dari {indexerMatched.toLocaleString('en-US')} yang cocok)
+          </span>
+        )}
         {indexerOk === false && <span className="text-[#BD271E]"> · indexer tidak terjangkau</span>}
         {error && <span className="text-[#BD271E]"> · {error}</span>}
       </div>
@@ -356,7 +411,7 @@ export function SecurityEventsDashboard({
             >
               <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#1A1C21]">Total</div>
               <div className="text-[32px] font-semibold text-[#006BB4] leading-tight mt-1">
-                {total.toLocaleString('en-US')}
+                {statsTotal.toLocaleString('en-US')}
               </div>
               <div className="text-[10px] text-[#8A94A6] group-hover:text-[#006BB4] mt-0.5">
                 Buka tab Events &rarr;
@@ -448,7 +503,9 @@ export function SecurityEventsDashboard({
                     })()}
                   </svg>
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-[20px] font-bold text-[#1A1C21]">{total}</span>
+                    <span className="text-[20px] font-bold text-[#1A1C21]">
+                      {sev.CRITICAL + sev.HIGH + sev.MEDIUM + sev.UNVERIFIED}
+                    </span>
                   </div>
                 </div>
 

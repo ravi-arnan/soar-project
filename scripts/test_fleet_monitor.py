@@ -421,6 +421,83 @@ class MergeTests(unittest.TestCase):
         )
         self.assertEqual(len(merged), 2)
 
+    def test_dedup_path_hanya_dalam_satu_jam(self):
+        soar = [{
+            "agent_id": "009", "hash": "", "path": "/x",
+            "ts": "2026-10-22T10:00:00Z", "source": "soar",
+        }]
+        wazuh = [
+            {"agent_id": "009", "hash": "", "path": "/x",
+             "ts": "2026-10-22T10:30:00Z", "source": "wazuh"},
+            {"agent_id": "009", "hash": "", "path": "/x",
+             "ts": "2026-10-22T18:00:00Z", "source": "wazuh"},
+        ]
+        merged = fleet_monitor._merge_history(soar, wazuh, dedup=True)
+        self.assertEqual(len(merged), 2)
+        self.assertEqual(
+            sorted(e["ts"] for e in merged),
+            ["2026-10-22T10:00:00Z", "2026-10-22T18:00:00Z"],
+        )
+
+
+class StatsTests(unittest.TestCase):
+    def test_daily_dikelompokkan_per_hari_wita(self):
+        stats = fleet_monitor._history_stats([
+            {"severity": "HIGH", "agent": "a", "path": "/x",
+             "ts": "2026-10-22T17:30:00Z"},
+            {"severity": "INFO", "agent": "a", "path": "/y",
+             "ts": "2026-10-23T01:00:00Z"},
+        ])
+        self.assertEqual(stats["daily"], [{"date": "2026-10-23", "count": 2}])
+
+    def test_merge_stats_menjumlahkan_sumber(self):
+        a = fleet_monitor._history_stats([
+            {"severity": "CRITICAL", "agent": "a", "path": "/x",
+             "ts": "2026-10-22T10:00:00Z"},
+        ])
+        b = {
+            "severity": {"CRITICAL": 2, "HIGH": 1, "MEDIUM": 0,
+                         "UNVERIFIED": 0, "INFO": 3},
+            "daily": [{"date": "2026-10-22", "count": 6}],
+            "top_agents": [{"key": "b", "count": 6}],
+            "top_paths": [{"key": "/z", "count": 6}],
+        }
+        merged = fleet_monitor._merge_stats(a, b)
+        self.assertEqual(merged["severity"]["CRITICAL"], 3)
+        self.assertEqual(merged["severity"]["INFO"], 3)
+        self.assertEqual(merged["daily"], [{"date": "2026-10-22", "count": 7}])
+
+
+class IndexerQueryTests(unittest.TestCase):
+    def test_search_body_memfilter_severity_agent_dan_q(self):
+        body = fleet_monitor._indexer_search_body(
+            "2026-10-01T00:00:00Z", "2026-10-23T00:00:00Z", 1000,
+            ["CRITICAL", "HIGH"], "003", ["bali-handmade"],
+        )
+        filters = body["query"]["bool"]["filter"]
+        self.assertEqual(filters[0]["range"]["@timestamp"]["gte"],
+                         "2026-10-01T00:00:00Z")
+        self.assertEqual(filters[1], {"term": {"agent.id": "003"}})
+        wildcard = filters[2]["bool"]["should"][0]["wildcard"]
+        self.assertEqual(wildcard["syscheck.path"]["value"], "*bali-handmade*")
+        severity = body["query"]["bool"]["must"][0]["bool"]["should"]
+        self.assertEqual(len(severity), 2)
+        self.assertIn({"range": {"rule.level": {"gte": 12}}}, severity)
+        self.assertIn({"range": {"rule.level": {"gte": 7, "lt": 12}}}, severity)
+
+    def test_search_body_severity_tak_dikenal_match_none(self):
+        body = fleet_monitor._indexer_search_body(
+            None, None, 10, ["UNVERIFIED"], None, None
+        )
+        self.assertEqual(body["query"]["bool"]["must"][0], {"match_none": {}})
+
+    def test_stats_body_timezone_wita(self):
+        body = fleet_monitor._indexer_stats_body(None, None)
+        self.assertEqual(
+            body["aggs"]["daily"]["date_histogram"]["time_zone"], "+08:00"
+        )
+        self.assertNotIn("severity", body["query"]["bool"].get("must", []))
+
 
 class HistoryEndpointTests(_ApiTestCase):
     def setUp(self):

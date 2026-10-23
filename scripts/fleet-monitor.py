@@ -1256,24 +1256,82 @@ def _to_indexer_time(value):
     return v  # ISO; indexer paham
 
 
-def _indexer_search(since, until, size):
-    """POST _search rentang @timestamp. Kembalikan (hits, ok). Gagal -> ([], False)."""
-    auth = base64.b64encode(f"{INDEXER_USER}:{INDEXER_PASS}".encode()).decode()
-    body = {
+_INDEXER_Q_FIELDS = (
+    "syscheck.path",
+    "data.path",
+    "data.sha256_after",
+    "data.sha256",
+    "data.url",
+    "agent.name",
+    "rule.description",
+)
+
+
+def _indexer_severity_clause(severity):
+    """Filter severity di sisi indexer (level Wazuh), bukan setelah fetch."""
+    ranges = []
+    for s in {str(x).upper() for x in (severity or [])}:
+        if s == "CRITICAL":
+            ranges.append({"range": {"rule.level": {"gte": 12}}})
+        elif s == "HIGH":
+            ranges.append({"range": {"rule.level": {"gte": 7, "lt": 12}}})
+        elif s == "MEDIUM":
+            ranges.append({"range": {"rule.level": {"gte": 5, "lt": 7}}})
+        elif s == "INFO":
+            ranges.append({"range": {"rule.level": {"lt": 5}}})
+    if not ranges:
+        return {"match_none": {}}
+    return {"bool": {"should": ranges, "minimum_should_match": 1}}
+
+
+def _indexer_filter_clauses(since, until, agent_id=None, q=None):
+    clauses = [
+        {
+            "range": {
+                "@timestamp": {
+                    "gte": since or "now-90d",
+                    "lte": until or "now",
+                }
+            }
+        }
+    ]
+    if agent_id:
+        clauses.append({"term": {"agent.id": str(agent_id)}})
+    for token in q or []:
+        t = str(token).strip()
+        if not t:
+            continue
+        clauses.append(
+            {
+                "bool": {
+                    "should": [
+                        {
+                            "wildcard": {
+                                field: {
+                                    "value": f"*{t}*",
+                                    "case_insensitive": True,
+                                }
+                            }
+                        }
+                        for field in _INDEXER_Q_FIELDS
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
+    return clauses
+
+
+def _indexer_search_body(since, until, size, severity=None, agent_id=None, q=None):
+    must = [_indexer_severity_clause(severity)] if severity else []
+    return {
         "size": max(1, min(size, INDEXER_SEARCH_MAX)),
+        "track_total_hits": True,
         "sort": [{"@timestamp": {"order": "desc", "unmapped_type": "date"}}],
         "query": {
             "bool": {
-                "filter": [
-                    {
-                        "range": {
-                            "@timestamp": {
-                                "gte": since or "now-90d",
-                                "lte": until or "now",
-                            }
-                        }
-                    }
-                ]
+                "filter": _indexer_filter_clauses(since, until, agent_id, q),
+                "must": must,
             }
         },
         "_source": [
@@ -1286,6 +1344,43 @@ def _indexer_search(since, until, size):
             "location",
         ],
     }
+
+
+def _indexer_stats_body(since, until, agent_id=None, q=None):
+    return {
+        "size": 0,
+        "track_total_hits": True,
+        "query": {
+            "bool": {"filter": _indexer_filter_clauses(since, until, agent_id, q)}
+        },
+        "aggs": {
+            "severity": {
+                "filters": {
+                    "filters": {
+                        "CRITICAL": {"range": {"rule.level": {"gte": 12}}},
+                        "HIGH": {"range": {"rule.level": {"gte": 7, "lt": 12}}},
+                        "MEDIUM": {"range": {"rule.level": {"gte": 5, "lt": 7}}},
+                        "INFO": {"range": {"rule.level": {"lt": 5}}},
+                    }
+                }
+            },
+            "daily": {
+                "date_histogram": {
+                    "field": "@timestamp",
+                    "calendar_interval": "day",
+                    "time_zone": "+08:00",
+                    "format": "yyyy-MM-dd",
+                    "min_doc_count": 1,
+                }
+            },
+            "top_agents": {"terms": {"field": "agent.name", "size": 5}},
+            "top_paths": {"terms": {"field": "syscheck.path", "size": 5}},
+        },
+    }
+
+
+def _indexer_post(body):
+    auth = base64.b64encode(f"{INDEXER_USER}:{INDEXER_PASS}".encode()).decode()
     req = urllib.request.Request(
         f"{INDEXER_URL}/{INDEXER_INDEX}/_search",
         data=json.dumps(body).encode(),
@@ -1295,13 +1390,71 @@ def _indexer_search(since, until, size):
             "Content-Type": "application/json",
         },
     )
+    with urllib.request.urlopen(req, timeout=15, context=_INSECURE) as r:
+        return json.load(r)
+
+
+def _indexer_search_full(since, until, size, severity=None, agent_id=None, q=None):
+    """POST _search; kembalikan (hits, ok, total_cocok_di_indexer)."""
     try:
-        with urllib.request.urlopen(req, timeout=15, context=_INSECURE) as r:
-            resp = json.load(r)
-        return resp.get("hits", {}).get("hits", []), True
+        resp = _indexer_post(
+            _indexer_search_body(since, until, size, severity, agent_id, q)
+        )
+        hits = resp.get("hits", {})
+        total = hits.get("total", 0)
+        if isinstance(total, dict):
+            total = total.get("value", 0)
+        return hits.get("hits", []), True, int(total or 0)
     except Exception as e:
         print(f"indexer search error: {e}", flush=True)
-        return [], False
+        return [], False, None
+
+
+def _indexer_search(since, until, size, severity=None, agent_id=None, q=None):
+    """POST _search rentang @timestamp. Kembalikan (hits, ok). Gagal -> ([], False)."""
+    hits, ok, _ = _indexer_search_full(
+        since, until, size, severity, agent_id, q
+    )
+    return hits, ok
+
+
+def _indexer_stats(since, until, agent_id=None, q=None):
+    """Agregasi severity/harian/top dari indexer (akurat, tanpa batas 1000 dok)."""
+    try:
+        aggs = _indexer_post(_indexer_stats_body(since, until, agent_id, q)).get(
+            "aggregations", {}
+        )
+        sev = aggs.get("severity", {}).get("buckets", {})
+        severity = {
+            name: int(sev.get(name, {}).get("doc_count", 0))
+            for name in ("CRITICAL", "HIGH", "MEDIUM", "INFO")
+        }
+        severity["UNVERIFIED"] = 0
+        daily = [
+            {
+                "date": (b.get("key_as_string") or "")[:10],
+                "count": int(b.get("doc_count", 0)),
+            }
+            for b in aggs.get("daily", {}).get("buckets", [])
+            if b.get("key_as_string")
+        ]
+        top_agents = [
+            {"key": b.get("key"), "count": int(b.get("doc_count", 0))}
+            for b in aggs.get("top_agents", {}).get("buckets", [])
+        ]
+        top_paths = [
+            {"key": b.get("key"), "count": int(b.get("doc_count", 0))}
+            for b in aggs.get("top_paths", {}).get("buckets", [])
+        ]
+        return {
+            "severity": severity,
+            "daily": daily,
+            "top_agents": top_agents,
+            "top_paths": top_paths,
+        }, True
+    except Exception as e:
+        print(f"indexer stats error: {e}", flush=True)
+        return None, False
 
 
 def _indexer_map(hit):
@@ -1362,30 +1515,103 @@ def _indexer_map(hit):
     }
 
 
+def _ts_epoch(value):
+    """ISO/epoch -> epoch detik; None bila tidak bisa diparse."""
+    v = str(value or "").strip()
+    if not v:
+        return None
+    try:
+        if re.fullmatch(r"\d{10,13}", v):
+            n = int(v)
+            return n / 1000 if n > 10**12 else float(n)
+        s = v.replace("Z", "+00:00")
+        m = re.search(r"([+-]\d{2})(\d{2})$", s)
+        if m and ":" not in s[-6:]:
+            s = s[:-5] + m.group(1) + ":" + m.group(2)
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+
 def _merge_history(soar_rows, wazuh_rows, dedup=True):
-    """Gabung event SOAR + alert Wazuh, buang Wazuh yang sudah ter-enrich SOAR."""
+    """Gabung event SOAR + alert Wazuh, buang Wazuh yang sudah ter-enrich SOAR.
+
+    Dedup path hanya untuk event dalam jarak 1 jam dari event SOAR. Sebelumnya
+    satu event SOAR menghapus semua alert Wazuh dengan path sama sepanjang 90
+    hari, sehingga riwayat FIM hilang.
+    """
     if not dedup:
         return list(soar_rows) + list(wazuh_rows)
-    keys = set()
+    hashes = set()
+    path_times = {}
     for e in soar_rows:
         aid = e.get("agent_id")
         if e.get("hash"):
-            keys.add((aid, "h", str(e["hash"]).lower()))
-        if e.get("path") and e["path"] not in ("", "-"):
-            keys.add((aid, "p", e["path"]))
-    kept = [
-        e
-        for e in wazuh_rows
-        if not (
-            e.get("hash") and (e.get("agent_id"), "h", str(e["hash"]).lower()) in keys
-        )
-        and not (
-            e.get("path")
-            and e["path"] not in ("", "-")
-            and (e.get("agent_id"), "p", e["path"]) in keys
-        )
-    ]
+            hashes.add((aid, str(e["hash"]).lower()))
+        p = e.get("path")
+        if p and p not in ("", "-"):
+            t = _ts_epoch(e.get("ts"))
+            if t is not None:
+                path_times.setdefault((aid, p), []).append(t)
+    kept = []
+    for e in wazuh_rows:
+        if e.get("hash") and (e.get("agent_id"), str(e["hash"]).lower()) in hashes:
+            continue
+        p = e.get("path")
+        if p and p not in ("", "-"):
+            t = _ts_epoch(e.get("ts"))
+            near = path_times.get((e.get("agent_id"), p), [])
+            if t is not None and any(abs(t - s) <= 3600 for s in near):
+                continue
+        kept.append(e)
     return list(soar_rows) + kept
+
+
+def _merge_stats(*stats_items):
+    """Gabung beberapa HistoryStats (SOAR + Wazuh) tanpa kehilangan bucket."""
+    severity = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "UNVERIFIED": 0, "INFO": 0}
+    daily = {}
+    agents = {}
+    paths = {}
+    for stats in stats_items:
+        if not stats:
+            continue
+        for k, v in (stats.get("severity") or {}).items():
+            if k in severity:
+                severity[k] += int(v or 0)
+        for d in stats.get("daily") or []:
+            key = d.get("date")
+            if key:
+                daily[key] = daily.get(key, 0) + int(d.get("count") or 0)
+        for a in stats.get("top_agents") or []:
+            key = a.get("key") or "-"
+            agents[key] = agents.get(key, 0) + int(a.get("count") or 0)
+        for p in stats.get("top_paths") or []:
+            key = p.get("key")
+            if key and key != "-":
+                paths[key] = paths.get(key, 0) + int(p.get("count") or 0)
+
+    def top(counts):
+        pairs = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+        return [{"key": k, "count": n} for k, n in pairs]
+
+    return {
+        "severity": severity,
+        "daily": [{"date": k, "count": daily[k]} for k in sorted(daily)],
+        "top_agents": top(agents),
+        "top_paths": top(paths),
+    }
+
+
+def _wita_day(value):
+    """Tanggal WITA (UTC+8) untuk konsistensi dengan tampilan UI."""
+    t = _ts_epoch(value)
+    if t is None:
+        return str(value or "")[:10]
+    return datetime.fromtimestamp(t, tz=WITA).date().isoformat()
 
 
 def _history_stats(events):
@@ -1396,7 +1622,7 @@ def _history_stats(events):
     for e in events:
         s = (e.get("severity") or "INFO").upper()
         severity[s if s in severity else "INFO"] += 1
-        day = (e.get("ts") or "")[:10]
+        day = _wita_day(e.get("ts"))
         if day:
             daily[day] = daily.get(day, 0) + 1
         name = e.get("agent") or "-"
@@ -1445,18 +1671,32 @@ def build_event_history(
         offset = 0
     source = source if source in ("all", "soar", "wazuh") else "all"
 
-    # Ambil baris tanpa filter severity dulu untuk menghitung agregasi stats yang akurat
+    # SOAR: ambil tanpa filter severity agar stats tetap menunjukkan semua level.
     soar_rows = []
     if source in ("all", "soar"):
         soar_rows = _event_store_query(since, until, None, agent_id, q)
+    soar_stats = _history_stats(soar_rows)
 
+    # Wazuh: search sudah difilter (severity/agent/q) supaya event lama yang
+    # relevan tidak tertutup 1000 dokumen terbaru. Stats memakai agregasi.
     wazuh_rows = []
+    wazuh_stats = None
     indexer_ok = None
+    indexer_matched = None
     if source in ("all", "wazuh") and _indexer_enabled():
-        hits, indexer_ok = _indexer_search(
-            _to_indexer_time(since), _to_indexer_time(until), INDEXER_SEARCH_MAX
+        wazuh_stats, stats_ok = _indexer_stats(
+            _to_indexer_time(since), _to_indexer_time(until), agent_id, q
+        )
+        hits, indexer_ok, indexer_matched = _indexer_search_full(
+            _to_indexer_time(since),
+            _to_indexer_time(until),
+            INDEXER_SEARCH_MAX,
+            severity,
+            agent_id,
+            q,
         )
         wazuh_rows = [_indexer_map(h) for h in hits]
+        # Post-filter tetap dipertahankan untuk kompatibilitas indexer lama.
         if agent_id:
             wazuh_rows = [e for e in wazuh_rows if e.get("agent_id") == str(agent_id)]
         tokens = [t.lower() for t in (q or [])]
@@ -1473,15 +1713,31 @@ def build_event_history(
                     for t in tokens
                 )
             ]
+        if severity:
+            sev_set = {s.upper() for s in severity}
+            wazuh_rows = [
+                e
+                for e in wazuh_rows
+                if (e.get("severity") or "INFO").upper() in sev_set
+            ]
+        if not stats_ok:
+            fallback_hits, _ = _indexer_search(
+                _to_indexer_time(since),
+                _to_indexer_time(until),
+                INDEXER_SEARCH_MAX,
+                None,
+                agent_id,
+                q,
+            )
+            wazuh_stats = _history_stats([_indexer_map(h) for h in fallback_hits])
 
     merged_all = _merge_history(soar_rows, wazuh_rows, dedup)
     merged_all.sort(key=lambda e: e.get("ts") or "", reverse=True)
 
-    # Stats dihitung dari seluruh event dalam cakupan (sebelum post-filter severity)
-    # agar counter keparahan di UI tidak menjadi 0 saat filter tertentu aktif.
-    stats = _history_stats(merged_all)
+    # Stats gabungan: SOAR dihitung dari baris, Wazuh dari agregasi indexer.
+    stats = _merge_stats(soar_stats, wazuh_stats)
 
-    # Filter keparahan diaplikasikan ke daftar event & total pagination
+    # Filter keparahan juga diterapkan ke daftar SOAR (pagination + total).
     if severity:
         sev_set = {s.upper() for s in severity}
         filtered = [
@@ -1497,6 +1753,7 @@ def build_event_history(
         "offset": offset,
         "took_ms": int((time.time() - started) * 1000),
         "indexer_ok": indexer_ok,
+        "indexer_matched": indexer_matched,
         "sources": {
             "soar": sum(1 for e in filtered if e.get("source") == "soar"),
             "wazuh": sum(1 for e in filtered if e.get("source") == "wazuh"),
