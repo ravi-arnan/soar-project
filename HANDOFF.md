@@ -1,3 +1,60 @@
+# Handoff SOAR - 2026-10-23 Sore (Audit Filter Riwayat Wazuh & Navigasi Security Events)
+
+## Status Terakhir (Checkpoint: 23 Oktober 2026, 15:55 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Filter Wazuh dipindah ke Indexer** ([scripts/fleet-monitor.py](file:///home/ravi/Projects/soar-project/scripts/fleet-monitor.py)):
+  - Sebelumnya backend hanya mengambil 1.000 dokumen Wazuh terbaru lalu memfilter severity/agent/q di Python. Alert HIGH/CRITICAL yang lebih lama tidak pernah muncul (hasil 0).
+  - Sekarang severity (`rule.level`), agent (`agent.id`), dan token pencarian dikirim sebagai query OpenSearch. Statistik memakai aggregasi (`severity`, `daily`, `top_agents`, `top_paths`), bukan sampel 1.000 dokumen.
+  - `indexer_matched` dikembalikan agar UI bisa menampilkan jumlah sebenarnya saat hasil kena cap 1.000.
+- **Konsistensi waktu dan dedup**:
+  - Bucket harian memakai WITA (`+08:00`).
+  - Dedup path SOAR vs Wazuh dibatasi 1 jam (sebelumnya sepanjang rentang, menghapus riwayat FIM).
+- **Navigasi dan filter UI**:
+  - Agent filter tidak lagi dimasukkan ke token `q`; memakai state dan parameter `agent_id` terpisah.
+  - Masuk Security Events dari sidebar/module mereset filter lama; notifikasi Critical/High membuka `period=all` + `source=soar` agar angka badge cocok.
+  - `useEventHistory` menyimpan hasil per URL query agar data lama tidak tampil saat filter berubah.
+- **Perbaikan kecil**:
+  - KPI Total memakai total statistik; pusat donut konsisten; penanda cap indexer.
+  - CSV export disanitasi dari formula injection.
+  - Rate limit login per IP Cloudflare.
+  - Search di-debounce 300 ms.
+
+### 2. Daftar File Diubah & Status Git
+- `scripts/fleet-monitor.py`: filter severity/agent/q di indexer, aggregasi stats, dedup 1 jam, bucket WITA, `indexer_matched`.
+- `scripts/test_fleet_monitor.py`: 6 test baru untuk query indexer, stats, dedup, dan WITA (32 total).
+- `dashboard/src/components/wazuh/SecurityEventsDashboard.tsx`: agent filter terpisah, sinkronisasi prop, cap note, KPI/donut, sanitasi CSV.
+- `dashboard/src/components/wazuh/WazuhFilterBar.tsx`: filter terkontrol, chip agent, debounce 300 ms.
+- `dashboard/src/components/wazuh/WazuhHeader.tsx`: notifikasi membuka `period=all` + `source=soar`, teks badge Kritis/High.
+- `dashboard/src/app/page.tsx`: reset filter pada navigasi, state `eventsPeriod`/`eventsSource`.
+- `dashboard/src/lib/fleet.ts`: perbandingan severity di `useFleet`, `indexer_matched`, hasil per URL query.
+- `dashboard/src/app/api/session/route.ts`: rate limit login per `cf-connecting-ip`.
+- Commit `89bcb82` (`fix: filter wazuh di indexer dan rapikan navigasi security events`) sudah di-push ke `origin/main`.
+
+### 3. Status Verifikasi
+- `OMP_NUM_THREADS=1 nice -n 19 python3 -m unittest scripts.test_fleet_monitor`: **32/32 PASS**.
+- `cd dashboard && OMP_NUM_THREADS=1 nice -n 19 npm run check`: **PASS** (test, ESLint, TypeScript, production build).
+- `git diff --check`: bersih.
+
+### 4. Deploy Server (2026-10-23 15:48 WITA)
+- Server `ravi-debian` (`100.73.91.17`) tidak memakai `git pull` karena repo di server belum punya riwayat commit (`master` initial, ribuan file staged/untracked). Sinkronisasi dilakukan dengan `scp` 7 file runtime yang berubah setelah backup ke `/tmp/soar-audit-backup-20261023-154843.tgz`.
+- `docker compose up -d --build --force-recreate fleet-monitor dashboard`: sukses.
+- Verifikasi live:
+  - `fleet-monitor` Up, event store 200 event, listen `0.0.0.0:8080`.
+  - `fleet-dashboard` Up (healthy), `http://127.0.0.1:3000` HTTP 200.
+  - Probe `source=wazuh&severity=HIGH&limit=5`: `total=1000`, `indexer_matched=2298`, `indexer_ok=true`, 5 event terkirim.
+
+### 5. Batasan & Temuan Belum Diperbaiki
+- Daftar event tetap maksimal 1.000 per query. Solusi penuh: `search_after` + cursor/load more.
+- Statistik gabungan SOAR + Wazuh bisa sedikit overcount untuk event yang sama karena dedup hanya di daftar, bukan di agregasi.
+- Temuan keamanan belum diubah: kredensial default Wazuh, endpoint tulis `fleet-monitor` tanpa auth, n8n plain HTTP + `N8N_SECURE_COOKIE=false`, `alert-log`/`misp-index` tanpa auth, dan DNS poller Telegram flaky.
+
+### 6. Next Action
+- Implementasi pagination `search_after` bila riwayat lebih dari 1.000 event perlu ditelusuri.
+- Putuskan hardening: rotasi kredensial Wazuh, auth endpoint tulis, TLS/bind n8n, dan perbaikan DNS poller.
+
+---
+
 # Handoff SOAR - 2026-10-23 Dini Hari (Milestone M5: Notifikasi Interaktif, Anti-Slop Asesmen FIM, & Faceted Severity Stats)
 
 ## Status Terakhir (Checkpoint: 23 Oktober 2026, 00:52 WITA)
