@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RefreshCw, Plus } from 'lucide-react';
 
 interface WazuhFilterBarProps {
   onSearch?: (query: string, filters: string[]) => void;
   onRefresh?: () => void;
-  initialFilters?: string[];
+  filters?: string[];
+  /** Filter agent dari navigation (terpisah dari token pencarian). */
+  agentFilter?: string;
+  onClearAgentFilter?: () => void;
   /** Slot kontrol periode (PeriodFilter) di baris kontrol. */
   periodSlot?: React.ReactNode;
 }
@@ -14,12 +17,21 @@ interface WazuhFilterBarProps {
 export function WazuhFilterBar({
   onSearch,
   onRefresh,
-  initialFilters = [],
+  filters = [],
+  agentFilter,
+  onClearAgentFilter,
   periodSlot,
 }: WazuhFilterBarProps) {
   const [query, setQuery] = useState('');
-  const [filters, setFilters] = useState<string[]>(initialFilters);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    },
+    []
+  );
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -30,25 +42,35 @@ export function WazuhFilterBar({
   /** Kirim query + chip aktif ke parent tiap berubah. */
   const emit = (q: string, f: string[]) => onSearch?.(q, f);
 
+  const cancelPending = () => {
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+  };
+
   const updateQuery = (q: string) => {
     setQuery(q);
-    emit(q, filters);
+    cancelPending();
+    // Debounce 300 ms: wildcard indexer tidak dijalankan tiap ketikan.
+    searchTimer.current = setTimeout(() => {
+      searchTimer.current = null;
+      emit(q, filters);
+    }, 300);
   };
 
   const removeFilter = (index: number) => {
-    const next = filters.filter((_, i) => i !== index);
-    setFilters(next);
-    emit(query, next);
+    cancelPending();
+    emit(query, filters.filter((_, i) => i !== index));
   };
 
   /** Jadikan teks search saat ini sebagai chip filter (AND dengan search). */
   const addFilter = () => {
     const t = query.trim();
     if (!t || filters.includes(t)) return;
-    const next = [...filters, t];
-    setFilters(next);
+    cancelPending();
     setQuery('');
-    emit('', next);
+    emit('', [...filters, t]);
   };
 
   return (
@@ -89,6 +111,21 @@ export function WazuhFilterBar({
 
       {/* Filter chips row */}
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
+        {agentFilter && (
+          <div className="flex items-center gap-1.5 bg-[#EBF5FB] border border-[#B2D7F0] px-2.5 py-1 rounded text-[#006BB4]">
+            <span className="text-[10px] uppercase font-bold text-[#5A626F]">agent</span>
+            <span className="font-mono">{agentFilter}</span>
+            {onClearAgentFilter && (
+              <button
+                onClick={onClearAgentFilter}
+                title="Hapus filter agent"
+                className="text-[#5A626F] hover:text-[#BD271E] font-bold ml-1"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
         {filters.map((filter, index) => (
           <div
             key={index}

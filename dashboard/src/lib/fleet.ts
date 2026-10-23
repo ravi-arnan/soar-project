@@ -261,10 +261,14 @@ export function useFleet(pollMs = 5000): UseFleetResult {
         const nextStats = data.snapshot.stats;
         const prevHealth = prev.health;
         const nextHealth = data.snapshot.health;
+        const sameSeverity = (
+          ['CRITICAL', 'HIGH', 'MEDIUM', 'UNVERIFIED', 'INFO'] as const
+        ).every((k) => prevStats.severity?.[k] === nextStats.severity?.[k]);
         if (
           prevStats.total === nextStats.total &&
           prevStats.active === nextStats.active &&
           prevStats.events_total === nextStats.events_total &&
+          sameSeverity &&
           prevHealth.n8n === nextHealth.n8n &&
           prevHealth.gemini === nextHealth.gemini &&
           prevHealth.wazuh_api === nextHealth.wazuh_api &&
@@ -375,6 +379,8 @@ export interface EventHistoryResult {
   offset: number;
   took_ms: number;
   indexer_ok: boolean | null;
+  /** Total dokumen Wazuh yang cocok (bisa > total yang diambil karena cap). */
+  indexer_matched?: number | null;
   sources: { soar: number; wazuh: number };
   stats: EventHistoryStats;
 }
@@ -412,6 +418,7 @@ export interface UseEventHistoryResult {
   stats: EventHistoryStats;
   total: number;
   indexerOk: boolean | null;
+  indexerMatched: number | null;
   sources: { soar: number; wazuh: number };
   loading: boolean;
   error: string | null;
@@ -423,7 +430,11 @@ export interface UseEventHistoryResult {
  * dimemo parent; hook bergantung pada query-string hasil serialisasinya.
  */
 export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEventHistoryResult {
-  const [data, setData] = useState<EventHistoryResult | null>(null);
+  // Simpan URL bersama hasil agar data query lama tidak tampil saat filter berubah.
+  const [payload, setPayload] = useState<{
+    url: string;
+    result: EventHistoryResult;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const url = `/api/events/history?${buildHistoryQuery(query)}`;
@@ -439,7 +450,7 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
 
     try {
       const result = await getJson<EventHistoryResult>(url, controller.signal);
-      setData(result);
+      setPayload({ url, result });
       setError(null);
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') {
@@ -465,11 +476,13 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
     };
   }, [load, pollMs]);
 
+  const data = payload?.url === url ? payload.result : null;
   return {
     events: data?.events ?? [],
     stats: data?.stats ?? EMPTY_HISTORY_STATS,
     total: data?.total ?? 0,
     indexerOk: data?.indexer_ok ?? null,
+    indexerMatched: data?.indexer_matched ?? null,
     sources: data?.sources ?? { soar: 0, wazuh: 0 },
     loading,
     error,

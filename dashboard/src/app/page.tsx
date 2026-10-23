@@ -6,6 +6,7 @@ import { WazuhHeader } from '@/components/wazuh/WazuhHeader';
 import { WazuhSidebar } from '@/components/wazuh/WazuhSidebar';
 import { ModulesHub } from '@/components/wazuh/ModulesHub';
 import { useFleet } from '@/lib/fleet';
+import type { HistorySource, PeriodPreset } from '@/lib/fleet';
 
 function ViewSkeleton() {
   return (
@@ -55,6 +56,8 @@ export default function Home() {
   const [eventsAgentFilter, setEventsAgentFilter] = useState<string | undefined>(undefined);
   const [eventsSeverityFilter, setEventsSeverityFilter] = useState<string[] | undefined>(undefined);
   const [eventsActiveTab, setEventsActiveTab] = useState<'dashboard' | 'events' | undefined>(undefined);
+  const [eventsPeriod, setEventsPeriod] = useState<PeriodPreset | undefined>(undefined);
+  const [eventsSource, setEventsSource] = useState<HistorySource | undefined>(undefined);
 
   const [refreshMs, setRefreshMs] = useState(() => {
     try {
@@ -148,16 +151,22 @@ export default function Home() {
 
   const handleNavigate = (
     viewId: string,
-    options?: { severity?: string[]; agentId?: string; tab?: 'dashboard' | 'events' }
+    options?: {
+      severity?: string[];
+      agentId?: string;
+      tab?: 'dashboard' | 'events';
+      period?: PeriodPreset;
+      source?: HistorySource;
+    }
   ) => {
-    if (options?.severity !== undefined) {
-      setEventsSeverityFilter(options.severity);
-    }
-    if (options?.tab) {
-      setEventsActiveTab(options.tab);
-    }
-    if (options?.agentId) {
-      setEventsAgentFilter(options.agentId);
+    // Navigasi baru ke Security events selalu reset filter lama, kecuali
+    // pemanggil eksplisit mengirim severity/agent/tab.
+    if (viewId === 'security-events') {
+      setEventsSeverityFilter(options?.severity);
+      setEventsAgentFilter(options?.agentId);
+      setEventsActiveTab(options?.tab);
+      setEventsPeriod(options?.period);
+      setEventsSource(options?.source);
     }
     setCurrentView(viewId);
   };
@@ -180,7 +189,7 @@ export default function Home() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         activeView={currentView}
-        onSelectView={(viewId) => setCurrentView(viewId)}
+        onSelectView={handleNavigate}
         agentCount={stats.total}
         health={health}
       />
@@ -206,13 +215,13 @@ export default function Home() {
                 if (rust) setSelectedAgentId(rust.id);
                 setCurrentView('agent-detail');
               }
-              else if (modKey === 'security-events') setCurrentView('security-events');
+              else if (modKey === 'security-events') handleNavigate('security-events');
               else if (modKey === 'integrity-monitoring') setCurrentView('integrity-monitoring');
               else if (modKey === 'threat-intel') setCurrentView('threat-intel');
               else if (modKey === 'mitre') setCurrentView('mitre');
               else if (modKey === 'network-map') setCurrentView('network-map');
               else if (modKey === 'settings') setCurrentView('settings');
-              else setCurrentView('security-events');
+              else handleNavigate('security-events');
             }}
           />
         )}
@@ -225,6 +234,8 @@ export default function Home() {
             initialAgentId={eventsAgentFilter}
             initialSeverity={eventsSeverityFilter}
             initialTab={eventsActiveTab}
+            initialPeriod={eventsPeriod}
+            initialSource={eventsSource}
           />
         )}
 
@@ -244,6 +255,10 @@ export default function Home() {
             onNavigateTab={(tab, agentId) => {
               if (tab === 'Security events') {
                 setEventsAgentFilter(agentId);
+                setEventsSeverityFilter(undefined);
+                setEventsActiveTab(undefined);
+                setEventsPeriod(undefined);
+                setEventsSource(undefined);
                 setCurrentView('security-events');
               } else if (tab === 'Integrity monitoring') {
                 setCurrentView('integrity-monitoring');
