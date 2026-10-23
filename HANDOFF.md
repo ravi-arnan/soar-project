@@ -30,6 +30,7 @@
 - `dashboard/src/lib/fleet.ts`: perbandingan severity di `useFleet`, `indexer_matched`, hasil per URL query.
 - `dashboard/src/app/api/session/route.ts`: rate limit login per `cf-connecting-ip`.
 - Commit `89bcb82` (`fix: filter wazuh di indexer dan rapikan navigasi security events`) sudah di-push ke `origin/main`.
+- Dokumentasi checkpoint ini di-commit `75a1754` (`docs: catat audit filter wazuh dan deploy 23 Okt`) dan di-push ke `origin/main`.
 
 ### 3. Status Verifikasi
 - `OMP_NUM_THREADS=1 nice -n 19 python3 -m unittest scripts.test_fleet_monitor`: **32/32 PASS**.
