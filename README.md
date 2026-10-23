@@ -159,6 +159,8 @@ bash scripts/test-phishing.sh "https://www.google.com/"      # hasil: AMAN
 
 Dashboard menyimpan event secara **durable** (SQLite) dan bisa menampilkan **riwayat per periode** (24 jam / 7 / 30 / 90 hari, atau rentang custom) di semua view event, menggabungkan event pipeline SOAR dengan arsip alert Wazuh Indexer (`wazuh-alerts-*`). Endpoint: `GET /api/events/history?since=&until=&source=all|soar|wazuh`.
 
+Filter severity, agent, dan pencarian diproses di Wazuh Indexer, bukan setelah mengambil 1.000 dokumen terbaru, sehingga alert lama tetap ditemukan. Statistik memakai aggregasi indexer. Daftar event masih dibatasi 1.000 per query; UI menampilkan jumlah yang cocok saat batas itu tercapai.
+
 Fleet saat ini (bertambah sampai 100 workstation):
 
 | ID | Host | OS |
