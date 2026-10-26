@@ -234,4 +234,77 @@
     <description>SOAR allowlist: agy CLI browser spawn via rundll32 (teks-klasik)</description>
   </rule>
 
+  <!-- ============================================================
+       LEVEL 0: Allowlist — Python installer resmi via MsiExec
+       (ensurepip / bootstrap wheel pip).
+       Dua rule terpisah: 110025 = varian JSON (win.eventdata.*),
+       110026 = varian teks-klasik (sysmon.*).
+       ============================================================ -->
+  <rule id="110025" level="0">
+    <if_sid>110014</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\MsiExec\.exe$</field>
+    <description>SOAR allowlist: Python installer via MsiExec (JSON)</description>
+  </rule>
+
+  <rule id="110026" level="0">
+    <if_sid>110004</if_sid>
+    <field name="sysmon.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
+    <field name="sysmon.parentImage" type="pcre2">(?i)\\MsiExec\.exe$</field>
+    <description>SOAR allowlist: Python installer via MsiExec (teks-klasik)</description>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 0: Allowlist — Python subproses ensurepip bootstrapping pip.
+       ============================================================ -->
+  <rule id="110027" level="0">
+    <if_sid>110014</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
+    <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)\bensurepip\b</field>
+    <description>SOAR allowlist: Python ensurepip bootstrap pip (JSON)</description>
+  </rule>
+
+  <rule id="110028" level="0">
+    <if_sid>110004</if_sid>
+    <field name="sysmon.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
+    <field name="sysmon.parentCommandLine" type="pcre2">(?i)\bensurepip\b</field>
+    <description>SOAR allowlist: Python ensurepip bootstrap pip (teks-klasik)</description>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 0: Allowlist — Antigravity CLI (`agy`) eksekusi Python
+       (wrapper agy/bin/python.cmd, statusline, probe tty/select).
+       ============================================================ -->
+  <rule id="110029" level="0">
+    <if_sid>110014</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
+    <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)(\\agy\\|antigravity)</field>
+    <description>SOAR allowlist: Python di-spawn oleh Antigravity CLI agy (JSON)</description>
+  </rule>
+
+  <rule id="110030" level="0">
+    <if_sid>110004</if_sid>
+    <field name="sysmon.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
+    <field name="sysmon.parentCommandLine" type="pcre2">(?i)(\\agy\\|antigravity)</field>
+    <description>SOAR allowlist: Python di-spawn oleh Antigravity CLI agy (teks-klasik)</description>
+  </rule>
+
+  <!-- ============================================================
+       LEVEL 0: Allowlist - Verifikasi versi Python (-version)
+       pada path instalasi resmi Windows per-user (Programs\Python).
+       ============================================================ -->
+  <rule id="110031" level="0">
+    <if_sid>110014</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Python\\+Python\d+\\+python(\d+)?\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\s+--version\b</field>
+    <description>SOAR allowlist: Python resmi Windows per-user --version (JSON)</description>
+  </rule>
+
+  <rule id="110032" level="0">
+    <if_sid>110004</if_sid>
+    <field name="sysmon.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Python\\+Python\d+\\+python(\d+)?\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)\s+--version\b</field>
+    <description>SOAR allowlist: Python resmi Windows per-user --version (teks-klasik)</description>
+  </rule>
+
 </group>
