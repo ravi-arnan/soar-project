@@ -50,11 +50,11 @@ def _cfg():
         "token": os.environ["TELEGRAM_BOT_TOKEN"],
         "chat_id": os.environ["TELEGRAM_CHAT_ID"],
         "wazuh_url": os.environ.get(
-            "WAZUH_API_URL", "https://host.docker.internal:55000"
+            "WAZUH_API_URL", "https://127.0.0.1:55000"
         ).rstrip("/"),
         "wazuh_user": os.environ.get("WAZUH_API_USER", "wazuh-wui"),
         "wazuh_pass": os.environ.get("WAZUH_API_PASS", ""),
-        "n8n_url": os.environ.get("N8N_HEALTH_URL", "http://n8n:5678/healthz"),
+        "n8n_url": os.environ.get("N8N_HEALTH_URL", "http://127.0.0.1:5678/healthz"),
         "gemini_key": os.environ.get("GEMINI_API_KEY", ""),
         "interval": int(os.environ.get("HEALTH_INTERVAL", "60")),
         "state_file": os.environ.get("HEALTH_STATE_FILE", "/state/health.json"),
@@ -103,13 +103,20 @@ def check_wazuh_agents(cfg):
     return out
 
 
-def collect(cfg):
+def collect(cfg, prev=None):
     """Snapshot kesehatan seluruh komponen -> {component: ok_bool}."""
     status = {
         "n8n": check_http(cfg["n8n_url"]),
         "gemini": bool(cfg.get("gemini_key")),
     }
-    status.update(check_wazuh_agents(cfg))
+    wazuh_status = check_wazuh_agents(cfg)
+    if not wazuh_status.get("_wazuh_api", False) and prev:
+        # Jika Wazuh API down sementara, pertahankan status agent sebelumnya
+        # agar tidak terhapus dari state dan tidak memicu false alert saat API pulih.
+        for k, v in prev.items():
+            if k.startswith("agent "):
+                wazuh_status[k] = v
+    status.update(wazuh_status)
     return status
 
 
@@ -196,7 +203,7 @@ def main():
     prev = _load_state(cfg["state_file"])
     print(f"health-monitor start (interval={cfg['interval']}s)", flush=True)
     while True:
-        curr = collect(cfg)
+        curr = collect(cfg, prev=prev)
         transitions = compute_transitions(prev, curr)
         if transitions:
             msg = _fmt(transitions)
@@ -223,6 +230,17 @@ def _selftest():
     assert t == [("agent 003 (x)", "down", False)], t
     # komponen hilang dari snapshot diabaikan
     assert compute_transitions({"gone": False}, {"n8n": True}) == []
+    # saat wazuh api down, status agent sebelumnya dipertahankan via collect
+    prev_state = {"_wazuh_api": True, "agent 001 (pc1)": True, "agent 002 (pc2)": False}
+    curr_wazuh = {"_wazuh_api": False}
+    if not curr_wazuh.get("_wazuh_api", False) and prev_state:
+        for k, v in prev_state.items():
+            if k.startswith("agent "):
+                curr_wazuh[k] = v
+    assert curr_wazuh["agent 001 (pc1)"] is True
+    assert curr_wazuh["agent 002 (pc2)"] is False
+    t_api_down = compute_transitions(prev_state, curr_wazuh)
+    assert t_api_down == [("_wazuh_api", "down", False)], t_api_down
     print("selftest OK")
 
 
