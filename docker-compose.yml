@@ -35,17 +35,16 @@ services:
 
   # Jembatan SOAR human-in-the-loop: long-poll Telegram getUpdates (keluar saja,
   # aman di balik NAT) lalu teruskan klik tombol ke webhook n8n lokal.
+  # Host network digunakan agar resolusi DNS memakai host (menghindari flakiness DNS musl Alpine).
   tg-callback-poller:
     image: python:3.12-alpine
     container_name: tg-callback-poller
     restart: unless-stopped
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    network_mode: host
     env_file:
       - .env
     environment:
-      - N8N_WEBHOOK=http://n8n:5678/webhook/tg-callback
+      - N8N_WEBHOOK=http://127.0.0.1:5678/webhook/tg-callback
     volumes:
       - /home/ravi/Projects/soar-project/scripts:/scripts:ro
     command: ["python3", "/scripts/tg-callback-poller.py"]
@@ -53,22 +52,22 @@ services:
       - n8n
 
   # Self-aware health monitor (kategori F): deteksi agent putus / n8n / LLM API /
-  # Wazuh-API down, alert Telegram HANYA saat status berubah (anti-spam). Cek
-  # keluar-saja; tak ada port yang diekspos.
+  # Wazuh-API down, alert Telegram HANYA saat status berubah (anti-spam).
+  # Host network wajib agar bisa menjangkau Wazuh Manager API (127.0.0.1:55000)
+  # yang diikat ke loopback host.
   health-monitor:
     image: python:3.12-alpine
     container_name: health-monitor
     restart: unless-stopped
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+    network_mode: host
     env_file:
       - .env
+    environment:
+      - WAZUH_API_URL=https://127.0.0.1:55000
+      - N8N_HEALTH_URL=http://127.0.0.1:5678/healthz
     volumes:
       - /home/ravi/Projects/soar-project/scripts:/scripts:ro
       - health_state:/state
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     command: ["python3", "/scripts/health-monitor.py"]
     depends_on:
       - n8n
