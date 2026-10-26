@@ -1,3 +1,39 @@
+# Handoff SOAR - 2026-10-26 Sore (Hardening Health Monitor Host Network & Garansi Pengiriman Callback Telegram)
+
+## Status Terakhir (Checkpoint: 26 Oktober 2026, 16:50 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Harmonisasi Host Network `health-monitor`** ([docker-compose.yml](file:///home/ravi/Projects/soar-project/docker-compose.yml), [scripts/health-monitor.py](file:///home/ravi/Projects/soar-project/scripts/health-monitor.py)):
+  - Mengubah kontainer `health-monitor` memakai `network_mode: host` agar dapat menjangkau Wazuh Manager API yang diikat ke `127.0.0.1:55000` di host server (mengeliminasi alert palsu `_wazuh_api down`).
+  - Menyetel environment `WAZUH_API_URL=https://127.0.0.1:55000` dan `N8N_HEALTH_URL=http://127.0.0.1:5678/healthz`.
+  - Memperbarui fungsi `collect()` agar status agen sebelumnya tidak terhapus dari state memori saat Wazuh API terputus sementara, mencegah banjir false-alarm saat API pulih.
+- **Garansi Pengiriman Klik Tombol HITL & DNS Poller** ([scripts/tg-callback-poller.py](file:///home/ravi/Projects/soar-project/scripts/tg-callback-poller.py), [docker-compose.yml](file:///home/ravi/Projects/soar-project/docker-compose.yml)):
+  - Fungsi `forward()` kini memverifikasi status HTTP 2xx dan mengembalikan nilai boolean.
+  - Menambahkan fungsi `process_updates()`: jika pengiriman callback query ke webhook n8n gagal, nilai `offset` Telegram ditahan dan tidak dinaikkan, sehingga klik tombol analis (Karantina / Abaikan) tidak hilang secara diam-diam.
+  - Mengubah `tg-callback-poller` ke `network_mode: host` dengan `N8N_WEBHOOK=http://127.0.0.1:5678/webhook/tg-callback` untuk memanfaatkan DNS host lokal (mengeliminasi flakiness query UDP musl libc Alpine).
+  - Menambahkan exponential backoff (2s s.d. 30s) pada penanganan error jaringan Telegram.
+- **Unit Tests**:
+  - Penambahan unit test baru di [scripts/test_tg_callback_poller.py](file:///home/ravi/Projects/soar-project/scripts/test_tg_callback_poller.py) (7 test baru, total 124 tests PASS).
+
+### 2. Daftar File Diubah & Status Git
+- `docker-compose.yml`: konfigurasi `network_mode: host` dan URL loopback untuk `tg-callback-poller` dan `health-monitor`.
+- `scripts/health-monitor.py`: default URL loopback, preservasi state agen saat API down, update selftest.
+- `scripts/tg-callback-poller.py`: garansi offset Telegram, verifikasi 2xx HTTP, modul `process_updates()`, exponential backoff.
+- `scripts/test_tg_callback_poller.py`: unit test baru untuk poller callback Telegram.
+- Commit `2ea2a7a` (`fix: harmonisasi host network health-monitor dan garansi forward callback telegram`) sudah di-push ke `origin/main`.
+
+### 3. Status Verifikasi
+- `python3 scripts/health-monitor.py --selftest`: **selftest OK**.
+- `OMP_NUM_THREADS=1 nice -n 19 python3 -m unittest discover -s scripts`: **124/124 tests PASS**.
+- `git diff --check`: bersih.
+- `git push origin main`: sukses terkirim ke remote.
+
+### 4. Next Action
+- Menunggu konfirmasi balasan jadwal bimbingan tatap muka hari Kamis dari Dospem 2 (Pak Agung Cahyawan).
+- Sinkronisasi file runtime ke server `ravi-debian` saat server kembali online.
+
+---
+
 # Handoff SOAR - 2026-10-23 Sore (Audit Filter Riwayat Wazuh & Navigasi Security Events)
 
 ## Status Terakhir (Checkpoint: 23 Oktober 2026, 15:55 WITA)
