@@ -122,7 +122,7 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                 {crumb.onClick ? (
                   <button
                     onClick={crumb.onClick}
-                    className={`hover:text-[#006BB4] hover:underline font-medium ${
+                    className={`hover:text-[#006BB4] hover:underline font-medium focus:outline-none focus-visible:ring-1 focus-visible:ring-[#006BB4] focus-visible:ring-offset-1 rounded-xs transition-colors ${
                       idx === breadcrumbs.length - 1 ? 'text-[#1A1C21]' : 'text-[#5A626F]'
                     }`}
                   >
