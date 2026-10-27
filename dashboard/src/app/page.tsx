@@ -207,7 +207,7 @@ export default function Home() {
             stats={stats}
             agents={agents}
             health={health}
-            onNavigate={(modKey) => {
+            onNavigate={(modKey, opts) => {
               if (modKey === 'agents') setCurrentView('agents');
               else if (modKey === 'scan-on-demand') {
                 // Langsung ke detail agent Rust pertama supaya kartu scan on-demand terlihat.
@@ -215,13 +215,15 @@ export default function Home() {
                 if (rust) setSelectedAgentId(rust.id);
                 setCurrentView('agent-detail');
               }
-              else if (modKey === 'security-events') handleNavigate('security-events');
+              else if (modKey === 'playbook-runs') setCurrentView('mitre');
+              else if (modKey === 'ai-triage') setCurrentView('threat-intel');
+              else if (modKey === 'security-events') handleNavigate('security-events', opts);
               else if (modKey === 'integrity-monitoring') setCurrentView('integrity-monitoring');
               else if (modKey === 'threat-intel') setCurrentView('threat-intel');
               else if (modKey === 'mitre') setCurrentView('mitre');
               else if (modKey === 'network-map') setCurrentView('network-map');
               else if (modKey === 'settings') setCurrentView('settings');
-              else handleNavigate('security-events');
+              else handleNavigate('security-events', opts);
             }}
           />
         )}
