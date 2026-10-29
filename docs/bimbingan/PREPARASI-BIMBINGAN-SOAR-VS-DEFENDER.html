@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Panduan Bimbingan: Keunggulan SOAR vs Windows Defender</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 14mm 14mm 14mm 14mm;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #1e293b;
+    line-height: 1.5;
+    font-size: 10pt;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  /* Header banner */
+  .header-box {
+    border-bottom: 2px solid #1a568e;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  .header-tag {
+    font-size: 8.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #1a568e;
+  }
+  .header-title {
+    font-size: 15pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 2px 0 4px 0;
+    line-height: 1.25;
+  }
+  .header-subtitle {
+    font-size: 9.5pt;
+    color: #475569;
+    margin: 0;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed #cbd5e1;
+    font-size: 8.5pt;
+    color: #334155;
+  }
+  .meta-item b {
+    color: #0f172a;
+  }
+
+  /* Headings */
+  h2 {
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: #0d3b66;
+    margin: 12px 0 6px 0;
+    padding-bottom: 3px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+  }
+  .badge-num {
+    display: inline-block;
+    background: #1a568e;
+    color: #fff;
+    width: 18px;
+    height: 18px;
+    line-height: 18px;
+    text-align: center;
+    border-radius: 50%;
+    font-size: 8pt;
+    margin-right: 6px;
+    font-weight: bold;
+  }
+
+  h3 {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 8px 0 3px 0;
+  }
+
+  p {
+    margin: 0 0 6px 0;
+    text-align: justify;
+  }
+
+  /* Callout box */
+  .callout-pitch {
+    background: #f0f7ff;
+    border-left: 4px solid #1a568e;
+    padding: 8px 10px;
+    border-radius: 0 4px 4px 0;
+    margin-bottom: 10px;
+  }
+  .callout-pitch p {
+    margin: 0;
+    font-size: 9.5pt;
+    color: #0f2744;
+    line-height: 1.45;
+  }
+  .callout-pitch b {
+    color: #0a3d62;
+  }
+
+  /* Grid cards */
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 7px 9px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .card-title {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #1a568e;
+    margin-bottom: 3px;
+  }
+  .card p {
+    font-size: 8.5pt;
+    color: #334155;
+    margin: 0;
+    line-height: 1.35;
+  }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 10px 0;
+    font-size: 8.5pt;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  th, td {
+    padding: 5px 7px;
+    border: 1px solid #cbd5e1;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #0d3b66;
+    color: #ffffff;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+  td.highlight {
+    background: #f0f9ff;
+    font-weight: 600;
+    color: #0369a1;
+  }
+
+  /* Metric chips */
+  .metric-row {
+    display: flex;
+    gap: 8px;
+    margin: 6px 0 10px 0;
+  }
+  .metric-chip {
+    flex: 1;
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    border-radius: 4px;
+    padding: 6px;
+    text-align: center;
+  }
+  .metric-val {
+    font-size: 13pt;
+    font-weight: 800;
+    color: #065f46;
+    line-height: 1.1;
+  }
+  .metric-lbl {
+    font-size: 7.5pt;
+    color: #047857;
+    margin-top: 2px;
+    font-weight: 600;
+  }
+
+  /* FAQ */
+  .faq-item {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 7px 9px;
+    margin-bottom: 6px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .faq-q {
+    font-weight: 700;
+    font-size: 9pt;
+    color: #991b1b;
+    margin-bottom: 3px;
+  }
+  .faq-a {
+    font-size: 8.5pt;
+    color: #334155;
+    line-height: 1.4;
+  }
+  .faq-a b {
+    color: #0f172a;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+
+  .footer-note {
+    font-size: 7.5pt;
+    color: #94a3b8;
+    text-align: center;
+    margin-top: 10px;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header-box">
+    <div class="header-tag">Lembar Persiapan & Panduan Bimbingan Tugas Akhir</div>
+    <div class="header-title">Keunggulan Sistem SOAR vs. Windows Defender Standalone</div>
+    <div class="header-subtitle">
+      Studi Kasus: Deteksi & Respons Ancaman Malware dan Phishing di CV Bali Handmade
+    </div>
+    <div class="meta-grid">
+      <div class="meta-item"><b>Mahasiswa:</b> Ravi Arnan Irianto (NIM: 2305551076)</div>
+      <div class="meta-item"><b>Dosen Pembimbing:</b> I Nyoman Piarsa</div>
+    </div>
+  </div>
+
+  <!-- BAGIAN 1 -->
+  <h2><span class="badge-num">1</span> Elevator Pitch (Analogi 30 Detik untuk Dosen)</h2>
+  <div class="callout-pitch">
+    <p>
+      "Pak, <b>Windows Defender</b> itu seperti <b>satpam lokal yang berdiri di dalam masing-masing kamar</b>. Kalau satpam melihat ada orang mencurigakan, dia tangani sendiri di kamar itu, tetapi manajer gedung di kantor pusat tidak pernah diberi tahu secara real-time.<br><br>
+      Sedangkan <b>Sistem SOAR</b> yang saya bangun adalah <b>Pusat Komando (SOC) terpadu</b>. Sistem ini menghubungkan seluruh satpam di 50-100 PC, memeriksa catatan pelaku ke puluhan intelijen global (VirusTotal, MalwareBazaar, MISP), langsung memutus jalur pelariannya di jaringan (sinkhole domain phishing), dan mengirim notifikasi ringkas ke Telegram admin agar admin bisa mengambil keputusan dalam 1 klik dari HP."
+    </p>
+  </div>
+
+  <!-- BAGIAN 2 -->
+  <h2><span class="badge-num">2</span> Masalah Riil di Lapangan (CV Bali Handmade)</h2>
+  <p>
+    Di lingkungan kerja CV Bali Handmade (toko, kasir, gudang, staf administrasi), mengandalkan Windows Defender lokal terbukti memiliki celah keamanan serius:
+  </p>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">Silo / Tanpa Visibilitas Admin</div>
+      <p>Karyawan sering mengabaikan pop-up Defender atau mematikan proteksi demi membuka file invoice/desain dari supplier. Admin IT tidak pernah tahu komputernya sedang terinfeksi.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Ancaman Phishing & Rekayasa Sosial</div>
+      <p>Staf sering menerima link penipuan via WhatsApp Web atau email. Defender lokal tidak memblokir domain berbahaya tersebut untuk seluruh jaringan kantor.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Risiko False Positive pada Dokumen Kerja</div>
+      <p>Antivirus yang serba otomatis sering menghapus macro Excel keuangan atau file nota toko yang sah, menghentikan operasional bisnis dan membingungkan staf non-teknis.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Keterbatasan Perangkat Kasir & Toko</div>
+      <p>PC toko berspesifikasi rendah sering mengalami lemot akibat proses scanning antivirus berat (MsMpEng), sedangkan server toko berjalan di Linux (tanpa Defender).</p>
+    </div>
+  </div>
+
+  <!-- BAGIAN 3 -->
+  <h2><span class="badge-num">3</span> Lima Pilar Keunggulan Sistem SOAR Ini</h2>
+  
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">1. Visibilitas & Orkestrasi Terpusat</div>
+      <p>Seluruh event FIM (Downloads, Desktop, USB) dilaporkan real-time ke n8n dan database audit trail. Admin mengontrol puluhan workstation dari satu dashboard web & Telegram.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">2. Konsensus Global Multi-Vendor</div>
+      <p>Tidak bergantung pada 1 vendor (Microsoft). Hash berkas diuji ke <b>VirusTotal (70+ engine AV)</b>, MalwareBazaar, dan feed MISP OSINT. Akurasi keputusan jauh lebih tinggi.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">3. Human-in-the-Loop (HITL) Fleksibel</div>
+      <p>Jika skor ancaman tinggi (&ge;20): isolasi otomatis seketika. Jika ambigu (skor 1-19): bot Telegram mengirim ringkasan AI dan tombol <b>[Isolasi]</b> / <b>[Abaikan]</b>. Operasional kantor tetap aman dari salah hapus.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">4. Pertahanan Vektor Ganda (Malware + Phishing)</div>
+      <p>Menangani berkas malware sekaligus link phishing. Deteksi URL jahat langsung memicu <b>domain sinkhole</b> (0.0.0.0 di hosts/DNS) sehingga seluruh kantor terlindungi dalam ~2 detik.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 6px;">
+    <div class="card-title">5. Agen Ultra-Ringan (Rust) & Bebas Biaya Lisensi (Rp 0)</div>
+    <p>Agen endpoint mandiri (`agent-rs`) hanya memakan <b>~7-10 MB RAM</b> (menghemat &gt;90% memori dibanding AV konvensional) dan file executable hanya ~5,4 MB. Seluruh stack berbasis open-source (Wazuh, n8n, Rust), menggantikan kebutuhan solusi komersial mahal seperti Microsoft Sentinel (lisensi E5) yang tidak terjangkau bagi UKM.</p>
+  </div>
+
+  <!-- PAGE BREAK UNTUK HALAMAN 2 -->
+  <div class="page-break"></div>
+
+  <!-- BAGIAN 4 -->
+  <h2><span class="badge-num">4</span> Tabel Komparasi Head-to-Head</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 22%;">Parameter Evaluasi</th>
+        <th style="width: 38%;">Windows Defender Standalone</th>
+        <th style="width: 40%;">Sistem SOAR Proyek Ini</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Kategori Sistem</b></td>
+        <td>Endpoint Antivirus lokal (berjalan di masing-masing PC)</td>
+        <td class="highlight">SOAR (Orkestrasi terpusat multi-komponen)</td>
+      </tr>
+      <tr>
+        <td><b>Cakupan Sistem Operasi</b></td>
+        <td>Khusus ekosistem Windows</td>
+        <td class="highlight">Lintas-OS: Windows, Linux Server, macOS</td>
+      </tr>
+      <tr>
+        <td><b>Basis Penilaian Bahaya</b></td>
+        <td>Single-vendor (database & cloud Microsoft)</td>
+        <td class="highlight">Multi-vendor (VirusTotal 70+ AV, MalwareBazaar, MISP)</td>
+      </tr>
+      <tr>
+        <td><b>Visibilitas Admin IT</b></td>
+        <td>Nol (hanya pop-up di layar pengguna lokal)</td>
+        <td class="highlight">Real-time di Telegram Bot & Web Dashboard</td>
+      </tr>
+      <tr>
+        <td><b>Penanganan Kasus Ragu</b></td>
+        <td>Hapus otomatis atau diabaikan user</td>
+        <td class="highlight">Human-in-the-Loop: Tombol persetujuan analis di Telegram</td>
+      </tr>
+      <tr>
+        <td><b>Mitigasi Serangan Phishing</b></td>
+        <td>Terbatas proteksi browser Edge (SmartScreen)</td>
+        <td class="highlight">Domain sinkhole aktif lintas perangkat (~2,13 detik)</td>
+      </tr>
+      <tr>
+        <td><b>Konsumsi Memori (RAM)</b></td>
+        <td>~150 - 300+ MB (MsMpEng.exe)</td>
+        <td class="highlight">~7 - 10 MB (Agen Rust mandiri)</td>
+      </tr>
+      <tr>
+        <td><b>Biaya Lisensi Organisasi</b></td>
+        <td>Mahal untuk fitur terpusat (Lisensi M365 E5)</td>
+        <td class="highlight">100% Open-Source (Biaya lisensi Rp 0)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- BAGIAN 5 -->
+  <h2><span class="badge-num">5</span> Bukti Kuantitatif Hasil Uji Coba Nyata (Data Empiris)</h2>
+  <p>Klaim keunggulan sistem ini dibuktikan lewat data pengujian terukur pada lingkungan live:</p>
+  <div class="metric-row">
+    <div class="metric-chip">
+      <div class="metric-val">0,04 dtk</div>
+      <div class="metric-lbl">MTTR Karantina Malware (Agen Rust, cache)</div>
+    </div>
+    <div class="metric-chip">
+      <div class="metric-val">1,68 dtk</div>
+      <div class="metric-lbl">MTTR Karantina Malware (Stack Wazuh)</div>
+    </div>
+    <div class="metric-chip">
+      <div class="metric-val">2,13 dtk</div>
+      <div class="metric-lbl">MTTR Auto-Block Phishing (Domain Sinkhole)</div>
+    </div>
+    <div class="metric-chip">
+      <div class="metric-val">100%</div>
+      <div class="metric-lbl">FP Suppression (Noise Berkas Jinak Ditekan)</div>
+    </div>
+  </div>
+
+  <!-- BAGIAN 6 -->
+  <h2><span class="badge-num">6</span> Antisipasi Pertanyaan Kritis Dosen & Rekomendasi Jawaban</h2>
+
+  <div class="faq-item">
+    <div class="faq-q">Q1: "Kalau Defender sudah otomatis hapus malware di laptop, untuk apa agen kita kirim alert lagi?"</div>
+    <div class="faq-a">
+      <b>Jawaban:</b> "Pertama, Defender di laptop tidak melaporkan insiden ke admin kantor. Karyawan sering kali tidak sadar komputernya menjadi pintu masuk peretasan.<br>
+      Kedua, malware modern sering menyamar sebagai file script, dokumen makro, atau varian baru yang belum ada signature-nya di database Microsoft. Sistem SOAR mendeteksi berkas seketika saat masuk (FIM), lalu menguji reputasinya ke 70+ vendor global. Sistem ini tidak menggantikan Defender, melainkan menjadi lapisan intelijen dan orkestrasi di atasnya (konsep <i>defense-in-depth</i>)."
+    </div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Q2: "Microsoft kan sudah punya Microsoft Sentinel untuk orkestrasi SOAR, kenapa harus buat sendiri?"</div>
+    <div class="faq-a">
+      <b>Jawaban:</b> "Microsoft Sentinel membutuhkan lisensi korporat tier atas (Microsoft 365 E5) seharga puluhan dolar per user per bulan, ditambah biaya konsumsi data log per gigabyte di Azure cloud. Untuk UKM seperti CV Bali Handmade dengan 50-100 workstation, biaya tersebut tidak realistis.<br>
+      Tugas akhir ini membuktikan bahwa kapabilitas SOAR modern dengan waktu respons sub-detik dapat dibangun sepenuhnya di atas infrastruktur open-source berbiaya lisensi nol."
+    </div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Q3: "Bagaimana kalau koneksi internet mati atau kena kuota rate limit VirusTotal?"</div>
+    <div class="faq-a">
+      <b>Jawaban:</b> "Sistem menerapkan tiga lapis perlindungan: (1) <i>Local verdict cache</i> berbasis hash SHA-256 di server, sehingga hash yang sudah pernah diperiksa tidak query ulang ke internet; (2) Fallback otomatis ke MalwareBazaar dan AlienVault OTX jika VirusTotal rate-limit; (3) Status bertanda <i>unverified</i> yang langsung dieskalasi sebagai notifikasi Telegram ke analis, memastikan file mencurigakan tidak lolos begitu saja."
+    </div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Q4: "Mengapa memilih n8n sebagai mesin orkestrasi dan Rust untuk agen?"</div>
+    <div class="faq-a">
+      <b>Jawaban:</b> "n8n adalah mesin workflow visual modern yang memungkinkan playbook respons dimodifikasi dengan sangat cepat tanpa coding ulang daemon dari nol. Sedangkan agen ditulis dalam Rust untuk menghasilkan binary statis tunggal tanpa runtime, dengan footprint RAM hanya ~7-10 MB, sehingga sama sekali tidak membebani performa PC kasir maupun laptop kerja karyawan."
+    </div>
+  </div>
+
+  <div class="footer-note">
+    Dokumen Pendukung Bimbingan Tugas Akhir — Program Studi Teknologi Informasi / Informatika — Universitas Udayana (2026)
+  </div>
+
+</body>
+</html>
