@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Panduan Alur Workflow n8n: Deteksi Malware dan Deteksi Phishing</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 9mm 12mm 9mm 12mm;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #1e293b;
+    line-height: 1.35;
+    font-size: 8.5pt;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  /* Header banner */
+  .header-box {
+    border-bottom: 2px solid #1a568e;
+    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+  .header-tag {
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #1a568e;
+  }
+  .header-title {
+    font-size: 13pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 1px 0 2px 0;
+    line-height: 1.2;
+  }
+  .header-subtitle {
+    font-size: 8.5pt;
+    color: #475569;
+    margin: 0;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin-top: 4px;
+    padding-top: 3px;
+    border-top: 1px dashed #cbd5e1;
+    font-size: 8pt;
+    color: #334155;
+  }
+  .meta-item b {
+    color: #0f172a;
+  }
+
+  /* Headings */
+  h2 {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #0d3b66;
+    margin: 6px 0 3px 0;
+    padding-bottom: 2px;
+    border-bottom: 1px solid #cbd5e1;
+    display: flex;
+    align-items: center;
+  }
+  .badge-h2 {
+    display: inline-block;
+    background: #1a568e;
+    color: #fff;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 7.5pt;
+    margin-right: 5px;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+
+  h3 {
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: #0f2744;
+    margin: 4px 0 2px 0;
+  }
+
+  p {
+    margin: 0 0 4px 0;
+    text-align: justify;
+  }
+
+  /* Step box */
+  .step-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3.5px solid #1a568e;
+    border-radius: 0 3px 3px 0;
+    padding: 4px 7px;
+    margin-bottom: 4px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .step-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+  }
+  .step-title {
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: #0f2744;
+  }
+  .node-pill {
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 7pt;
+    font-family: monospace;
+    font-weight: 600;
+  }
+  .step-desc {
+    font-size: 8pt;
+    color: #334155;
+    margin: 0;
+    line-height: 1.3;
+  }
+
+  /* Callout */
+  .callout-insight {
+    background: #f0fdf4;
+    border-left: 3.5px solid #16a34a;
+    padding: 4px 7px;
+    border-radius: 0 3px 3px 0;
+    margin: 5px 0 3px 0;
+    font-size: 8pt;
+    color: #14532d;
+    line-height: 1.3;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .callout-insight b {
+    color: #166534;
+  }
+
+  /* Flow visual sequence */
+  .flow-seq {
+    background: #0f172a;
+    color: #f8fafc;
+    border-radius: 4px;
+    padding: 4px 7px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 6.8pt;
+    line-height: 1.35;
+    margin-bottom: 5px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .flow-seq span.kw { color: #38bdf8; font-weight: bold; }
+  .flow-seq span.arr { color: #f59e0b; }
+  .flow-seq span.note { color: #94a3b8; font-style: italic; }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 4px 0 5px 0;
+    font-size: 7.5pt;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  th, td {
+    padding: 3px 5px;
+    border: 1px solid #cbd5e1;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #0d3b66;
+    color: #ffffff;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+
+  .footer-note {
+    font-size: 7pt;
+    color: #94a3b8;
+    text-align: center;
+    margin-top: 4px;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 2px;
+  }
+</style>
+</head>
+<body>
+
+  <!-- ==================== HALAMAN 1 ==================== -->
+  <div class="header-box">
+    <div class="header-tag">Panduan Bimbingan Tugas Akhir & Presentasi Arsitektur</div>
+    <div class="header-title">Bedah Alur Kerja Workflow n8n: Deteksi Malware & Deteksi Phishing</div>
+    <div class="header-subtitle">
+      Penjelasan Teknis dan Konseptual per Node untuk Menjawab Pertanyaan Dosen Pembimbing
+    </div>
+    <div class="meta-grid">
+      <div class="meta-item"><b>Mahasiswa:</b> Ravi Arnan Irianto (NIM: 2305551076)</div>
+      <div class="meta-item"><b>Dosen Pembimbing:</b> I Nyoman Piarsa</div>
+    </div>
+  </div>
+
+  <h2><span class="badge-h2">Workflow 1</span> Deteksi Malware (28 Nodes)</h2>
+  <p>
+    Workflow ini bertugas menginvestigasi berkas baru di workstation endpoint CV Bali Handmade. Menerapkan prinsip <i>confidence-based response</i> agar mitigasi akurat dan tidak menyebabkan salah hapus dokumen kantor.
+  </p>
+
+  <div class="flow-seq">
+<span class="kw">[Endpoint]</span> <span class="arr">→</span> Webhook <span class="arr">→</span> Filter <span class="arr">→</span> Ekstrak <span class="arr">→</span> Dedup <span class="arr">→</span> Cek Cache VT <span class="arr">→</span> Cache Hit?
+  <span class="arr">├─ (Hit) ──────────────────────────────────────────────────────────┐</span>
+  <span class="arr">└─ (Miss) →</span> Scan VirusTotal <span class="arr">→</span> Simpan Cache <span class="arr">→</span> VT OK? <span class="arr">┬─ (OK) ────────┼→</span> MalwareBazaar <span class="arr">→</span> MISP <span class="arr">→</span> Rangkum Hasil
+                                                     <span class="arr">└─ (Fail) →</span> OTX <span class="arr">─┘</span>
+<span class="kw">[Decision Hub]</span> Rangkum Hasil (+ Process Chain) <span class="arr">→</span> Tentukan Otonomi <span class="arr">┬→</span> Log ke Fleet (Monitoring)
+                                                                 <span class="arr">└→</span> Cek Ancaman (AR?)
+  <span class="arr">├─ (True: Kritis) →</span> Get Wazuh Token <span class="arr">→</span> Trigger Active Response <span class="arr">→</span> Fleet Quarantine <span class="arr">┐</span>
+  <span class="arr">└─ (False: Ambigu/Review) ──────────────────────────────────────────────────────────────┴→</span> Build Payload <span class="arr">→</span>
+      Perlu Notif? <span class="arr">→</span> Catat Keputusan Tertunda <span class="arr">→</span> AI Generate (Gemini) <span class="arr">→</span> Send Telegram (HITL) <span class="arr">→</span> Log Alert
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 1: Ingestion, Normalisasi, & Anti-Duplikasi</span>
+      <span class="node-pill">Webhook • Filter • Ekstrak • Dedup</span>
+    </div>
+    <div class="step-desc">
+      Event berkas baru diterima via HTTP POST dari agen Rust (`soar-agent`) atau Wazuh FIM. Node <b>Filter Alert Malware</b> menyaring berkas noise sistem (seperti `/tmp/` atau swap). Node <b>Ekstrak Alert</b> membedah metadata inti (hash SHA-256, path, agent ID, dan status executable). Node <b>Dedup Alert</b> mencegah duplikasi notifikasi jika ada berkas yang diubah berulang kali dalam jeda singkat.
+    </div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 2: Hierarki Intelijen Multi-Sumber (Cache-First & Fallback)</span>
+      <span class="node-pill">Cek Cache VT • Scan VirusTotal • OTX • MalwareBazaar • MISP</span>
+    </div>
+    <div class="step-desc">
+      Sistem memeriksa <b>Cek Cache VT</b> lokal lebih dulu. Jika hash sudah pernah diperiksa sebelumnya (<i>cache hit</i>), sistem langsung melompati query internet (menghemat kuota API free VT). Jika <i>cache miss</i>, query dikirim ke <b>VirusTotal (70+ engine AV)</b>. Jika kuota VT habis (rate-limit 429), sistem otomatis fallback ke <b>OTX Lookup</b> (AlienVault). Selanjutnya, hash selalu diverifikasi silang ke feed komunitas <b>MalwareBazaar</b> dan <b>MISP CIRCL OSINT</b>.
+    </div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 3: Jalur Paralel Rantai Proses (Process Chain)</span>
+      <span class="node-pill">Cabang Chain? • Ekstrak Chain • Rangkum Chain</span>
+    </div>
+    <div class="step-desc">
+      Berjalan di jalur bawah sejajar dengan FIM. Menangkap anomali rantai eksekusi proses mencurigakan (misalnya dokumen Microsoft Office yang tiba-tiba memicu `powershell.exe` atau `cmd.exe` untuk mengunduh payload). Hasil rantai proses ini diintegrasikan ke titik keputusan bersama.
+    </div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 4: Engine Keputusan & Dual Mitigasi (Active Response)</span>
+      <span class="node-pill">Tentukan Otonomi • Cek Ancaman • Get Wazuh Token • Fleet Quarantine</span>
+    </div>
+    <div class="step-desc">
+      Node <b>Tentukan Otonomi</b> membagi severity menjadi: Kritis (&ge;20 deteksi), Tinggi/Sedang (1-19 deteksi), atau Bersih (0 deteksi). Jika Kritis, node <b>Cek Ancaman</b> memicu Active Response terisolasi ganda: memanggil API Wazuh (`Trigger Active Response`) dan API agen Rust (`Fleet Quarantine`) untuk mengisolasi berkas di workstation target dalam waktu sub-detik.
+    </div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 5: Ringkasan AI & Human-in-the-Loop 2-Arah</span>
+      <span class="node-pill">Build Payload • AI Generate • Send Telegram Alert • Catat Keputusan</span>
+    </div>
+    <div class="step-desc">
+      Jika berkas bersih, alert ditekan 100% (<i>noise suppression</i>). Untuk ancaman terdeteksi, <b>AI Generate</b> (Gemini Flash) menyusun narasi ringkas Bahasa Indonesia yang menjelaskan tipe malware dan rekomendasi tindakan. Bot Telegram mengirim pesan ke admin dengan tombol <b>[Isolasi]</b> / <b>[Abaikan]</b>, dan status dicatat di <b>Catat Keputusan Tertunda</b> untuk audit trail.
+    </div>
+  </div>
+
+  <div class="callout-insight">
+    <b>Poin Menjawab Dosen:</b> "Kenapa tidak pakai satu antivirus saja?" Jawab: "Karena sistem menerapkan <i>defense-in-depth</i>. Lapisan cache menekan latensi dan kuota, konsensus 70+ AV meniadakan bias single-vendor, dan tombol persetujuan Telegram mencegah berkas operasional kantor terhapus salah sasaran."
+  </div>
+
+  <!-- ==================== HALAMAN 2 ==================== -->
+  <div class="page-break"></div>
+
+  <h2><span class="badge-h2">Workflow 2</span> Deteksi Phishing (25 Nodes)</h2>
+  <p>
+    Workflow ini bertugas melindungi seluruh workstation dari serangan tautan palsu (phishing). Mengombinasikan jalur cepat reputasi dan sandbox crawling dengan mitigasi aktif otomatis di level jaringan.
+  </p>
+
+  <div class="flow-seq">
+<span class="kw">[Endpoint Log]</span> <span class="arr">→</span> Webhook Phishing <span class="arr">→</span> Filter <span class="arr">→</span> Ekstrak URL <span class="arr">→</span> Cek Cache URL <span class="arr">→</span> Cache Hit?
+  <span class="arr">├─ (Hit) ────────────────────────────────────────────────────────────────────────┐</span>
+  <span class="arr">└─ (Miss) →</span> GSB Lookup (Google Safe Browsing) <span class="arr">→</span> GSB Threat?                      <span class="arr">│</span>
+                <span class="arr">├─ (True: Bahaya) ─────────────────────────────────────────────────┼→</span> Rangkum Phishing
+                <span class="arr">└─ (False: Cek Lanjut) →</span> URLScan.io Submit <span class="arr">→</span> Tunggu <span class="arr">→</span> URLScan Result <span class="arr">┘</span>
+<span class="kw">[Mitigasi & AI]</span> Rangkum Phishing <span class="arr">┬→</span> Log ke Fleet (Monitoring)
+                                 <span class="arr">└→</span> Cek Ancaman
+  <span class="arr">├─ (Bahaya) →</span> Auto Block? <span class="arr">┬─ (True) →</span> Get Wazuh Token <span class="arr">→</span> Active Response (Sinkhole Hosts) <span class="arr">┐</span>
+  <span class="arr">│</span>                         <span class="arr">└─ (False) ────────────────────────────────────────────────────┴→</span> Build Payload <span class="arr">→</span>
+  <span class="arr">│</span>                                                                 Gemini Generate <span class="arr">→</span> Tipe Notif? <span class="arr">┬→</span> Send Telegram Alert
+  <span class="arr">└─ (Aman) →</span> Build Payload Aman <span class="arr">──────────────────────────────────────────────────────────────────┴→</span> Send Telegram Info
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 1: Ingestion & Cache Reputasi URL</span>
+      <span class="node-pill">Webhook Phishing • Filter • Ekstrak • Cek Cache URL</span>
+    </div>
+    <div class="step-desc">
+      Menangkap log akses URL dari workstation. Node <b>Cek Cache URL</b> memverifikasi apakah domain tersebut sudah pernah dipindai sebelumnya. Jika domain sudah dikenal di cache lokal, workflow langsung melompat ke <b>Rangkum Phishing</b> tanpa memanggil API eksternal.
+    </div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 2: Dual Threat Intel (Jalur Kilat GSB vs. Deep Scan URLScan)</span>
+      <span class="node-pill">GSB Lookup • GSB Threat? • URLScan.io Submit • Tunggu Scan</span>
+    </div>
+    <div class="step-desc">
+      Sistem memprioritaskan <b>Google Safe Browsing (GSB)</b> sebagai jalur kilat. Jika GSB menyatakan domain berbahaya, sistem langsung merespons dalam <b>~2,13 detik</b> tanpa menunggu. Namun jika GSB belum memiliki data, workflow mengalihkan pemeriksaan ke <b>URLScan.io</b> untuk melakukan inspeksi mendalam (DOM analysis dan sandbox redirection).
+    </div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 3: Mitigasi Aktif Domain Sinkhole di Level Jaringan</span>
+      <span class="node-pill">Cek Ancaman • Auto Block? • Get Wazuh Token • Trigger Active Response</span>
+    </div>
+    <div class="step-desc">
+      Jika domain terbukti phishing, node <b>Auto Block?</b> memicu Active Response secara otomatis. Wazuh menjalankan script <code>block-domain</code> di endpoint yang memetakan domain berbahaya ke IP <code>0.0.0.0</code> di konfigurasi <code>/etc/hosts</code> atau DNS lokal. Hasilnya: seluruh workstation kantor langsung terproteksi dari tautan tersebut seketika.
+    </div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-header">
+      <span class="step-title">Tahap 4: Ringkasan AI & Notifikasi Dua Arah</span>
+      <span class="node-pill">Build Payload • Gemini Generate • Tipe Notif? • Send Telegram Alert</span>
+    </div>
+    <div class="step-desc">
+      Node <b>Gemini Generate</b> merangkum domain yang diblokir, target pemalsuan, dan status mitigasi. Node <b>Tipe Notif?</b> memisahkan alert berbahaya (disertai status blokir) dari informasi URL jinak, lalu mengirimkan laporan real-time ke Telegram analis.
+    </div>
+  </div>
+
+  <h2><span class="badge-h2">Rangkuman</span> Perbedaan Strategi: Malware vs. Phishing</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Aspek Operasional</th>
+        <th style="width: 38%;">Workflow Deteksi Malware</th>
+        <th style="width: 37%;">Workflow Deteksi Phishing</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Vektor Ancaman</b></td>
+        <td>Berkas di storage (Downloads, Desktop, USB Flashdisk)</td>
+        <td>Tautan URL di web browser, email, dan WhatsApp Web</td>
+      </tr>
+      <tr>
+        <td><b>Sumber Threat Intel</b></td>
+        <td>VirusTotal (70+ AV), MalwareBazaar, MISP OSINT, AlienVault OTX</td>
+        <td>Google Safe Browsing v4 (jalur cepat) dan URLScan.io (sandbox)</td>
+      </tr>
+      <tr>
+        <td><b>Bentuk Active Response</b></td>
+        <td>Isolasi berkas lokal (karantina mandiri via Rust / Wazuh)</td>
+        <td>Domain sinkhole (alihkan domain jahat ke <code>0.0.0.0</code> di hosts/DNS)</td>
+      </tr>
+      <tr>
+        <td><b>Kecepatan Respons (MTTR)</b></td>
+        <td>0,04 detik (Agen Rust) / 1,68 detik (Wazuh AR)</td>
+        <td>2,13 detik (Jalur cepat Google Safe Browsing)</td>
+      </tr>
+      <tr>
+        <td><b>Model Human-in-the-Loop</b></td>
+        <td>Auto-karantina jika skor &ge;20; Tombol Telegram jika 1-19 (ambigu)</td>
+        <td>Auto-sinkhole seketika, disusul laporan AI ke Telegram</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout-insight">
+    <b>Kunci Jawaban untuk Dosen:</b> "Kedua workflow ini membuktikan bahwa n8n tidak hanya membaca alert pasif, melainkan berfungsi sebagai <b>SOAR sejati</b> yang memadukan pengayaan intelijen multi-sumber, penalaran AI Bahasa Indonesia, dan mitigasi otomatis terukur dengan perlindungan terhadap salah tindakan (HITL)."
+  </div>
+
+  <div class="footer-note">
+    Dokumen Panduan Teknis Workflow n8n — Tugas Akhir — Program Studi Teknologi Informasi / Informatika — Universitas Udayana (2026)
+  </div>
+
+</body>
+</html>
