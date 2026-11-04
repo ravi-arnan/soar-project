@@ -103,6 +103,7 @@ _events_insert_count = 0
 _EVENT_STATS_CACHE = {
     "ts": 0,
     "total": 0,
+    "all_time": 0,
     "severity": {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "UNVERIFIED": 0, "INFO": 0},
 }
 _EVENT_STATS_TTL = 10  # detik (hindari SQLite scan tiap 5s poll)
@@ -563,34 +564,54 @@ def build_fleet(cfg):
         "wazuh_api": len(wazuh_agents) > 0,
     }
 
-    # Severity summary dan total event: prioritaskan dari cache / SQLite durable bila tersedia
+    # Severity summary dan total event 24 jam terakhir (selaras dengan status operasional realtime)
     now_ts = time.time()
     if now_ts - _EVENT_STATS_CACHE["ts"] < _EVENT_STATS_TTL:
         events_total = _EVENT_STATS_CACHE["total"]
+        events_all = _EVENT_STATS_CACHE.get("all_time", events_total)
         sev_counts = dict(_EVENT_STATS_CACHE["severity"])
     else:
-        events_total = len(EVENTS)
+        since_24h = (
+            (datetime.now(timezone.utc) - timedelta(hours=24))
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        events_total = 0
+        events_all = 0
         sev_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "UNVERIFIED": 0, "INFO": 0}
         try:
             with closing(_db()) as conn:
-                row = conn.execute("SELECT count(*) FROM events WHERE source = 'soar'").fetchone()
-                if row and row[0] is not None:
-                    events_total = int(row[0])
+                row_24h = conn.execute(
+                    "SELECT count(*) FROM events WHERE source = 'soar' AND ts >= ?",
+                    (since_24h,),
+                ).fetchone()
+                if row_24h and row_24h[0] is not None:
+                    events_total = int(row_24h[0])
                 cur = conn.execute(
-                    "SELECT severity, count(*) FROM events WHERE source = 'soar' GROUP BY severity"
+                    "SELECT severity, count(*) FROM events WHERE source = 'soar' AND ts >= ? GROUP BY severity",
+                    (since_24h,),
                 )
                 for r in cur.fetchall():
                     sev = (r[0] or "INFO").upper()
                     if sev in sev_counts:
                         sev_counts[sev] += r[1]
+                row_all = conn.execute("SELECT count(*) FROM events WHERE source = 'soar'").fetchone()
+                if row_all and row_all[0] is not None:
+                    events_all = int(row_all[0])
                 _EVENT_STATS_CACHE["total"] = events_total
+                _EVENT_STATS_CACHE["all_time"] = events_all
                 _EVENT_STATS_CACHE["severity"] = dict(sev_counts)
                 _EVENT_STATS_CACHE["ts"] = now_ts
         except Exception:
+            events_total = 0
+            events_all = len(EVENTS)
             for ev in EVENTS:
-                sev = (ev.get("severity") or "INFO").upper()
-                if sev in sev_counts:
-                    sev_counts[sev] += 1
+                ev_ts = _to_utc_iso(ev.get("ts"))
+                if ev_ts >= since_24h:
+                    events_total += 1
+                    sev = (ev.get("severity") or "INFO").upper()
+                    if sev in sev_counts:
+                        sev_counts[sev] += 1
     active = sum(1 for a in fleet if a["status"] == "active")
     rust_count = sum(1 for a in fleet if a["type"] == "rust")
     wazuh_count = sum(1 for a in fleet if a["type"] == "wazuh")
@@ -606,6 +627,7 @@ def build_fleet(cfg):
             "wazuh": wazuh_count,
             "capacity_demo": "100 workstation ready (scalable, hash-only 1-2 KB per event)",
             "events_total": events_total,
+            "events_all_time": events_all,
             "severity": sev_counts,
         },
         "agents": fleet,
@@ -913,7 +935,7 @@ function renderOverview(){
   document.getElementById('kpis').innerHTML=`
     <div class="kpi"><div class="t">Total agents</div><div class="v">${s.total}</div><div class="h">${s.rust} Rust ringan + ${s.wazuh} Wazuh</div></div>
     <div class="kpi"><div class="t">Active</div><div class="v ok">${s.active}</div><div class="h">${s.disconnected} disconnected</div></div>
-    <div class="kpi"><div class="t">Events</div><div class="v">${s.events_total}</div><div class="h">file hash terdeteksi</div></div>
+    <div class="kpi"><div class="t">Events (24h)</div><div class="v">${s.events_total}</div><div class="h">file hash 24 jam terakhir</div></div>
     <div class="kpi"><div class="t">Efisiensi</div><div class="v">90%</div><div class="h">5.3 MB vs 50 MB per agen</div></div>`;
 
   // Donut severity
