@@ -458,9 +458,9 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                             </button>
                           </div>
                           <div className="text-[11px] text-[#5A626F] mt-1 leading-snug">
-                            {totalThreats} Kritis/High dari{' '}
-                            {stats?.events_total?.toLocaleString('en-US') || 0} event di database
-                            SOAR (semua waktu). Events memakai periode 7 hari secara default.
+                            {totalThreats} Kritis/High (24h) dari{' '}
+                            {(stats?.events_all_time ?? stats?.events_total ?? 0).toLocaleString('en-US')} total event di database
+                            SOAR. Events memakai periode 7 hari secara default.
                           </div>
                         </div>
                       </div>

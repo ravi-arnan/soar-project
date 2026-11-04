@@ -15,7 +15,13 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 
-import type { FleetAgent, FleetHealth, FleetStats } from '@/lib/fleet';
+import type {
+  FleetAgent,
+  FleetHealth,
+  FleetStats,
+  HistorySource,
+  PeriodPreset,
+} from '@/lib/fleet';
 
 interface ModulesHubProps {
   onNavigate: (
@@ -24,6 +30,8 @@ interface ModulesHubProps {
       severity?: string[];
       agentId?: string;
       tab?: 'dashboard' | 'events';
+      period?: PeriodPreset;
+      source?: HistorySource;
     }
   ) => void;
   /** Ringkasan fleet dari /api/fleet (live). */
@@ -264,10 +272,10 @@ export const ModulesHub = React.memo(function ModulesHub({
 
         <div
           className="cursor-pointer hover:bg-[#F8FAFC] py-2 px-1 rounded transition-colors group"
-          onClick={() => onNavigate('security-events')}
+          onClick={() => onNavigate('security-events', { period: '24h' })}
         >
           <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#006BB4] transition-colors">
-            Threat events
+            Threat events (24h)
           </div>
           <div className="text-[32px] font-semibold text-[#1A1C21] leading-tight mt-1">
             {stats.events_total.toLocaleString('en-US')}
@@ -277,10 +285,10 @@ export const ModulesHub = React.memo(function ModulesHub({
             <span
               onClick={(e) => {
                 e.stopPropagation();
-                onNavigate('security-events', { severity: ['CRITICAL'] });
+                onNavigate('security-events', { severity: ['CRITICAL'], period: '24h' });
               }}
               className="hover:underline cursor-pointer"
-              title="Filter Critical events"
+              title="Filter Critical events (24h)"
             >
               <span className="font-semibold text-[#BD271E]">{stats.severity?.CRITICAL || 0}</span> critical
             </span>
@@ -288,10 +296,10 @@ export const ModulesHub = React.memo(function ModulesHub({
             <span
               onClick={(e) => {
                 e.stopPropagation();
-                onNavigate('security-events', { severity: ['HIGH'] });
+                onNavigate('security-events', { severity: ['HIGH'], period: '24h' });
               }}
               className="hover:underline cursor-pointer"
-              title="Filter High events"
+              title="Filter High events (24h)"
             >
               <span className="font-semibold text-[#D97706]">{stats.severity?.HIGH || 0}</span> high
             </span>

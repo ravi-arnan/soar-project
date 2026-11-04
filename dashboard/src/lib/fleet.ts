@@ -109,6 +109,7 @@ export interface FleetStats {
   rust: number;
   wazuh: number;
   events_total: number;
+  events_all_time?: number;
   severity: FleetSeverityCounts;
   capacity_demo?: string;
 }

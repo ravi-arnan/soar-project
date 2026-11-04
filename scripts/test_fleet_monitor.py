@@ -4,7 +4,7 @@ import os
 import tempfile
 import threading
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from http.server import HTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -580,6 +580,45 @@ class HistoryEndpointTests(_ApiTestCase):
         self.assertEqual(ev.get("inode"), "142857")
         self.assertEqual(ev.get("md5"), "d41d8cd98f00b204e9800998ecf8427e")
         self.assertEqual(ev.get("sha1"), "da39a3ee5e6b4b0d3255bfef95601890afd80709")
+
+    def test_fleet_stats_events_total_24h(self):
+        now = datetime.now(timezone.utc)
+        old_ts = (now - timedelta(days=3)).isoformat().replace("+00:00", "Z")
+        recent_ts = (now - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+
+        # Event lama (> 24 jam)
+        old_ev = {
+            "agent_id": "003",
+            "path": "/opt/old-malware.bin",
+            "hash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "severity": "HIGH",
+            "ts": old_ts,
+            "status": "alerted",
+        }
+        status, _, _ = self.request("POST", "/webhook-log", old_ev)
+        self.assertEqual(status, 200)
+
+        # Event baru (< 24 jam)
+        recent_ev = {
+            "agent_id": "003",
+            "path": "/opt/recent-eicar.com",
+            "hash": "2222222222222222222222222222222222222222222222222222222222222222",
+            "severity": "CRITICAL",
+            "ts": recent_ts,
+            "status": "alerted",
+        }
+        status, _, _ = self.request("POST", "/webhook-log", recent_ev)
+        self.assertEqual(status, 200)
+
+        # GET /api/fleet harus menghitung events_total hanya dalam rentang 24 jam
+        status, _, body = self.request("GET", "/api/fleet")
+        self.assertEqual(status, 200)
+        stats = body.get("stats", {})
+        self.assertIn("events_total", stats)
+        self.assertIn("events_all_time", stats)
+        # events_total (24h) tidak boleh menghitung old_ev
+        self.assertGreaterEqual(stats["events_all_time"], 2)
+        self.assertEqual(stats["severity"]["CRITICAL"], 1)
 
 
 if __name__ == "__main__":

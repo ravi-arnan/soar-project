@@ -87,8 +87,8 @@ export function SettingsView({ health, stats, generatedAt, online, refreshMs, on
           />
           <StatusRow
             ok={true}
-            label="Event tercatat"
-            detail={`${stats.events_total?.toLocaleString('en-US') || 0} event`}
+            label="Event tercatat (24h)"
+            detail={`${stats.events_total?.toLocaleString('en-US') || 0} event (24h) · ${(stats.events_all_time ?? stats.events_total ?? 0).toLocaleString('en-US')} total`}
           />
           <div className="pt-2 text-[12px] text-[#5A626F]">
             Update terakhir: {generatedAt ? formatWazuhTime(generatedAt) : '-'}
