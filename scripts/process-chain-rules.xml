@@ -307,4 +307,62 @@
     <description>SOAR allowlist: Python resmi Windows per-user --version (teks-klasik)</description>
   </rule>
 
+  <!-- ============================================================
+       AZURE SENTINEL ADAPTATION: LOLBin Dropper & Ingress Tool Transfer
+       Pola deteksi diadaptasi dari Azure Sentinel / MITRE ATT&CK:
+       T1105 (Ingress Tool Transfer), T1140 (Deobfuscate/Decode),
+       T1197 (BITS Jobs), T1218.005 (Mshta Abuse).
+       ============================================================ -->
+
+  <!-- LEVEL 10: certutil.exe download / decode payload (JSON & teks) -->
+  <rule id="110033" level="10">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\certutil\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)([-/](urlcache|split|decode))\b</field>
+    <description>SOAR: certutil.exe download/decode payload (LOLBin Ingress Tool Transfer T1105, JSON)</description>
+    <group>process_chain,lolbin,ingress_tool_transfer,attack_T1105,attack_T1140,</group>
+  </rule>
+
+  <rule id="110034" level="10">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="pcre2">(?i)\\certutil\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)([-/](urlcache|split|decode))\b</field>
+    <description>SOAR: certutil.exe download/decode payload (LOLBin Ingress Tool Transfer T1105, teks-klasik)</description>
+    <group>process_chain,lolbin,ingress_tool_transfer,attack_T1105,attack_T1140,</group>
+  </rule>
+
+  <!-- LEVEL 9: bitsadmin.exe background transfer (JSON & teks) -->
+  <rule id="110035" level="9">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\bitsadmin\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(/(transfer|create|addfile|download))\b</field>
+    <description>SOAR: bitsadmin.exe background transfer payload (LOLBin BITS Jobs T1197, JSON)</description>
+    <group>process_chain,lolbin,bits_job,attack_T1197,attack_T1105,</group>
+  </rule>
+
+  <rule id="110036" level="9">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="pcre2">(?i)\\bitsadmin\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)(/(transfer|create|addfile|download))\b</field>
+    <description>SOAR: bitsadmin.exe background transfer payload (LOLBin BITS Jobs T1197, teks-klasik)</description>
+    <group>process_chain,lolbin,bits_job,attack_T1197,attack_T1105,</group>
+  </rule>
+
+  <!-- LEVEL 10: mshta.exe inline / remote script execution (JSON & teks) -->
+  <rule id="110037" level="10">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\mshta\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(https?://|javascript:|vbscript:)</field>
+    <description>SOAR: mshta.exe inline/remote script execution (LOLBin Mshta T1218.005, JSON)</description>
+    <group>process_chain,lolbin,attack_T1218.005,</group>
+  </rule>
+
+  <rule id="110038" level="10">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="pcre2">(?i)\\mshta\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)(https?://|javascript:|vbscript:)</field>
+    <description>SOAR: mshta.exe inline/remote script execution (LOLBin Mshta T1218.005, teks-klasik)</description>
+    <group>process_chain,lolbin,attack_T1218.005,</group>
+  </rule>
+
 </group>

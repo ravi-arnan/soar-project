@@ -74,8 +74,11 @@ URL alert (Wazuh) → Filter URL → Ekstrak → Cek cache URL
 | **Office App Spawn Shell** | **T1566.001** — Spearphishing Attachment, **T1204.002** — Malicious File | Rule 110006: winword/excel/powerpnt spawn cmd/powershell (malicious document) |
 | **Regsvr32/Rundll32 URL Abuse** | **T1218.010** — Regsvr32, **T1218.011** — Rundll32 | Rule 110007: Squiblydoo — regsvr32/rundll32 muat dari URL/temp |
 | **Script Dropper dari Temp** | **T1059** — Command and Scripting Interpreter | Rule 110008: .bat/.cmd/.vbs/.ps1 dari user-temp |
+| **Certutil Ingress & Decode Dropper** | **T1105** (Ingress Tool Transfer), **T1140** (Deobfuscate/Decode) | Rule 110033/110034: certutil -urlcache / -split / -decode untuk unduh payload (adaptasi Azure Sentinel) |
+| **BITSAdmin Background Transfer** | **T1197** (BITS Jobs), **T1105** (Ingress Tool Transfer) | Rule 110035/110036: bitsadmin /transfer untuk unduh background payload (adaptasi Azure Sentinel) |
+| **Mshta Inline/Remote Script Execution** | **T1218.005** (Mshta Abuse) | Rule 110037/110038: mshta eksekusi inline atau remote script URL/javascript/vbscript (adaptasi Azure Sentinel) |
 
-**Respons chain (n8n, tanpa AR otomatis):** alert 110001-110011 masuk cabang
+**Respons chain (n8n, tanpa AR otomatis):** alert 110001-110099 masuk cabang
 khusus workflow Deteksi Malware (skip VT, AI chain-aware, Telegram). AR
 sengaja dimatikan untuk chain karena LOLBin = binary sah (takedown
 powershell.exe = bunuh sistem). Respons = analis via Telegram.
