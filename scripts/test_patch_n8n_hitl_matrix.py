@@ -464,6 +464,8 @@ class BehaviourTests(unittest.TestCase):
         self.assertIn("BELUM DITANGANI", full["text"])
         self.assertIn("setup-installer.exe", full["text"])
         self.assertIn("agent 005", full["text"])
+        self.assertNotIn("\u2014", full["text"])
+        self.assertNotIn("\u2013", full["text"])
         escalated = [c["body"]["hash"] for c in self.out["slaCalls"] if c["url"].endswith("/decision/escalate")]
         self.assertEqual(escalated, ["a" * 16, "c" * 16])
 

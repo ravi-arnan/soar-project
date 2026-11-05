@@ -48,7 +48,7 @@ PATH_EXPR = (
 
 # Escape Markdown legacy untuk interpolasi teks bebas di pesan Telegram.
 # vt_footer TIDAK di-escape (link disengaja). Lihat exec 702.
-MD_ESCAPE_JS = r".replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1')"
+MD_ESCAPE_JS = r".replace(/([_*`\[])/g, '\\$1')"
 
 
 def md_wrap(expr: str) -> str:
