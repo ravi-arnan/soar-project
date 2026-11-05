@@ -48,7 +48,7 @@
     <if_group>sysmon_event1</if_group>
     <field name="sysmon.parentImage" type="pcre2">(?i)\\powershell\.exe$</field>
     <field name="sysmon.image" type="pcre2">(?i)\\(Temp|AppData|Roaming|Users|Downloads|Desktop)\\.*\\(python|python3)(\.exe)?$</field>
-    <description>SOAR: DETEKSI FULL CHAIN — PowerShell hidden -> python/script dari user-temp (malware stage-2)</description>
+    <description>SOAR: DETEKSI FULL CHAIN - PowerShell hidden -> python/script dari user-temp (malware stage-2)</description>
     <group>process_chain,lolbin,attack_execution,attack_T1059.001,attack_T1059.006,</group>
   </rule>
 
@@ -138,7 +138,7 @@
     <if_group>sysmon_event1</if_group>
     <field name="win.eventdata.parentImage" type="pcre2">(?i)\\powershell\.exe$</field>
     <field name="win.eventdata.image" type="pcre2">(?i)\\(Temp|AppData|Roaming|Users|Downloads|Desktop)\\.*\\(python|python3)(\.exe)?$</field>
-    <description>SOAR: DETEKSI FULL CHAIN — PowerShell hidden -&gt; python/script dari user-temp (JSON)</description>
+    <description>SOAR: DETEKSI FULL CHAIN - PowerShell hidden -&gt; python/script dari user-temp (JSON)</description>
     <group>process_chain,lolbin,attack_execution,attack_T1059.001,attack_T1059.006,</group>
   </rule>
 

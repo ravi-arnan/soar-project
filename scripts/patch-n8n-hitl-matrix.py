@@ -316,7 +316,7 @@ EDIT_JS_TEXT = (
     "={{ (() => { const c = $('Catat Keputusan').first().json;"
     " const a = $('Jalankan AR').first().json;"
     " const r = c.registry || {};"
-    " const esc = (s) => String(s ?? '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1');"
+    " const esc = (s) => String(s ?? '').replace(/([_*`\\[])/g, '\\\\$1');"
     " const head = c.decision_action === 'quarantine'"
     "   ? '\\u2705 *KEPUTUSAN ANALIS: KARANTINA FILE*'"
     "   : (c.decision_action === 'acknowledged'"
@@ -371,13 +371,14 @@ SLA_BUILD_JS = """// patch:hitl-matrix:v1
 // Tanpa cabang FALSE IF: daftar kosong -> return [] -> node Telegram tidak jalan.
 const items = Array.isArray($json.items) ? $json.items : [];
 if (!items.length) return [];
+const esc = (s) => String(s ?? '').replace(/([_*`\\[])/g, '\\\\$1');
 const lines = [];
 let i = 1;
 for (const it of items) {
   const mins = Math.floor((it.age_secs || 0) / 60);
-  lines.push(i++ + '. *' + (it.severity || '-') + '* ' + (it.title || it.tier || 'deteksi')
-    + ' \\u2014 ' + (it.filename || it.filepath || '-')
-    + ' (agent ' + (it.agent_id || '-') + ') \\u2014 ' + mins + ' mnt');
+  lines.push(i++ + '. *' + (it.severity || '-') + '* ' + esc(it.title || it.tier || 'deteksi')
+    + ': ' + esc(it.filename || it.filepath || '-')
+    + ' (agent ' + esc(it.agent_id || '-') + ', ' + mins + ' mnt)');
   try {
     await this.helpers.httpRequest({
       method: 'POST',
@@ -397,6 +398,9 @@ return [{ json: { text: text, count: items.length } }];
 SLA_LOG_JS = """// patch:hitl-matrix:v1
 // Catat eskalasi ke alert-log (observability + bukti evaluasi SLA).
 const inp = $('Bangun Eskalasi').first().json;
+const tg = ($input && $input.first && $input.first() && $input.first().json) || {};
+const r = tg.result || tg;
+const tgOk = (tg.ok === true) || Boolean(r && r.message_id);
 let ok = false;
 try {
   await this.helpers.httpRequest({
@@ -405,7 +409,7 @@ try {
     headers: { 'Content-Type': 'application/json' },
     body: { ts: new Date().toISOString(), workflow: '%s',
       node: '%s', severity: 'HIGH', title: 'Eskalasi SLA HITL',
-      count: inp.count, escalated: true, telegram_ok: false },
+      count: inp.count, escalated: true, telegram_ok: tgOk },
     timeout: 5000,
   });
   ok = true;
@@ -752,7 +756,16 @@ def ensure_sla(base, key, chat_id, dry, creds=None):
     # endpoint khusus POST /workflows/{id}/activate.
     if existing:
         cur = api(base + "/api/v1/workflows/" + existing["id"], key)
-        if MARKER in json.dumps(cur.get("nodes", [])) and cur.get("active"):
+        cur_nodes = cur.get("nodes", [])
+        b_node = get_node(cur_nodes, SLA_BUILD)
+        l_node = get_node(cur_nodes, SLA_LOG)
+        same_code = (
+            b_node is not None
+            and b_node.get("parameters", {}).get("jsCode") == SLA_BUILD_JS
+            and l_node is not None
+            and l_node.get("parameters", {}).get("jsCode") == SLA_LOG_JS
+        )
+        if same_code and cur.get("active"):
             return None, existing["id"]
         if dry:
             return "update", existing["id"]

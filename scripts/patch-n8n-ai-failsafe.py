@@ -50,7 +50,7 @@ import urllib.request
 
 BACKUP_DIR = os.path.join(os.path.dirname(__file__), "..", "backups")
 WORKFLOW_ID_DEFAULT = "1MVcpL7ZKfBhR2tc"
-MARKER = "patch:aifailsafe:v4"
+MARKER = "patch:aifailsafe:v5"
 
 AI_NAME = "AI Generate"
 TG_NAME = "Send Telegram Alert"
@@ -65,7 +65,7 @@ AI_JSCODE = """const pollinationsKey = $env.POLLINATIONS_API_KEY;
 const geminiKey = $env.GEMINI_API_KEY;
 const FALLBACK = 'Analisis AI tidak tersedia saat ini karena layanan AI gagal atau tidak dikonfigurasi.';
 
-const prompt = $json.prompt;
+const prompt = ($json.prompt || '') + '\\nJANGAN gunakan tanda pisah em dash (\\u2014) atau en dash (\\u2013); gunakan koma, titik, atau tanda kurung.';
 let clean = '';
 let errMsg = null;
 let usedModel = null;
@@ -73,6 +73,7 @@ let usedModel = null;
 const cleanText = (t) => String(t || '')
   .replace(/<think>[\\s\\S]*?<\\/think>/g, '')
   .replace(/[*_`\\[\\]()]/g, '')
+  .replace(/\\s*[\\u2014\\u2013]\\s*/g, ', ')
   .replace(/\\n\\n+/g, '\\n')
   .trim();
 
@@ -123,12 +124,14 @@ if (!clean && geminiKey) {
 }
 
 return [{ json: { ...$json, ai_response: clean || FALLBACK, llm_error: clean ? null : errMsg, llm_model: usedModel || 'gagal' } }];
-// patch:aifailsafe:v4"""
+// patch:aifailsafe:v5"""
 
 # Lapis 2: template Telegram ambil field terstruktur dari 'Build Payload'
 # (bukan $json), plus fallback `?? ''`. Field AI tetap dari $json output
-# 'AI Generate'. Escaping Markdown dipertahankan seperti versi live.
-TG_TEXT = """={{ $('Build Payload').first().json.severityIcon + " *" + $('Build Payload').first().json.severityLabel + " - " + $('Build Payload').first().json.alert_title + "*\\n\\n📁 " + $('Build Payload').first().json.target_label + ": " + ((($('Build Payload').first().json.filename ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + "\\n📂 Path: " + ((($('Build Payload').first().json.filepath ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + ($('Build Payload').first().json.chain_cmd ? ("\\n💻 Command: " + ((($('Build Payload').first().json.chain_cmd ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1'))) : "") + "\\n🔍 Hash: `" + ($('Build Payload').first().json.hash_display ?? 'Tidak tersedia') + "`" + "\\n🛡️ Severity: " + ($('Build Payload').first().json.severity ?? '') + " level " + ($('Build Payload').first().json.rule_level ?? '') + "\\n📊 Deteksi: " + ($('Build Payload').first().json.detection_text ?? '') + "\\n🖥️ Agent: " + ((($('Build Payload').first().json.agent_name ?? '') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1')) + "\\n🕐 Waktu: " + ($('Build Payload').first().json.timestamp ?? '') + "\\n\\n🤖 *Analisis AI:*\\n" + (($json.ai_response ?? 'Analisis AI tidak tersedia.') + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1') + "\\n\\n" + ($('Build Payload').first().json.vt_footer ?? '') + (($json.llm_error) ? ("\\n⚠️ *Error AI:* " + (($json.llm_error + '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1'))) : "") }}"""
+# 'AI Generate'. Pada parse_mode: "Markdown" (legacy v1), hanya karakter
+# entitas Markdown v1 ([_*`\[]) yang boleh di-escape agar tidak bocor
+# backslash literal (\., \-, \\) di pesan Telegram.
+TG_TEXT = """={{ $('Build Payload').first().json.severityIcon + " *" + $('Build Payload').first().json.severityLabel + " - " + $('Build Payload').first().json.alert_title + "*\\n\\n📁 " + $('Build Payload').first().json.target_label + ": " + ((($('Build Payload').first().json.filename ?? '') + '').replace(/([_*`\\[])/g, '\\\\$1')) + "\\n📂 Path: " + ((($('Build Payload').first().json.filepath ?? '') + '').replace(/\\\\\\\\/g, '\\\\').replace(/([_*`\\[])/g, '\\\\$1')) + ($('Build Payload').first().json.chain_cmd ? ("\\n💻 Command: " + ((($('Build Payload').first().json.chain_cmd ?? '') + '').replace(/\\\\\\\\/g, '\\\\').replace(/\\\\"/g, '"').replace(/([_*`\\[])/g, '\\\\$1'))) : "") + "\\n🔍 Hash: `" + ($('Build Payload').first().json.hash_display ?? 'Tidak tersedia') + "`" + "\\n🛡️ Severity: " + ($('Build Payload').first().json.severity ?? '') + " level " + ($('Build Payload').first().json.rule_level ?? '') + "\\n📊 Deteksi: " + ($('Build Payload').first().json.detection_text ?? '') + "\\n🖥️ Agent: " + ((($('Build Payload').first().json.agent_name ?? '') + '').replace(/([_*`\\[])/g, '\\\\$1')) + "\\n🕐 Waktu: " + ($('Build Payload').first().json.timestamp ?? '') + "\\n\\n🤖 *Analisis AI:*\\n" + (($json.ai_response ?? 'Analisis AI tidak tersedia.') + '').replace(/\\s*[\\u2014\\u2013]\\s*/g, ', ').replace(/([_*`\\[])/g, '\\\\$1') + "\\n\\n" + ($('Build Payload').first().json.vt_footer ?? '') + (($json.llm_error) ? ("\\n⚠️ *Error AI:* " + (($json.llm_error + '').replace(/([_*`\\[])/g, '\\\\$1'))) : "") }}"""
 
 
 def read_file(p):
@@ -177,7 +180,7 @@ def patch_telegram(nodes, name, text, marker):
     if n is None:
         raise SystemExit("Node '" + name + "' tidak ditemukan.")
     cur = n.get("parameters", {}).get("text", "")
-    if marker in cur:
+    if cur == text or (marker in cur and "~`>#" not in cur):
         return False
     n["parameters"]["text"] = text
     return True

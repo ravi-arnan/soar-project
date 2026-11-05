@@ -149,12 +149,12 @@ def _fmt(transitions):
     up = [c for c, k, _ in transitions if k == "up"]
     lines = []
     if down:
-        lines.append("⚠️ SOAR TERDEGRADASI — komponen berhenti sehat:")
+        lines.append("⚠️ SOAR TERDEGRADASI (komponen berhenti sehat):")
         lines += [f"• {c}" for c in down]
     if up:
         if lines:
             lines.append("")
-        lines.append("✅ SOAR PULIH — komponen kembali sehat:")
+        lines.append("✅ SOAR PULIH (komponen kembali sehat):")
         lines += [f"• {c}" for c in up]
     lines.append(f"\n\U0001f550 {now}")
     return "\n".join(lines)
@@ -241,6 +241,8 @@ def _selftest():
     assert curr_wazuh["agent 002 (pc2)"] is False
     t_api_down = compute_transitions(prev_state, curr_wazuh)
     assert t_api_down == [("_wazuh_api", "down", False)], t_api_down
+    fmt_msg = _fmt([("n8n", "down", False), ("ollama", "up", True)])
+    assert "\u2014" not in fmt_msg and "\u2013" not in fmt_msg, fmt_msg
     print("selftest OK")
 
 

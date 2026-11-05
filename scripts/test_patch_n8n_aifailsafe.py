@@ -155,7 +155,7 @@ class AiNodeTest(unittest.TestCase):
         out = run_js(
             r"""
 (async () => {
-  const helpers = { httpRequest: async () => ({ choices: [{ message: { content: 'Bahaya **tinggi** [isolasi]' } }] }) };
+  const helpers = { httpRequest: async () => ({ choices: [{ message: { content: 'Bahaya **tinggi** — segera [isolasi]' } }] }) };
   const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { POLLINATIONS_API_KEY: 'k' }))[0].json;
   console.log(JSON.stringify(r));
 })();
@@ -163,7 +163,8 @@ class AiNodeTest(unittest.TestCase):
         )
         self.assertEqual(out["filename"], "eicar.com")
         self.assertEqual(out["severity"], "CRITICAL")
-        self.assertEqual(out["ai_response"], "Bahaya tinggi isolasi")
+        self.assertEqual(out["ai_response"], "Bahaya tinggi, segera isolasi")
+        self.assertNotIn("\u2014", out["ai_response"])
         self.assertIsNone(out["llm_error"])
 
     def test_gagal_tidak_melempar_dan_field_utuh(self):
@@ -223,16 +224,20 @@ class AiNodeTest(unittest.TestCase):
 class TemplateTest(unittest.TestCase):
     def test_normal_lengkap(self):
         out = run_template(
-            {**BP_FIXTURE, "ai_response": "EPSON lolbin kemungkinan benign"},
+            {**BP_FIXTURE, "ai_response": "EPSON lolbin — kemungkinan benign."},
             BP_FIXTURE,
         )
         self.assertNotIn("undefined", out)
         self.assertIn("TINGGI", out)
         self.assertIn("RANTAI PROSES MENCURIGAKAN", out)
-        self.assertIn("rundll32", out)
+        self.assertIn("rundll32.exe", out)
         self.assertIn("level 10", out)
-        self.assertIn("bali", out)
-        self.assertIn("EPSON lolbin kemungkinan benign", out)
+        self.assertIn("bali-handmade", out)
+        self.assertIn("EPSON lolbin, kemungkinan benign.", out)
+        self.assertNotIn("\\.", out)
+        self.assertNotIn("\\-", out)
+        self.assertNotIn("\u2014", out)
+        self.assertIn("E\\_UPWJ01.dll", out)
         self.assertIn("VirusTotal", out)
 
     def test_json_rusak_tetap_utuh(self):
