@@ -14,7 +14,7 @@ Bertujuan untuk membuktikan cakupan deteksi & respons secara terstruktur (bukan 
 | **Deteksi Malware** (FIM + VT) | TA0002 Execution, TA0005 Defense Evasion, TA0001 Initial Access | T1204.002, T1059, T1027, T1036 | ✅ Aktif |
 | **Deteksi Phishing** (URL + GSB/URLScan) | TA0001 Initial Access | T1566.002, T1189 | ✅ Aktif |
 | **Proaktif Phishing** (URLhaus feed) | TA0001 Initial Access (preventif) | T1566.002 | ✅ Aktif |
-| **Deteksi LOLBin Chain** (Sysmon ProcessCreate) | TA0002 Execution, TA0005 Defense Evasion | T1059.001, T1059.006, T1218.010, T1218.011, T1036 | ✅ Aktif (baru) |
+| **Deteksi LOLBin Chain & Pre-Encryption** (Sysmon ProcessCreate) | TA0002 Execution, TA0003 Persistence, TA0005 Defense Evasion, TA0040 Impact | T1059.001, T1059.006, T1218.005, T1218.010, T1218.011, T1105, T1140, T1197, T1547.001, T1053.005, T1490 | ✅ Aktif (Azure Sentinel & Sigma adaptation) |
 | **Active Response — Quarantine** | TA0005 Defense Evasion → TA0040 Impact | T1070.004 (remedi), AR manual | ✅ Aktif |
 | **Active Response — Block Domain** | TA0001 Initial Access → TA0040 Impact | T1189 (remedi), AR manual | ✅ Aktif |
 | **Health Monitor** | TA0040 Impact (availability) | T1499 (availability monitoring) | ✅ Aktif |
@@ -77,6 +77,9 @@ URL alert (Wazuh) → Filter URL → Ekstrak → Cek cache URL
 | **Certutil Ingress & Decode Dropper** | **T1105** (Ingress Tool Transfer), **T1140** (Deobfuscate/Decode) | Rule 110033/110034: certutil -urlcache / -split / -decode untuk unduh payload (adaptasi Azure Sentinel) |
 | **BITSAdmin Background Transfer** | **T1197** (BITS Jobs), **T1105** (Ingress Tool Transfer) | Rule 110035/110036: bitsadmin /transfer untuk unduh background payload (adaptasi Azure Sentinel) |
 | **Mshta Inline/Remote Script Execution** | **T1218.005** (Mshta Abuse) | Rule 110037/110038: mshta eksekusi inline atau remote script URL/javascript/vbscript (adaptasi Azure Sentinel) |
+| **Ransomware Inhibit System Recovery** | **T1490** (Inhibit System Recovery) | Rule 110039/110040: vssadmin delete shadows / wmic shadowcopy delete / bcdedit recoveryenabled no / wbadmin (adaptasi Azure Sentinel & SigmaHQ) |
+| **Persistence: Registry Run Keys** | **T1547.001** (Registry Run Keys / Startup Folder) | Rule 110041/110042: reg.exe add ...\CurrentVersion\Run mengarah ke direktori user-writable (adaptasi Azure Sentinel & SigmaHQ) |
+| **Persistence: Scheduled Tasks** | **T1053.005** (Scheduled Task) | Rule 110043/110044: schtasks.exe /create mengeksekusi payload dari direktori user-writable (adaptasi Azure Sentinel & SigmaHQ) |
 
 **Respons chain (n8n, tanpa AR otomatis):** alert 110001-110099 masuk cabang
 khusus workflow Deteksi Malware (skip VT, AI chain-aware, Telegram). AR
@@ -98,18 +101,22 @@ powershell.exe = bunuh sistem). Respons = analis via Telegram.
 ```
                         MITRE ATT&CK Enterprise — Coverage Map
                         
-INITIAL ACCESS          EXECUTION               DEFENSE EVASION        IMPACT
-─────────────           ─────────               ───────────────        ──────
-T1566.002 ●●●           T1204.002 ●●            T1027 ●                T1499 ●
-(Phishing Link)         (Malicious File)        (Obfuscation)          (DoS - health)
-T1566.001 ●             T1059 ●●●               T1036 ●●●              T1484 ●●●
-(Attachment)            (Scripting)             (Masquerading)          (Domain Policy)
-T1189 ●●                T1059.001 ●●            T1070.004 ●
-(Drive-by)              (PowerShell)            (File Deletion→remed)
-                        T1059.006 ●
-                        (Python)
-                        T1218.010 ● / T1218.011 ●
-                        (Regsvr32 / Rundll32)   
+INITIAL ACCESS    EXECUTION        PERSISTENCE       DEFENSE EVASION   IMPACT
+─────────────     ─────────        ───────────       ───────────────   ──────
+T1566.002 ●●●     T1204.002 ●●     T1547.001 ●       T1027 ●           T1499 ●
+(Phishing Link)   (Malicious File) (Run Keys)        (Obfuscation)     (DoS - health)
+T1566.001 ●       T1059 ●●●        T1053.005 ●       T1036 ●●●         T1484 ●●●
+(Attachment)      (Scripting)      (Scheduled Task)  (Masquerading)    (Domain Policy)
+T1189 ●●          T1059.001 ●●                       T1070.004 ●       T1490 ●
+(Drive-by)        (PowerShell)                       (File Deletion)   (Inhibit Recovery)
+                  T1059.006 ●                        T1140 ●
+                  (Python)                           (Deobfuscate)
+                  T1218.010 ●                        T1105 ●●
+                  (Regsvr32)                         (Ingress Transfer)
+                  T1218.011 ●                        T1197 ●
+                  (Rundll32)                         (BITS Jobs)
+                  T1218.005 ●
+                  (Mshta)
 ```
 
 **Legend:** ● = 1 playbook, ●● = 2 playbook, ●●● = 3+ playbook
@@ -123,12 +130,10 @@ Teknik ATT&CK yang **belum** ditangani oleh sistem ini (bukan kelemahan desain �
 | Teknik | Fase | Alasan belum dicakup |
 |--------|------|---------------------|
 | T1566.001 (Spearphishing Attachment) | Initial Access | Belum ada deteksi email proxy/log mail (G3) |
-| T1053 (Scheduled Task) | Persistence | Tidak ada monitoring scheduled task |
 | T1071 (Application Layer Protocol) | Command & Control | Tidak ada network traffic analysis |
-| T1486 (Data Encrypted for Impact) | Impact | Tidak ada behavioral detection enkripsi massal (ransomware) |
-| T1490 (Inhibit System Recovery) | Impact | Tidak ada backup monitoring |
+| T1486 (Data Encrypted for Impact) | Impact | Mitigasi saat ini fokus pada fase pre-encryption (T1490) + canary file di agent Rust |
 
-**Catatan:** Gap di atas masuk kategori **pasca-TA**, kecuali G3 (email) yang sudah di-roadmap. Teknik T1059.001 (PowerShell) dan T1059.006 (Python) sudah dicakup oleh deteksi LOLBin Chain via Sysmon.
+**Catatan:** Teknik T1490 (Inhibit System Recovery), T1547.001 (Registry Run Keys), dan T1053.005 (Scheduled Task) telah berhasil dicakup melalui adaptasi aturan deteksi dari Azure Sentinel & SigmaHQ pada `scripts/process-chain-rules.xml` (rules 110039–110044). Teknik T1059.001 (PowerShell) dan T1059.006 (Python) dicakup oleh deteksi LOLBin Chain via Sysmon.
 
 ---
 
