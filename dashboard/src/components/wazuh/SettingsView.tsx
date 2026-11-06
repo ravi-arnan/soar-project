@@ -1,9 +1,18 @@
 'use client';
 
-import React from 'react';
-import { CheckCircle2, XCircle, Server, Webhook, Database } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  CheckCircle2,
+  XCircle,
+  Server,
+  Webhook,
+  Database,
+  Sliders,
+  Key,
+} from 'lucide-react';
 import type { FleetHealth, FleetStats } from '@/lib/fleet';
 import { formatWazuhTime } from '@/lib/fleet';
+import { ApiKeysView } from './ApiKeysView';
 
 interface SettingsViewProps {
   health?: FleetHealth;
@@ -12,6 +21,7 @@ interface SettingsViewProps {
   online: boolean;
   refreshMs: number;
   onRefreshMsChange: (ms: number) => void;
+  initialTab?: 'general' | 'keys';
 }
 
 function StatusRow({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
@@ -30,100 +40,142 @@ function StatusRow({ ok, label, detail }: { ok: boolean; label: string; detail: 
   );
 }
 
-export function SettingsView({ health, stats, generatedAt, online, refreshMs, onRefreshMsChange }: SettingsViewProps) {
+export function SettingsView({
+  health,
+  stats,
+  generatedAt,
+  online,
+  refreshMs,
+  onRefreshMsChange,
+  initialTab = 'general',
+}: SettingsViewProps) {
+  const [activeTab, setActiveTab] = useState<'general' | 'keys'>(initialTab);
+
   const endpoints = [
     { method: 'GET', path: '/api/fleet', desc: 'Status agent + kesehatan stack' },
     { method: 'GET', path: '/api/events', desc: 'Threat events untuk dashboard' },
-    { method: 'POST', path: '/webhook-log', desc: 'Node n8n Log ke Fleet menulis verdict ke sini' },
-    { method: 'POST', path: ':5678/webhook/wazuh-alert', desc: 'Webhook n8n Deteksi Malware' },
-    { method: 'POST', path: ':5678/webhook/wazuh-phishing', desc: 'Webhook n8n Deteksi Phishing' },
+    { method: 'GET', path: '/api/keys', desc: 'Daftar API Key machine-to-machine' },
+    { method: 'POST', path: '/api/commands', desc: 'Karantina, scan, dan mitigasi aktif' },
+    { method: 'POST', path: '/webhook-log', desc: 'Node n8n Log ke Fleet menulis alert' },
   ];
 
   return (
     <div className="space-y-4">
-      {/* Preferensi */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-4">
-        <h2 className="text-[14px] font-semibold mb-3">Preferences</h2>
-        <div className="flex items-center justify-between py-2 border-b border-[#EDEEF2]">
-          <div>
-            <div className="text-[13px] font-medium">Refresh interval</div>
-            <div className="text-[12px] text-[#5A626F]">Seberapa sering dashboard menarik data fleet</div>
-          </div>
-          <select
-            value={refreshMs}
-            onChange={(e) => onRefreshMsChange(Number(e.target.value))}
-            className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[12px] bg-white"
-          >
-            <option value={5000}>5 detik</option>
-            <option value={10000}>10 detik</option>
-            <option value={30000}>30 detik</option>
-          </select>
-        </div>
+      {/* Tab Switcher */}
+      <div className="flex items-center gap-2 border-b border-[#D3DAE6] pb-2">
+        <button
+          onClick={() => setActiveTab('general')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded transition ${
+            activeTab === 'general'
+              ? 'bg-[#006BB4] text-white'
+              : 'text-[#5A626F] hover:bg-[#F0F4F8]'
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          General & Diagnostics
+        </button>
+        <button
+          onClick={() => setActiveTab('keys')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded transition ${
+            activeTab === 'keys'
+              ? 'bg-[#006BB4] text-white'
+              : 'text-[#5A626F] hover:bg-[#F0F4F8]'
+          }`}
+        >
+          <Key className="w-3.5 h-3.5" />
+          API Keys & Agent Access
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Stack status */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Server className="w-4 h-4 text-[#006BB4]" />
-            <h2 className="text-[14px] font-semibold">Stack status</h2>
+      {activeTab === 'keys' ? (
+        <ApiKeysView />
+      ) : (
+        <div className="space-y-4">
+          {/* Preferensi */}
+          <div className="bg-white border border-[#D3DAE6] rounded p-4">
+            <h2 className="text-[14px] font-semibold mb-3">Preferences</h2>
+            <div className="flex items-center justify-between py-2 border-b border-[#EDEEF2]">
+              <div>
+                <div className="text-[13px] font-medium">Refresh interval</div>
+                <div className="text-[12px] text-[#5A626F]">Seberapa sering dashboard menarik data fleet</div>
+              </div>
+              <select
+                value={refreshMs}
+                onChange={(e) => onRefreshMsChange(Number(e.target.value))}
+                className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[12px] bg-white"
+              >
+                <option value={5000}>5 detik</option>
+                <option value={10000}>10 detik</option>
+                <option value={30000}>30 detik</option>
+              </select>
+            </div>
           </div>
-          <StatusRow ok={!!health?.n8n} label="n8n" detail="Orkestrasi workflow SOAR" />
-          <StatusRow ok={!!health?.gemini} label="AI analysis" detail="LLM untuk Analisis AI Telegram" />
-          <StatusRow ok={!!health?.wazuh_api} label="Wazuh API" detail="Active response + query agent" />
-        </div>
 
-        {/* Data status */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Database className="w-4 h-4 text-[#006BB4]" />
-            <h2 className="text-[14px] font-semibold">Data status</h2>
-          </div>
-          <StatusRow ok={online} label="Backend fleet" detail={online ? 'Terjangkau' : 'Tidak terjangkau'} />
-          <StatusRow
-            ok={stats.active > 0}
-            label="Agent aktif"
-            detail={`${stats.active}/${stats.total} endpoint (${stats.rust} Rust agent)`}
-          />
-          <StatusRow
-            ok={true}
-            label="Event tercatat (24h)"
-            detail={`${stats.events_total?.toLocaleString('en-US') || 0} event (24h) · ${(stats.events_all_time ?? stats.events_total ?? 0).toLocaleString('en-US')} total`}
-          />
-          <div className="pt-2 text-[12px] text-[#5A626F]">
-            Update terakhir: {generatedAt ? formatWazuhTime(generatedAt) : '-'}
-          </div>
-        </div>
-      </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Stack status */}
+            <div className="bg-white border border-[#D3DAE6] rounded p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Server className="w-4 h-4 text-[#006BB4]" />
+                <h2 className="text-[14px] font-semibold">Stack status</h2>
+              </div>
+              <StatusRow ok={!!health?.n8n} label="n8n" detail="Orkestrasi workflow SOAR" />
+              <StatusRow ok={!!health?.gemini} label="AI analysis" detail="LLM untuk Analisis AI Telegram & Triage" />
+              <StatusRow ok={!!health?.wazuh_api} label="Wazuh API" detail="Active response + query agent" />
+            </div>
 
-      {/* Endpoints */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <Webhook className="w-4 h-4 text-[#006BB4]" />
-          <h2 className="text-[14px] font-semibold">Backend endpoints</h2>
-        </div>
-        <div className="text-[12px] text-[#5A626F] mb-2">
-          Dashboard rewrite <code className="bg-[#F0F4F8] px-1 rounded">/api/*</code> ke fleet-monitor
-          <code className="bg-[#F0F4F8] px-1 rounded">:8080</code>. Webhook n8n di
-          <code className="bg-[#F0F4F8] px-1 rounded">:5678</code>.
-        </div>
-        {endpoints.map((e) => (
-          <div
-            key={e.method + e.path}
-            className="flex items-center gap-3 py-2 border-b border-[#EDEEF2] last:border-0 text-[13px]"
-          >
-            <span
-              className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded ${
-                e.method === 'GET' ? 'bg-[#EBF5FB] text-[#006BB4]' : 'bg-[#FEF3E8] text-[#B25E09]'
-              }`}
-            >
-              {e.method}
-            </span>
-            <code className="font-mono text-[12px]">{e.path}</code>
-            <span className="text-[12px] text-[#5A626F] ml-auto text-right">{e.desc}</span>
+            {/* Data status */}
+            <div className="bg-white border border-[#D3DAE6] rounded p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Database className="w-4 h-4 text-[#006BB4]" />
+                <h2 className="text-[14px] font-semibold">Data status</h2>
+              </div>
+              <StatusRow ok={online} label="Backend fleet" detail={online ? 'Terjangkau' : 'Tidak terjangkau'} />
+              <StatusRow
+                ok={stats.active > 0}
+                label="Agent aktif"
+                detail={`${stats.active}/${stats.total} endpoint (${stats.rust} Rust agent)`}
+              />
+              <StatusRow
+                ok={true}
+                label="Event tercatat (24h)"
+                detail={`${stats.events_total?.toLocaleString('en-US') || 0} event (24h) · ${(stats.events_all_time ?? stats.events_total ?? 0).toLocaleString('en-US')} total`}
+              />
+              <div className="pt-2 text-[12px] text-[#5A626F]">
+                Update terakhir: {generatedAt ? formatWazuhTime(generatedAt) : '-'}
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
+
+          {/* Endpoints */}
+          <div className="bg-white border border-[#D3DAE6] rounded p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Webhook className="w-4 h-4 text-[#006BB4]" />
+              <h2 className="text-[14px] font-semibold">Backend endpoints</h2>
+            </div>
+            <div className="text-[12px] text-[#5A626F] mb-2">
+              Dashboard rewrite <code className="bg-[#F0F4F8] px-1 rounded">/api/*</code> ke fleet-monitor
+              <code className="bg-[#F0F4F8] px-1 rounded">:8080</code>. Webhook n8n di
+              <code className="bg-[#F0F4F8] px-1 rounded">:5678</code>.
+            </div>
+            {endpoints.map((e) => (
+              <div
+                key={e.method + e.path}
+                className="flex items-center gap-3 py-2 border-b border-[#EDEEF2] last:border-0 text-[13px]"
+              >
+                <span
+                  className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded ${
+                    e.method === 'GET' ? 'bg-[#EBF5FB] text-[#006BB4]' : 'bg-[#FEF3E8] text-[#B25E09]'
+                  }`}
+                >
+                  {e.method}
+                </span>
+                <code className="font-mono text-[12px]">{e.path}</code>
+                <span className="text-[12px] text-[#5A626F] ml-auto text-right">{e.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

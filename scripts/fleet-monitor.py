@@ -19,11 +19,13 @@ Upgrade path: ganti http.server dengan FastAPI + Prometheus kalau butuh Grafana 
 """
 
 import base64
+import hashlib
 import hmac
 import ipaddress
 import json
 import os
 import re
+import secrets
 import sqlite3
 import ssl
 import time
@@ -1171,6 +1173,21 @@ def _event_store_init():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_events_source_sev ON events(source, severity)"
             )
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS api_keys (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    key_hash TEXT NOT NULL UNIQUE,
+                    prefix TEXT NOT NULL,
+                    scopes TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_used_at TEXT,
+                    revoked INTEGER NOT NULL DEFAULT 0
+                )"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)"
+            )
         print(f"event store siap: {EVENTS_DB}", flush=True)
         _event_store_load_recent()
     except Exception as e:
@@ -1263,6 +1280,118 @@ def _event_store_query(since=None, until=None, severity=None, agent_id=None, q=N
     except Exception as e:
         print(f"event store query error: {e}", flush=True)
         return []
+
+
+def _hash_api_key(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _api_key_create(name, scopes):
+    clean_name = (name or "AI Agent").strip()[:100]
+    valid_scopes = [
+        s.strip()
+        for s in (scopes or [])
+        if s.strip() in ("read:fleet", "read:intel", "write:actions", "*")
+    ]
+    if not valid_scopes:
+        valid_scopes = ["read:fleet", "read:intel"]
+    scopes_str = ",".join(valid_scopes)
+
+    raw_token = f"soar_live_{secrets.token_hex(24)}"
+    key_hash = _hash_api_key(raw_token)
+    prefix = f"{raw_token[:16]}...{raw_token[-4:]}"
+    key_id = f"key_{uuid.uuid4().hex[:12]}"
+    created_at = datetime.now(WITA).isoformat()
+
+    with closing(_db()) as conn, conn:
+        conn.execute(
+            """INSERT INTO api_keys
+            (id, name, key_hash, prefix, scopes, created_at, last_used_at, revoked)
+            VALUES (?, ?, ?, ?, ?, ?, NULL, 0)""",
+            (key_id, clean_name, key_hash, prefix, scopes_str, created_at),
+        )
+
+    return {
+        "id": key_id,
+        "name": clean_name,
+        "token": raw_token,
+        "prefix": prefix,
+        "scopes": valid_scopes,
+        "created_at": created_at,
+    }
+
+
+def _api_key_list():
+    try:
+        with closing(_db()) as conn:
+            rows = conn.execute(
+                """SELECT id, name, prefix, scopes, created_at, last_used_at, revoked
+                FROM api_keys ORDER BY created_at DESC"""
+            ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "prefix": r["prefix"],
+                "scopes": [s.strip() for s in r["scopes"].split(",") if s.strip()],
+                "created_at": r["created_at"],
+                "last_used_at": r["last_used_at"],
+                "revoked": bool(r["revoked"]),
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"api_key_list error: {e}", flush=True)
+        return []
+
+
+def _api_key_revoke(key_id):
+    try:
+        with closing(_db()) as conn, conn:
+            cur = conn.execute("UPDATE api_keys SET revoked = 1 WHERE id = ?", (str(key_id),))
+            return cur.rowcount > 0
+    except Exception as e:
+        print(f"api_key_revoke error: {e}", flush=True)
+        return False
+
+
+def _verify_api_key(headers, required_scope=""):
+    auth = headers.get("Authorization", "").strip()
+    x_api_key = headers.get("X-API-Key", "").strip()
+    token = ""
+    if auth.startswith("Bearer "):
+        token = auth[7:].strip()
+    elif x_api_key:
+        token = x_api_key
+
+    if not token or not token.startswith("soar_live_"):
+        return False, None
+
+    key_hash = _hash_api_key(token)
+    try:
+        with closing(_db()) as conn:
+            row = conn.execute(
+                "SELECT id, name, scopes, revoked FROM api_keys WHERE key_hash = ?",
+                (key_hash,),
+            ).fetchone()
+        if not row or row["revoked"]:
+            return False, None
+
+        scopes = [s.strip() for s in row["scopes"].split(",") if s.strip()]
+        if required_scope and ("*" not in scopes and required_scope not in scopes):
+            return False, None
+
+        now_iso = datetime.now(WITA).isoformat()
+        with closing(_db()) as conn, conn:
+            conn.execute(
+                "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
+                (now_iso, row["id"]),
+            )
+
+        return True, {"id": row["id"], "name": row["name"], "scopes": scopes}
+    except Exception as e:
+        print(f"verify_api_key error: {e}", flush=True)
+        return False, None
 
 
 def _indexer_enabled():
@@ -1806,6 +1935,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(HTML.encode())
         elif parsed.path == "/api/fleet":
+            _verify_api_key(self.headers, "read:fleet")
             data = build_fleet(cfg)
             body = json.dumps(data).encode()
             self.send_response(200)
@@ -1813,12 +1943,14 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif parsed.path == "/api/events":
+            _verify_api_key(self.headers, "read:intel")
             body = json.dumps({"events": list(reversed(EVENTS))}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(body)
         elif parsed.path == "/api/events/history":
+            _verify_api_key(self.headers, "read:intel")
             # Riwayat event per rentang waktu (SOAR SQLite + Wazuh Indexer).
             # ?since&until&limit&offset&severity&agent_id&source&q&dedup
             qs = parse_qs(parsed.query)
@@ -1921,6 +2053,15 @@ class Handler(BaseHTTPRequestHandler):
                         "file": VT_CACHE_FILE,
                     },
                 )
+        elif parsed.path == "/api/keys":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            self._json(200, {"keys": _api_key_list()})
         elif parsed.path == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -2248,8 +2389,49 @@ class Handler(BaseHTTPRequestHandler):
                 )
             except Exception as e:
                 self._json(400, {"error": str(e)})
-        elif parsed.path == "/api/commands":
+        elif parsed.path == "/api/keys":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                name = str(data.get("name", "AI Agent")).strip()
+                scopes = data.get("scopes", ["read:fleet", "read:intel"])
+                if not isinstance(scopes, list):
+                    scopes = ["read:fleet", "read:intel"]
+                created = _api_key_create(name, scopes)
+                self._json(201, created)
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/keys/revoke":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                key_id = str(data.get("id", "")).strip()
+                if not key_id:
+                    self._json(400, {"error": "id key diperlukan"})
+                    return
+                ok = _api_key_revoke(key_id)
+                self._json(200, {"revoked": ok, "id": key_id})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/commands":
+            valid_key, key_info = _verify_api_key(self.headers, "write:actions")
+            if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
                 self._json(
                     401,
                     {"error": "unauthorized"},
@@ -2272,6 +2454,8 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError) as exc:
                 self._json(400, {"error": str(exc)})
                 return
+            if valid_key and key_info:
+                command["by"] = f"agent:{key_info['name']}"
             aid = command["agent_id"]
             if aid not in FLEET_AGENT_POLL_TOKENS:
                 self._json(404, {"error": "agent tidak terdaftar"})

@@ -12,6 +12,7 @@ import {
   ExternalLink,
   ShieldCheck,
   Network,
+  Key,
 } from 'lucide-react';
 import { WazuhLogo } from './WazuhLogo';
 import type { FleetHealth } from '@/lib/fleet';
@@ -63,6 +64,7 @@ export const WazuhSidebar = React.memo(function WazuhSidebar({
       title: 'Operations & Management',
       items: [
         { id: 'network-map', label: 'Network map', icon: Network },
+        { id: 'api-keys', label: 'API Keys', icon: Key },
         { id: 'settings', label: 'Settings', icon: Settings },
       ],
     },
