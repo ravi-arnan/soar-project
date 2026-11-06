@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Lembar Kemajuan Bimbingan Tugas Akhir - Ravi Arnan Irianto</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 12mm 14mm 12mm 14mm;
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #1e293b;
+    line-height: 1.45;
+    font-size: 9.5pt;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .header-box {
+    border-bottom: 2px solid #1a568e;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  .header-tag {
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #1a568e;
+  }
+  .header-title {
+    font-size: 14pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 3px 0 3px 0;
+    line-height: 1.25;
+  }
+  .header-meta {
+    font-size: 8.5pt;
+    color: #475569;
+    margin: 0;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-meta strong {
+    color: #0f172a;
+  }
+
+  .pitch-box {
+    background: #f8fafc;
+    border-left: 3.5px solid #1a568e;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border-radius: 0 4px 4px 0;
+  }
+  .pitch-box p {
+    margin: 0;
+    font-size: 9pt;
+    color: #334155;
+    font-style: italic;
+  }
+
+  h2 {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 10px 0 6px 0;
+    padding-bottom: 3px;
+    border-bottom: 1px solid #e2e8f0;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .card {
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: #fafafa;
+  }
+  .card-title {
+    font-size: 9pt;
+    font-weight: 700;
+    color: #1a568e;
+    margin-bottom: 4px;
+  }
+  .card-desc {
+    font-size: 8.5pt;
+    color: #475569;
+    margin: 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+    font-size: 8.5pt;
+  }
+  th {
+    background: #f1f5f9;
+    color: #334155;
+    text-align: left;
+    padding: 6px 8px;
+    border: 1px solid #cbd5e1;
+    font-weight: 700;
+  }
+  td {
+    padding: 5px 8px;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+  }
+  tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+  .val-highlight {
+    font-weight: 700;
+    color: #0f766e;
+  }
+
+  .demo-steps {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 8.8pt;
+    color: #334155;
+  }
+  .demo-steps li {
+    margin-bottom: 4px;
+  }
+
+  .qa-block {
+    margin-bottom: 6px;
+    font-size: 8.8pt;
+  }
+  .qa-q {
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .qa-a {
+    color: #334155;
+    margin-left: 10px;
+  }
+
+  .footer-note {
+    margin-top: 12px;
+    padding-top: 6px;
+    border-top: 1px dashed #cbd5e1;
+    font-size: 7.5pt;
+    color: #64748b;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<div class="header-box">
+  <div class="header-tag">Lembar Kemajuan Riset Tugas Akhir &bull; Periode November 2026</div>
+  <div class="header-title">Sistem SOAR Open-Source Berbasis n8n & Agen Ringan Rust</div>
+  <div class="header-meta">
+    <div><strong>Mahasiswa:</strong> Ravi Arnan Irianto (NIM: 2305551076)</div>
+    <div><strong>Dosen Pembimbing 1:</strong> I Nyoman Piarsa, S.T., M.T.</div>
+    <div><strong>Jadwal:</strong> Sabtu, 7 November 2026</div>
+  </div>
+</div>
+
+<div class="pitch-box">
+  <p>&ldquo;Pak Nyoman, sistem ini menyelesaikan kendala nyata di CV Bali Handmade: staf toko sering tak sengaja mengunduh file jahat atau tautan phishing di PC kasir spek rendah, sementara admin tidak mungkin memeriksa puluhan PC manual. Dengan agen Rust ultra-ringan (~7 MB RAM), sidik jari file dikirim ke pusat komando n8n untuk diuji reputasinya ke 70+ vendor global. Ancaman kritis diisolasi seketika (0,04 detik), sedangkan kasus abu-abu dimintakan persetujuan admin lewat tombol Telegram, mencegah salah hapus dokumen bisnis yang sah.&rdquo;</p>
+</div>
+
+<h2>1. Kemajuan Teknis yang Dilaporkan Minggu Ini</h2>
+<div class="card-grid">
+  <div class="card">
+    <div class="card-title">A. Deteksi Pre-Encryption Ransomware (MITRE T1490 & T1547.001)</div>
+    <div class="card-desc">Mengadaptasi aturan deteksi dari Microsoft Azure Sentinel & SigmaHQ ke dalam <code>scripts/process-chain-rules.xml</code> (Rule 110039-110044). Mendeteksi upaya malware melumpuhkan backup Windows (<code>vssadmin delete shadows</code>, <code>bcdedit</code>) dan autostart persistence di Registry/Task Scheduler. Unit test lolos 100%.</div>
+  </div>
+  <div class="card">
+    <div class="card-title">B. Studi Komparasi Empiris: n8n vs Shuffle SOAR di Localhost</div>
+    <div class="card-desc">Melakukan pengujian nyata terhadap Shuffle SOAR (platform pembanding terpopuler). Terbukti Shuffle memerlukan klaster OpenSearch ~4,5 GB RAM dengan Docker-in-Docker overhead, sedangkan arsitektur n8n kita hanya butuh ~400 MB RAM (hemat >90% memori), sangat ideal bagi UKM.</div>
+  </div>
+  <div class="card">
+    <div class="card-title">C. Garansi Transmisi Callback Telegram (Anti-Downtime)</div>
+    <div class="card-desc">Pembaruan <code>tg-callback-poller.py</code> dengan mekanisme <em>offset protection</em>: jika server n8n sempat terputus sesaat, klik tombol analis (Karantina/Abaikan) tidak akan hilang dan otomatis diteruskan ulang begitu server pulih.</div>
+  </div>
+  <div class="card">
+    <div class="card-title">D. Harmonisasi Host Network Health Monitor</div>
+    <div class="card-desc">Kontainer pemantau kesehatan dialihkan ke host network untuk mengeliminasi false alarm status Wazuh API, menjaga riwayat status agen tetap utuh saat inspeksi jaringan berlangsung.</div>
+  </div>
+</div>
+
+<h2>2. Matriks Pengukuran Kuantitatif Empiris</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Parameter Evaluasi</th>
+      <th>Hasil Pengujian Riil</th>
+      <th>Standar / Pembanding</th>
+      <th>Keterangan Bukti Empiris</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>MTTR Karantina Malware (Agen Rust)</strong></td>
+      <td class="val-highlight">0,04 detik (median 0,03 s)</td>
+      <td>Standar industri: &lt; 10 s</td>
+      <td>Diukur N=30 pengujian dengan cache hangat</td>
+    </tr>
+    <tr>
+      <td><strong>MTTR Karantina (Wazuh Stack)</strong></td>
+      <td>1,68 detik (median 1,42 s)</td>
+      <td>Manual admin: ~15 menit</td>
+      <td>Diukur N=15 pengujian di server live</td>
+    </tr>
+    <tr>
+      <td><strong>MTTR Domain Sinkhole Phishing</strong></td>
+      <td class="val-highlight">2,13 detik</td>
+      <td>Manual DNS: jam/hari</td>
+      <td>5/5 pengujian sukses memblokir domain via /etc/hosts</td>
+    </tr>
+    <tr>
+      <td><strong>Throughput Beban (Load Test)</strong></td>
+      <td>29,49 alert/detik</td>
+      <td>Kapasitas 100 endpoint</td>
+      <td>Rata-rata latensi 164,84 ms pada concurrency=5</td>
+    </tr>
+    <tr>
+      <td><strong>False Positive Suppression Rate</strong></td>
+      <td class="val-highlight">100% (8/8 file ditekan)</td>
+      <td>FIM konvensional: sering bising</td>
+      <td>File jinak (.mp4, .pdf) tidak memicu alarm palsu</td>
+    </tr>
+    <tr>
+      <td><strong>Konsumsi Memori Agen Endpoint</strong></td>
+      <td class="val-highlight">~7 - 10 MB RAM</td>
+      <td>Wazuh agent: ~80-150 MB</td>
+      <td>Binary mandiri musl 5,4 MB tanpa runtime external</td>
+    </tr>
+    <tr>
+      <td><strong>Kepatuhan Guardrail LLM DeepSeek</strong></td>
+      <td>100% lolos (30/30 tes)</td>
+      <td>Suhu 0.3, N=5 per skenario</td>
+      <td>Nol salah vonis terhadap binary sistem OS</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>3. Alur Panduan Demo Langsung (Live Demonstration)</h2>
+<ol class="demo-steps">
+  <li><strong>Notifikasi & Keputusan Telegram:</strong> Tunjukkan bot Telegram menerima alert indikasi file malware dengan rincian hash, skor konsensus VirusTotal, dan tombol aksi <code>[Karantina File]</code> / <code>[Abaikan]</code>. Klik tombol dan perlihatkan update audit trail seketika.</li>
+  <li><strong>Dashboard Web Fleet Monitor:</strong> Tunjukkan antarmuka web monitoring: visualisasi donut severity, status koneksi 100+ agen kasir, dan ringkasan event ancaman realtime.</li>
+  <li><strong>Verifikasi Beban Rendah Agen:</strong> Tunjukkan terminal endpoint dengan perintah <code>top</code>/<code>htop</code>: proses <code>soar-agent</code> hanya memakan RAM ~7 MB dan 0% CPU.</li>
+</ol>
+
+<h2>4. Antisipasi Tanya Jawab Kritis</h2>
+<div class="qa-block">
+  <div class="qa-q">Q: &ldquo;Kenapa agen dibuat dengan Rust, bukan Go seperti yang saya contohkan?&rdquo;</div>
+  <div class="qa-a">&rarr; &ldquo;Rust menghasilkan binary statis tanpa overhead runtime dan garbage collector, sehingga penggunaan RAM bisa ditekan hingga hanya ~7 MB (dibanding Go yang ~15-25 MB). Sangat aman untuk komputer kasir toko ber-RAM terbatas.&rdquo;</div>
+</div>
+<div class="qa-block">
+  <div class="qa-q">Q: &ldquo;Apakah sistem aman dari risiko salah hapus dokumen kerja kasir?&rdquo;</div>
+  <div class="qa-a">&rarr; &ldquo;Sangat aman. Sistem menerapkan Human-in-the-Loop: file ambigu (skor 1-19) tidak dihapus otomatis, melainkan wajib persetujuan analis via Telegram. Ada juga proteksi pembatasan direktori sistem operasi.&rdquo;</div>
+</div>
+
+<div class="footer-note">
+  Dokumentasi proyek ter-version-control di repository <code>soar-project</code> &bull; 130 Unit Tests PASS &bull; Dicetak otomatis untuk sesi bimbingan 7 November 2026.
+</div>
+
+</body>
+</html>

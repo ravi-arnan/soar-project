@@ -365,4 +365,63 @@
     <group>process_chain,lolbin,attack_T1218.005,</group>
   </rule>
 
+  <!-- ============================================================
+       AZURE SENTINEL & SIGMA ADAPTATION: Ransomware Pre-Encryption & Persistence
+       Pola deteksi diadaptasi dari Azure Sentinel / SigmaHQ Rules:
+       - T1490: Inhibit System Recovery (vssadmin / wmic / bcdedit / wbadmin)
+       - T1547.001: Boot or Logon Autostart Execution - Registry Run Keys / Startup
+       - T1053.005: Scheduled Task / Job - Scheduled Task
+       ============================================================ -->
+
+  <!-- LEVEL 12: Inhibit System Recovery — penghapusan shadow copy / backup / recovery disabled (T1490, JSON & teks) -->
+  <rule id="110039" level="12">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\(vssadmin|wmic|bcdedit|wbadmin)\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(delete\s+shadows|shadowcopy\s+delete|resize\s+shadowstorage|recoveryenabled\s+no|bootstatuspolicy\s+ignoreallfailures|delete\s+(catalog|systemstatebackup))</field>
+    <description>SOAR: Ransomware Pre-Encryption - Inhibit System Recovery via vssadmin/wmic/bcdedit (T1490, JSON)</description>
+    <group>process_chain,lolbin,ransomware_prevention,inhibit_system_recovery,attack_impact,attack_T1490,</group>
+  </rule>
+
+  <rule id="110040" level="12">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="pcre2">(?i)\\(vssadmin|wmic|bcdedit|wbadmin)\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)(delete\s+shadows|shadowcopy\s+delete|resize\s+shadowstorage|recoveryenabled\s+no|bootstatuspolicy\s+ignoreallfailures|delete\s+(catalog|systemstatebackup))</field>
+    <description>SOAR: Ransomware Pre-Encryption - Inhibit System Recovery via vssadmin/wmic/bcdedit (T1490, teks-klasik)</description>
+    <group>process_chain,lolbin,ransomware_prevention,inhibit_system_recovery,attack_impact,attack_T1490,</group>
+  </rule>
+
+  <!-- LEVEL 9: Persistence via Registry Run Keys pointing to user-writable directory (T1547.001, JSON & teks) -->
+  <rule id="110041" level="9">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\reg\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\badd\b.*\\currentversion\\run(once)?\b.*\\(temp|appdata|roaming|downloads|users\\public)\b</field>
+    <description>SOAR: Persistence via Registry Run Keys pointing to user-writable path (T1547.001, JSON)</description>
+    <group>process_chain,lolbin,persistence,attack_persistence,attack_T1547.001,</group>
+  </rule>
+
+  <rule id="110042" level="9">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="pcre2">(?i)\\reg\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)\badd\b.*\\currentversion\\run(once)?\b.*\\(temp|appdata|roaming|downloads|users\\public)\b</field>
+    <description>SOAR: Persistence via Registry Run Keys pointing to user-writable path (T1547.001, teks-klasik)</description>
+    <group>process_chain,lolbin,persistence,attack_persistence,attack_T1547.001,</group>
+  </rule>
+
+  <!-- LEVEL 9: Persistence via Scheduled Task pointing to user-writable directory (T1053.005, JSON & teks) -->
+  <rule id="110043" level="9">
+    <if_group>sysmon_event1</if_group>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\schtasks\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)/create\b.*(/tr\b).*\\(temp|appdata|roaming|downloads|users\\public)\b</field>
+    <description>SOAR: Persistence via Scheduled Task pointing to user-writable path (T1053.005, JSON)</description>
+    <group>process_chain,lolbin,persistence,scheduled_task,attack_persistence,attack_T1053.005,</group>
+  </rule>
+
+  <rule id="110044" level="9">
+    <if_group>sysmon_event1</if_group>
+    <field name="sysmon.image" type="pcre2">(?i)\\schtasks\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)/create\b.*(/tr\b).*\\(temp|appdata|roaming|downloads|users\\public)\b</field>
+    <description>SOAR: Persistence via Scheduled Task pointing to user-writable path (T1053.005, teks-klasik)</description>
+    <group>process_chain,lolbin,persistence,scheduled_task,attack_persistence,attack_T1053.005,</group>
+  </rule>
+
 </group>
