@@ -2809,7 +2809,9 @@ class Handler(BaseHTTPRequestHandler):
             status_filter = qs.get("status", [""])[0].strip() or None
             self._json(200, {"requests": _enroll_requests_list(status_filter)})
         elif parsed.path == "/api/enroll/script/linux":
-            host = self.headers.get("Host", "127.0.0.1:8080")
+            host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "127.0.0.1:8080")
+            if "host.docker.internal" in host or "127.0.0.1" in host:
+                host = "soar.raviarnan.dev"
             proto = "https" if "soar.raviarnan.dev" in host or self.headers.get("X-Forwarded-Proto") == "https" else "http"
             origin = f"{proto}://{host}"
             script = _generate_linux_installer_script(origin)
@@ -2818,7 +2820,9 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(script.encode("utf-8"))
         elif parsed.path == "/api/enroll/script/windows":
-            host = self.headers.get("Host", "127.0.0.1:8080")
+            host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "127.0.0.1:8080")
+            if "host.docker.internal" in host or "127.0.0.1" in host:
+                host = "soar.raviarnan.dev"
             proto = "https" if "soar.raviarnan.dev" in host or self.headers.get("X-Forwarded-Proto") == "https" else "http"
             origin = f"{proto}://{host}"
             script = _generate_windows_installer_script(origin)
