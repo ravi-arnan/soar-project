@@ -105,6 +105,85 @@ export function sessionFromRequest(request: Request): string | null {
   return value ? value.slice(prefix.length) : null;
 }
 
+const emailRoleCache = new Map<string, { user: SessionUser; expires: number }>();
+
+function fleetBaseUrl(): string {
+  const rawBase =
+    process.env.FLEET_API_URL ||
+    (process.env.NODE_ENV === "production"
+      ? "http://host.docker.internal:8080"
+      : "http://127.0.0.1:8080");
+  return rawBase.split("?")[0].replace(/\/$/, "");
+}
+
+export async function resolveAuthorizedSession(
+  request: Request,
+  secret = process.env.DASHBOARD_LOGIN_TOKEN ?? "",
+  now = Date.now(),
+): Promise<SessionUser | null> {
+  // 1. Cloudflare Access Zero Trust (Email-based authentication via tunnel)
+  const cfEmail = request.headers.get("cf-access-authenticated-user-email")?.trim().toLowerCase();
+  if (cfEmail) {
+    const adminEmail = (process.env.ADMIN_EMAIL ?? "raviarnankeren@gmail.com").trim().toLowerCase();
+    if (cfEmail === adminEmail) {
+      return {
+        username: "admin",
+        role: "admin",
+        email: cfEmail,
+        name: "Ravi Arnan (SOC Lead)",
+      };
+    }
+
+    // Cek cache in-memory untuk performa 0ms
+    const cached = emailRoleCache.get(cfEmail);
+    if (cached && cached.expires > now) {
+      return cached.user;
+    }
+
+    // Lookup user role dari database fleet-monitor
+    try {
+      const lookupUrl = `${fleetBaseUrl()}/api/users/lookup?email=${encodeURIComponent(cfEmail)}`;
+      const res = await fetch(lookupUrl, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.user) {
+          const user: SessionUser = {
+            username: data.user.username,
+            role: data.user.role,
+            email: data.user.email || cfEmail,
+            name: data.user.name || data.user.username,
+          };
+          emailRoleCache.set(cfEmail, { user, expires: now + 60_000 });
+          return user;
+        }
+      }
+    } catch {
+      // Fallback jika backend unreachable
+    }
+
+    const fallbackUser: SessionUser = {
+      username: cfEmail.split("@")[0],
+      role: "viewer",
+      email: cfEmail,
+      name: cfEmail,
+    };
+    emailRoleCache.set(cfEmail, { user: fallbackUser, expires: now + 30_000 });
+    return fallbackUser;
+  }
+
+  // 2. Cookie sesi resmi SOAR (dari verifikasi 2FA Dual-Channel Email & Telegram)
+  if (!validLoginToken(secret)) return null;
+  const cookieValue = sessionFromRequest(request);
+  if (!cookieValue) return null;
+  const parsed = parseSession(cookieValue, secret, now);
+  return parsed.valid && parsed.user ? parsed.user : null;
+}
+
 export function getAuthorizedSession(
   request: Request,
   secret = process.env.DASHBOARD_LOGIN_TOKEN ?? "",
@@ -121,6 +200,10 @@ export function getAuthorizedSession(
         email: cfEmail,
         name: "Ravi Arnan (SOC Lead)",
       };
+    }
+    const cached = emailRoleCache.get(cfEmail);
+    if (cached && cached.expires > now) {
+      return cached.user;
     }
     return {
       username: cfEmail.split("@")[0],

@@ -1,9 +1,9 @@
-import { getAuthorizedSession } from "../../../../lib/session.ts";
+import { resolveAuthorizedSession } from "../../../../lib/session.ts";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request): Promise<Response> {
-  const user = getAuthorizedSession(request);
+  const user = await resolveAuthorizedSession(request);
   if (!user) {
     return Response.json({ authenticated: false, user: null }, { status: 200 });
   }
