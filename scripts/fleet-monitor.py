@@ -1431,22 +1431,63 @@ def _init_default_users(conn):
     try:
         cur = conn.execute("SELECT count(*) FROM users")
         count = cur.fetchone()[0]
+        admin_email = os.environ.get("ADMIN_EMAIL", "raviarnankeren@gmail.com")
+        now_iso = datetime.now(WITA).isoformat()
         if count == 0:
-            now_iso = datetime.now(WITA).isoformat()
-            admin_email = os.environ.get("ADMIN_EMAIL", "raviarnankeren@gmail.com")
             defaults = [
                 ("usr_admin", "admin", _hash_password(os.environ.get("ADMIN_INITIAL_PASSWORD", "Admin@SOAR2026!")), "admin", admin_email, "Ravi Arnan (SOC Lead)", now_iso, 1),
                 ("usr_analyst", "analyst", _hash_password("Analyst@SOAR2026!"), "analyst", "analyst@soar.local", "SOC Tier 2 Analyst", now_iso, 1),
-                ("usr_viewer", "auditor", _hash_password("Viewer@SOAR2026!"), "viewer", "auditor@soar.local", "Compliance Auditor", now_iso, 1),
+                ("usr_viewer", "auditor", _hash_password("Viewer@SOAR2026!"), "viewer", "ravinewgemini@gmail.com", "Ravi (Auditor Viewer)", now_iso, 1),
             ]
             conn.executemany(
                 """INSERT INTO users (id, username, password_hash, role, email, name, created_at, active)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 defaults,
             )
-            print("default users initialized: admin, analyst, auditor", flush=True)
+            print("default users initialized: admin, analyst, auditor (ravinewgemini@gmail.com)", flush=True)
+        else:
+            # Pastikan ravinewgemini@gmail.com terdaftar di tabel users
+            existing_viewer = conn.execute("SELECT id FROM users WHERE LOWER(email) = 'ravinewgemini@gmail.com'").fetchone()
+            if not existing_viewer:
+                auditor_row = conn.execute("SELECT id FROM users WHERE username = 'auditor'").fetchone()
+                if auditor_row:
+                    conn.execute("UPDATE users SET email = 'ravinewgemini@gmail.com', name = 'Ravi (Auditor Viewer)' WHERE username = 'auditor'")
+                    print("updated auditor email to ravinewgemini@gmail.com", flush=True)
+                else:
+                    conn.execute(
+                        """INSERT INTO users (id, username, password_hash, role, email, name, created_at, active)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+                        ("usr_ravinewgemini", "ravinewgemini", _hash_password("Viewer@SOAR2026!"), "viewer", "ravinewgemini@gmail.com", "Ravi (Auditor Viewer)", now_iso),
+                    )
+                    print("added ravinewgemini@gmail.com as viewer", flush=True)
     except Exception as e:
         print(f"init_default_users error: {e}", flush=True)
+
+
+def _user_by_email(email):
+    clean = (email or "").strip().lower()
+    if not clean:
+        return None
+    try:
+        with closing(_db()) as conn:
+            row = conn.execute(
+                """SELECT id, username, role, email, name, active
+                FROM users WHERE LOWER(email) = ? AND active = 1""",
+                (clean,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "email": row["email"],
+            "name": row["name"],
+            "active": bool(row["active"]),
+        }
+    except Exception as e:
+        print(f"user_by_email error: {e}", flush=True)
+        return None
 
 
 def _user_list():
@@ -2308,6 +2349,12 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             self._json(200, {"users": _user_list()})
+        elif parsed.path == "/api/users/lookup":
+            # Lookup user by email for Cloudflare Access Zero Trust SSO
+            qs = parse_qs(parsed.query)
+            email = qs.get("email", [""])[0].strip()
+            user = _user_by_email(email)
+            self._json(200, {"user": user})
         elif parsed.path == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")

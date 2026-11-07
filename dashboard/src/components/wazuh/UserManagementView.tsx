@@ -132,8 +132,8 @@ export function UserManagementView() {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formUsername || !formPassword) {
-      setError('Username dan Password wajib diisi');
+    if (!formUsername || !formPassword || !formEmail) {
+      setError('Email Cloudflare Access, Username, dan Password wajib diisi');
       return;
     }
     setIsSubmitting(true);
@@ -267,7 +267,8 @@ export function UserManagementView() {
               </h2>
             </div>
             <p className="text-[13px] text-[#5A626F] mt-1.5 max-w-3xl leading-relaxed">
-              Pusat kendali hak otorisasi berjenjang untuk personel SOC. Tentukan hak akses Admin (penuh),
+              Pusat kendali hak otorisasi berjenjang untuk personel SOC. Terintegrasi langsung dengan 
+              autentikasi Cloudflare Access Zero Trust berbasis email. Tentukan hak akses Admin (penuh),
               Analyst (respons mitigasi insiden), dan Viewer (audit kepatuhan &amp; monitoring read-only).
             </p>
           </div>
@@ -290,6 +291,18 @@ export function UserManagementView() {
               <UserPlus className="w-4 h-4" />
               <span>Tambah Pengguna</span>
             </button>
+          </div>
+        </div>
+
+        {/* Cloudflare Access Integration Info */}
+        <div className="mt-4 p-3.5 bg-[#F0F6FA] border border-[#CBE0F0] rounded flex items-start gap-3 text-[12px] text-[#004A80]">
+          <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-[#006BB4]" />
+          <div>
+            <span className="font-semibold text-[#1A1C21]">Terintegrasi Cloudflare Access Zero Trust: </span>
+            <span>
+              Otorisasi sesi dashboard otomatis memetakan email login pengguna (dari header <code>cf-access-authenticated-user-email</code>)
+              ke peran yang terdaftar di sistem ini. Misalnya <code>raviarnankeren@gmail.com</code> sebagai Admin dan <code>ravinewgemini@gmail.com</code> sebagai Viewer.
+            </span>
           </div>
         </div>
 
@@ -468,7 +481,7 @@ export function UserManagementView() {
               <tr className="bg-[#F8FAFC] border-b border-[#D3DAE6] text-[#5A626F] font-semibold">
                 <th className="py-2.5 px-3">Username</th>
                 <th className="py-2.5 px-3">Nama Lengkap</th>
-                <th className="py-2.5 px-3">Email</th>
+                <th className="py-2.5 px-3">Email (Cloudflare Access)</th>
                 <th className="py-2.5 px-3">Role</th>
                 <th className="py-2.5 px-3">Status</th>
                 <th className="py-2.5 px-3">Terakhir Login</th>
@@ -585,6 +598,23 @@ export function UserManagementView() {
             <form onSubmit={handleCreateSubmit} className="mt-4 space-y-4 text-[13px]">
               <div>
                 <label className="block text-[#1A1C21] font-medium mb-1">
+                  Email Cloudflare Access <span className="text-[#BD271E]">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="misal: ravinewgemini@gmail.com"
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
+                />
+                <span className="text-[11px] text-[#8A94A6]">
+                  Wajib sesuai dengan email yang digunakan login di Cloudflare Access SSO.
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[#1A1C21] font-medium mb-1">
                   Username <span className="text-[#BD271E]">*</span>
                 </label>
                 <input
@@ -606,17 +636,6 @@ export function UserManagementView() {
                   placeholder="misal: Budi Santoso"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">Email</label>
-                <input
-                  type="email"
-                  placeholder="misal: budi@soar.local"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
                   className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
                 />
               </div>
@@ -706,13 +725,16 @@ export function UserManagementView() {
               </div>
 
               <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">Email</label>
+                <label className="block text-[#1A1C21] font-medium mb-1">Email Cloudflare Access</label>
                 <input
                   type="email"
                   value={formEmail}
                   onChange={(e) => setFormEmail(e.target.value)}
                   className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
                 />
+                <span className="text-[11px] text-[#8A94A6]">
+                  Email yang terasosiasi dengan otorisasi login Cloudflare Access SSO.
+                </span>
               </div>
 
               <div>

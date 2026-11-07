@@ -1,6 +1,6 @@
 import {
-  getAuthorizedSession,
   isValidSession,
+  resolveAuthorizedSession,
   sessionFromRequest,
   validLoginToken,
 } from "../../../lib/session.ts";
@@ -93,10 +93,10 @@ async function readJsonBody(request: Request): Promise<unknown> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  if (!isDashboardRequestAuthorized(request)) {
+  const sessionUser = await resolveAuthorizedSession(request);
+  if (!isDashboardRequestAuthorized(request) && !sessionUser) {
     return errorResponse("login dashboard diperlukan", 401);
   }
-  const sessionUser = getAuthorizedSession(request);
   if (sessionUser && sessionUser.role === "viewer") {
     return errorResponse(
       "Akses ditolak: Role 'viewer' tidak memiliki izin untuk mengeksekusi aksi mitigasi",

@@ -1,5 +1,5 @@
 import {
-  getAuthorizedSession,
+  resolveAuthorizedSession,
 } from "../../../lib/session.ts";
 
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ function fleetBaseUrl(): string {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const user = getAuthorizedSession(request);
+  const user = await resolveAuthorizedSession(request);
   if (!user) {
     return errorResponse("Login dashboard diperlukan", 401);
   }
@@ -52,7 +52,7 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  const user = getAuthorizedSession(request);
+  const user = await resolveAuthorizedSession(request);
   if (!user) {
     return errorResponse("Login dashboard diperlukan", 401);
   }

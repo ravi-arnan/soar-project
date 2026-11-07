@@ -1,26 +1,10 @@
 import {
-  getAuthorizedSession,
-  isValidSession,
-  sessionFromRequest,
-  validLoginToken,
+  resolveAuthorizedSession,
 } from "../../../lib/session.ts";
 
 export const runtime = "nodejs";
 
 const MAX_BODY_BYTES = 8 * 1024;
-
-function isDashboardRequestAuthorized(request: Request): boolean {
-  // Dalam mode development lokal di localhost, izinkan agar pengujian dashboard mulus
-  if (process.env.NODE_ENV === "development") {
-    const host = request.headers.get("host") || "";
-    if (host.startsWith("localhost:") || host.startsWith("127.0.0.1:")) {
-      return true;
-    }
-  }
-  const secret = process.env.DASHBOARD_LOGIN_TOKEN ?? "";
-  const value = sessionFromRequest(request);
-  return Boolean(validLoginToken(secret) && value && isValidSession(value, secret));
-}
 
 function errorResponse(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
@@ -32,11 +16,11 @@ function fleetBaseUrl(): string {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  if (!isDashboardRequestAuthorized(request)) {
+  const user = await resolveAuthorizedSession(request);
+  if (!user) {
     return errorResponse("login dashboard diperlukan", 401);
   }
-  const sessionUser = getAuthorizedSession(request);
-  if (sessionUser && sessionUser.role !== "admin") {
+  if (user.role !== "admin") {
     return errorResponse("Akses ditolak: Hanya role 'admin' yang dapat mengelola API Key", 403);
   }
 
@@ -66,11 +50,11 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  if (!isDashboardRequestAuthorized(request)) {
+  const user = await resolveAuthorizedSession(request);
+  if (!user) {
     return errorResponse("login dashboard diperlukan", 401);
   }
-  const sessionUser = getAuthorizedSession(request);
-  if (sessionUser && sessionUser.role !== "admin") {
+  if (user.role !== "admin") {
     return errorResponse("Akses ditolak: Hanya role 'admin' yang dapat mengelola API Key", 403);
   }
 

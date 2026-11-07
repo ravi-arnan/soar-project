@@ -135,6 +135,18 @@ class TestUserManagement(unittest.TestCase):
         # Pastikan tidak bisa login lagi
         self.assertIsNone(fm._user_authenticate("temp_contractor", "TempContractor123!"))
 
+    def test_08_lookup_by_email(self):
+        user = fm._user_by_email("ravinewgemini@gmail.com")
+        self.assertIsNotNone(user)
+        self.assertEqual(user["role"], "viewer")
+
+        admin = fm._user_by_email("raviarnankeren@gmail.com")
+        self.assertIsNotNone(admin)
+        self.assertEqual(admin["role"], "admin")
+
+        none_user = fm._user_by_email("unknown@notfound.com")
+        self.assertIsNone(none_user)
+
 
 if __name__ == "__main__":
     unittest.main()
