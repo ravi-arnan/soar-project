@@ -56,6 +56,10 @@ const UserManagementView = dynamic(
   () => import('@/components/wazuh/UserManagementView').then((m) => m.UserManagementView),
   { loading: () => <ViewSkeleton /> }
 );
+const AgentDeploymentView = dynamic(
+  () => import('@/components/wazuh/AgentDeploymentView').then((m) => m.AgentDeploymentView),
+  { loading: () => <ViewSkeleton /> }
+);
 
 export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -152,6 +156,13 @@ export default function Home() {
       return [
         { label: 'Modules', onClick: () => setCurrentView('modules') },
         { label: 'User Management' },
+      ];
+    }
+    if (currentView === 'agent-deployment') {
+      return [
+        { label: 'Modules', onClick: () => setCurrentView('modules') },
+        { label: 'Agents', onClick: () => setCurrentView('agents') },
+        { label: 'Agent Deployment & Approval' },
       ];
     }
     if (currentView === 'agent-detail') {
@@ -268,7 +279,14 @@ export default function Home() {
             agents={agents}
             onSelectAgent={handleSelectAgent}
             onOpenSettings={() => setCurrentView('settings')}
+            onOpenDeployment={() => setCurrentView('agent-deployment')}
             onRefresh={refresh}
+          />
+        )}
+
+        {currentView === 'agent-deployment' && (
+          <AgentDeploymentView
+            onBackToAgents={() => setCurrentView('agents')}
           />
         )}
 

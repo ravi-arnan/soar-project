@@ -19,12 +19,20 @@ interface AgentsManagementProps {
   onOpenSettings?: () => void;
   /** Muat ulang snapshot fleet (poll /api/fleet + /api/events). */
   onRefresh?: () => void;
+  /** Buka portal pemasangan & persetujuan agent */
+  onOpenDeployment?: () => void;
 }
 
 /** Keliling donut status (r=38), disamakan dengan desain Wazuh. */
 const DONUT_CIRCUMFERENCE = 240;
 
-export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, agents: fleetAgents }: AgentsManagementProps) {
+export function AgentsManagement({
+  onSelectAgent,
+  onOpenSettings,
+  onRefresh,
+  onOpenDeployment,
+  agents: fleetAgents,
+}: AgentsManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(15);
@@ -285,15 +293,25 @@ export function AgentsManagement({ onSelectAgent, onOpenSettings, onRefresh, age
         <div className="flex items-center justify-between mb-3">
           <div className="text-[14px] font-semibold text-[#1A1C21]">Agents ({agents.length})</div>
           <div className="flex items-center gap-4 text-[12px]">
-            <a
-              href="https://github.com/ravi-arnan/soar-project/tree/main/deploy"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium"
-            >
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span>Deploy new agent</span>
-            </a>
+            {onOpenDeployment ? (
+              <button
+                onClick={onOpenDeployment}
+                className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium cursor-pointer"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>Deploy new agent (Installer UI)</span>
+              </button>
+            ) : (
+              <a
+                href="https://github.com/ravi-arnan/soar-project/tree/main/deploy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>Deploy new agent</span>
+              </a>
+            )}
             <button
               onClick={exportCsv}
               className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium"

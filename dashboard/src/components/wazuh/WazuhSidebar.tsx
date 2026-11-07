@@ -14,6 +14,7 @@ import {
   Network,
   Key,
   Users,
+  PlusCircle,
 } from 'lucide-react';
 import { WazuhLogo } from './WazuhLogo';
 import type { FleetHealth } from '@/lib/fleet';
@@ -45,6 +46,7 @@ export const WazuhSidebar = React.memo(function WazuhSidebar({
       items: [
         { id: 'modules', label: 'Modules', icon: LayoutGrid },
         { id: 'agents', label: 'Agents', icon: Server, badge: String(agentCount) },
+        { id: 'agent-deployment', label: 'Agent Deployment', icon: PlusCircle },
       ],
     },
     {

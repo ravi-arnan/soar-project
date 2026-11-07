@@ -1205,6 +1205,40 @@ def _event_store_init():
                 "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)"
             )
             _init_default_users(conn)
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS agent_enrollment_requests (
+                    id TEXT PRIMARY KEY,
+                    hostname TEXT NOT NULL,
+                    os TEXT NOT NULL,
+                    arch TEXT,
+                    ip TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    agent_id TEXT,
+                    poll_token TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT,
+                    approved_by TEXT
+                )"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_enroll_status ON agent_enrollment_requests(status)"
+            )
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS enrolled_agents (
+                    agent_id TEXT PRIMARY KEY,
+                    hostname TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    poll_token TEXT NOT NULL UNIQUE,
+                    os TEXT,
+                    ip TEXT,
+                    enrolled_at TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active'
+                )"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_enrolled_poll_token ON enrolled_agents(poll_token)"
+            )
+            _load_enrolled_agents(conn)
         print(f"event store siap: {EVENTS_DB}", flush=True)
         _event_store_load_recent()
     except Exception as e:
@@ -1670,6 +1704,402 @@ def _user_authenticate(username, password):
     except Exception as e:
         print(f"user_authenticate error: {e}", flush=True)
         return None
+
+
+def _load_enrolled_agents(conn):
+    try:
+        cur = conn.execute("SELECT agent_id, poll_token FROM enrolled_agents WHERE status = 'active'")
+        count = 0
+        for row in cur.fetchall():
+            aid = str(row[0]).strip()
+            token = str(row[1]).strip()
+            if _valid_agent_id(aid) and len(token) >= MIN_RUNTIME_SECRET_LENGTH:
+                FLEET_AGENT_POLL_TOKENS[aid] = token
+                count += 1
+        if count > 0:
+            print(f"enrolled agents dimuat dari database: {count} agent", flush=True)
+    except Exception as e:
+        print(f"gagal memuat enrolled agents dari database: {e}", flush=True)
+
+
+def _enroll_request_create(hostname, os_name="linux", arch="x86_64", ip=""):
+    clean_host = (hostname or "workstation").strip()[:64]
+    clean_os = (os_name or "linux").strip().lower()[:32]
+    clean_arch = (arch or "x86_64").strip()[:32]
+    clean_ip = (ip or "").strip()[:64]
+    req_id = f"req_{uuid.uuid4().hex[:12]}"
+    created_at = datetime.now(WITA).isoformat()
+
+    with closing(_db()) as conn, conn:
+        conn.execute(
+            """INSERT INTO agent_enrollment_requests
+            (id, hostname, os, arch, ip, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
+            (req_id, clean_host, clean_os, clean_arch, clean_ip, created_at),
+        )
+
+    return {
+        "request_id": req_id,
+        "hostname": clean_host,
+        "os": clean_os,
+        "arch": clean_arch,
+        "ip": clean_ip,
+        "status": "pending",
+        "created_at": created_at,
+    }
+
+
+def _enroll_request_get(req_id):
+    clean_id = str(req_id).strip()
+    if not clean_id:
+        return None
+    try:
+        with closing(_db()) as conn:
+            row = conn.execute(
+                """SELECT id, hostname, os, arch, ip, status, agent_id, poll_token, created_at, updated_at, approved_by
+                FROM agent_enrollment_requests WHERE id = ?""",
+                (clean_id,),
+            ).fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "hostname": row["hostname"],
+                "os": row["os"],
+                "arch": row["arch"],
+                "ip": row["ip"],
+                "status": row["status"],
+                "agent_id": row["agent_id"],
+                "poll_token": row["poll_token"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "approved_by": row["approved_by"],
+            }
+    except Exception as e:
+        print(f"enroll_request_get error: {e}", flush=True)
+        return None
+
+
+def _enroll_requests_list(status_filter=None):
+    try:
+        with closing(_db()) as conn:
+            if status_filter:
+                rows = conn.execute(
+                    """SELECT id, hostname, os, arch, ip, status, agent_id, poll_token, created_at, updated_at, approved_by
+                    FROM agent_enrollment_requests WHERE status = ? ORDER BY created_at DESC LIMIT 100""",
+                    (status_filter,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT id, hostname, os, arch, ip, status, agent_id, poll_token, created_at, updated_at, approved_by
+                    FROM agent_enrollment_requests ORDER BY created_at DESC LIMIT 100"""
+                ).fetchall()
+
+            return [
+                {
+                    "id": r["id"],
+                    "hostname": r["hostname"],
+                    "os": r["os"],
+                    "arch": r["arch"],
+                    "ip": r["ip"],
+                    "status": r["status"],
+                    "agent_id": r["agent_id"],
+                    "created_at": r["created_at"],
+                    "updated_at": r["updated_at"],
+                    "approved_by": r["approved_by"],
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        print(f"enroll_requests_list error: {e}", flush=True)
+        return []
+
+
+def _next_agent_id(conn):
+    existing_ids = set()
+    for k in FLEET_AGENT_POLL_TOKENS.keys():
+        if str(k).isdigit():
+            existing_ids.add(int(k))
+    try:
+        for row in conn.execute("SELECT agent_id FROM enrolled_agents").fetchall():
+            aid = str(row[0]).strip()
+            if aid.isdigit():
+                existing_ids.add(int(aid))
+    except Exception:
+        pass
+
+    if existing_ids:
+        next_val = max(existing_ids) + 1
+    else:
+        next_val = 4
+    return f"{next_val:03d}"
+
+
+def _enroll_request_approve(req_id, custom_agent_id=None, custom_name=None, approved_by="admin"):
+    clean_id = str(req_id).strip()
+    with closing(_db()) as conn, conn:
+        row = conn.execute(
+            "SELECT * FROM agent_enrollment_requests WHERE id = ?", (clean_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("Permohonan enrollment tidak ditemukan")
+        if row["status"] != "pending":
+            raise ValueError(f"Permohonan sudah berstatus '{row['status']}'")
+
+        if custom_agent_id and _valid_agent_id(str(custom_agent_id).strip()):
+            agent_id = str(custom_agent_id).strip()
+        else:
+            agent_id = _next_agent_id(conn)
+
+        agent_name = (custom_name or f"agent-{row['hostname']}").strip()[:64]
+        poll_token = secrets.token_hex(24)
+        now_iso = datetime.now(WITA).isoformat()
+
+        conn.execute(
+            """INSERT OR REPLACE INTO enrolled_agents
+            (agent_id, hostname, name, poll_token, os, ip, enrolled_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active')""",
+            (agent_id, row["hostname"], agent_name, poll_token, row["os"], row["ip"], now_iso),
+        )
+
+        conn.execute(
+            """UPDATE agent_enrollment_requests
+            SET status = 'approved', agent_id = ?, poll_token = ?, updated_at = ?, approved_by = ?
+            WHERE id = ?""",
+            (agent_id, poll_token, now_iso, approved_by, clean_id),
+        )
+
+        FLEET_AGENT_POLL_TOKENS[agent_id] = poll_token
+
+    return {
+        "request_id": clean_id,
+        "status": "approved",
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "poll_token": poll_token,
+        "approved_at": now_iso,
+        "approved_by": approved_by,
+    }
+
+
+def _enroll_request_reject(req_id, rejected_by="admin"):
+    clean_id = str(req_id).strip()
+    with closing(_db()) as conn, conn:
+        row = conn.execute(
+            "SELECT * FROM agent_enrollment_requests WHERE id = ?", (clean_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("Permohonan enrollment tidak ditemukan")
+        if row["status"] != "pending":
+            raise ValueError(f"Permohonan sudah berstatus '{row['status']}'")
+
+        now_iso = datetime.now(WITA).isoformat()
+        conn.execute(
+            """UPDATE agent_enrollment_requests
+            SET status = 'rejected', updated_at = ?, approved_by = ?
+            WHERE id = ?""",
+            (now_iso, rejected_by, clean_id),
+        )
+
+    return {"request_id": clean_id, "status": "rejected", "updated_at": now_iso}
+
+
+def _generate_linux_installer_script(server_origin):
+    return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+# SOAR Agent Automated One-Line Installer
+SERVER_URL="{server_origin}"
+HOSTNAME=$(hostname | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9.-' | cut -c1-30)
+ARCH=$(uname -m)
+
+echo "========================================================"
+echo " SOAR Endpoint Security: Automated Agent Installer"
+echo " Target Host: $HOSTNAME ($ARCH)"
+echo " Server URL : $SERVER_URL"
+echo "========================================================"
+
+[ "$(id -u)" = 0 ] || {{ echo "[!] Harap jalankan script ini sebagai root (sudo)"; exit 1; }}
+
+echo "[1/4] Mengirim permohonan pendaftaran ke server SOAR..."
+REQUEST_JSON=$(curl -fsSL -X POST "$SERVER_URL/api/enroll/request" \\
+  -H "Content-Type: application/json" \\
+  -d "{{\\"hostname\\":\\"$HOSTNAME\\",\\"os\\":\\"linux\\",\\"arch\\":\\"$ARCH\\"}}")
+
+REQ_ID=$(echo "$REQUEST_JSON" | grep -o '"request_id":"[^"]*' | cut -d'"' -f4)
+if [ -z "$REQ_ID" ]; then
+  echo "[x] Gagal mendaftarkan host ke server. Respons: $REQUEST_JSON"
+  exit 1
+fi
+
+echo "[2/4] Permohonan tercatat dengan Request ID: $REQ_ID"
+echo "      Menunggu persetujuan (Approval) dari Administrator di SOAR Dashboard..."
+
+APPROVED=0
+for i in $(seq 1 120); do
+  sleep 3
+  STATUS_JSON=$(curl -fsSL "$SERVER_URL/api/enroll/status?request_id=$REQ_ID" || true)
+  STATUS=$(echo "$STATUS_JSON" | grep -o '"status":"[^"]*' | cut -d'"' -f4)
+  if [ "$STATUS" = "approved" ]; then
+    APPROVED=1
+    AGENT_ID=$(echo "$STATUS_JSON" | grep -o '"agent_id":"[^"]*' | cut -d'"' -f4)
+    AGENT_NAME=$(echo "$STATUS_JSON" | grep -o '"agent_name":"[^"]*' | cut -d'"' -f4)
+    POLL_TOKEN=$(echo "$STATUS_JSON" | grep -o '"poll_token":"[^"]*' | cut -d'"' -f4)
+    echo ""
+    echo "[✓] Disetujui oleh Admin! Menerima Agent ID: $AGENT_ID ($AGENT_NAME)"
+    break
+  elif [ "$STATUS" = "rejected" ]; then
+    echo ""
+    echo "[x] Permohonan instalasi ditolak oleh administrator."
+    exit 1
+  fi
+  printf "."
+done
+echo ""
+
+if [ "$APPROVED" -ne 1 ]; then
+  echo "[x] Waktu tunggu persetujuan habis (timeout 6 menit). Silakan coba lagi."
+  exit 1
+fi
+
+echo "[3/4] Menyiapkan direktori dan file kredensial agent..."
+mkdir -p /etc/soar-agent /var/ossec/quarantine /usr/local/bin
+chmod 750 /var/ossec/quarantine
+printf '%s\\n' "$POLL_TOKEN" > /etc/soar-agent/fleet.token
+printf 'SOAR_FLEET_POLL_TOKEN_FILE=/etc/soar-agent/fleet.token\\n' > /etc/soar-agent/fleet.env
+chmod 600 /etc/soar-agent/fleet.token /etc/soar-agent/fleet.env
+
+if [ ! -f /usr/local/bin/soar-agent ]; then
+  echo "      Mengunduh binary soar-agent..."
+  curl -fsSL -o /usr/local/bin/soar-agent "$SERVER_URL/api/installer/download/soar-agent" || true
+  if [ ! -f /usr/local/bin/soar-agent ] || [ ! -s /usr/local/bin/soar-agent ]; then
+    if [ -f /tmp/soar-agent ]; then
+      cp /tmp/soar-agent /usr/local/bin/soar-agent
+    fi
+  fi
+fi
+chmod 755 /usr/local/bin/soar-agent || true
+
+echo "[4/4] Mendaftarkan layanan systemd soar-agent..."
+cat > /etc/systemd/system/soar-agent.service <<UNIT
+[Unit]
+Description=SOAR Agen Ringan Rust
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/soar-agent --webhook $SERVER_URL/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name $AGENT_NAME --fleet-url $SERVER_URL/api/heartbeat
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=info
+EnvironmentFile=/etc/soar-agent/fleet.env
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload || true
+systemctl enable --now soar-agent || true
+
+echo "========================================================"
+echo " [✓] Instalasi Selesai!"
+echo " Agent ID   : $AGENT_ID"
+echo " Nama Agent : $AGENT_NAME"
+echo " Status     : Aktif & Terhubung ke SOAR Security Platform"
+echo "========================================================"
+"""
+
+
+def _generate_windows_installer_script(server_origin):
+    return f"""# SOAR Agent Automated One-Line Installer for Windows PowerShell
+$ErrorActionPreference = "Stop"
+$ServerUrl = "{server_origin}"
+$Hostname = $env:COMPUTERNAME.ToLower()
+$Arch = if ([Environment]::Is64BitOperatingSystem) {{ "x64" }} else {{ "x86" }}
+
+Write-Host "========================================================" -ForegroundColor Cyan
+Write-Host " SOAR Endpoint Security: Automated Windows Agent Installer" -ForegroundColor Cyan
+Write-Host " Target Host: $Hostname ($Arch)" -ForegroundColor Gray
+Write-Host " Server URL : $ServerUrl" -ForegroundColor Gray
+Write-Host "========================================================" -ForegroundColor Cyan
+
+# 1. Permohonan enrollment
+Write-Host "[1/4] Mengirim permohonan pendaftaran ke server SOAR..." -ForegroundColor Yellow
+$Payload = @{{ hostname = $Hostname; os = "windows"; arch = $Arch }} | ConvertTo-Json
+$EnrollUrl = "$ServerUrl/api/enroll/request"
+try {{
+    $Resp = Invoke-RestMethod -Uri $EnrollUrl -Method Post -ContentType "application/json" -Body $Payload
+}} catch {{
+    Write-Host "[x] Gagal menghubungi server SOAR: $_" -ForegroundColor Red
+    exit 1
+}}
+
+$ReqId = $Resp.request_id
+if (-not $ReqId) {{
+    Write-Host "[x] Gagal mendaftarkan host: $Resp" -ForegroundColor Red
+    exit 1
+}}
+
+Write-Host "[2/4] Permohonan tercatat dengan Request ID: $ReqId" -ForegroundColor Yellow
+Write-Host "      Menunggu persetujuan (Approval) dari Administrator di SOAR Dashboard..." -ForegroundColor Gray
+
+# 2. Polling persetujuan
+$Approved = $false
+for ($i = 1; $i -le 120; $i++) {{
+    Start-Sleep -Seconds 3
+    $StatusUrl = "$ServerUrl/api/enroll/status?request_id=$ReqId"
+    try {{
+        $StatusResp = Invoke-RestMethod -Uri $StatusUrl -Method Get
+        if ($StatusResp.status -eq "approved") {{
+            $Approved = $true
+            $AgentId = $StatusResp.agent_id
+            $AgentName = $StatusResp.agent_name
+            $PollToken = $StatusResp.poll_token
+            Write-Host "`n[✓] Disetujui oleh Admin! Menerima Agent ID: $AgentId ($AgentName)" -ForegroundColor Green
+            break
+        }} elseif ($StatusResp.status -eq "rejected") {{
+            Write-Host "`n[x] Permohonan pendaftaran ditolak oleh administrator." -ForegroundColor Red
+            exit 1
+        }}
+    }} catch {{}}
+    Write-Host -NoNewline "."
+}}
+
+if (-not $Approved) {{
+    Write-Host "`n[x] Waktu tunggu persetujuan habis (timeout 6 menit)." -ForegroundColor Red
+    exit 1
+}}
+
+# 3. Setup direktori dan konfigurasi
+Write-Host "`n[3/4] Menyiapkan direktori C:\\soar-agent..." -ForegroundColor Yellow
+$TargetDir = "C:\\soar-agent"
+if (-not (Test-Path $TargetDir)) {{
+    New-Item -Path $TargetDir -ItemType Directory | Out-Null
+}}
+
+$TokenPath = "$TargetDir\\fleet.token"
+Set-Content -Path $TokenPath -Value $PollToken
+
+# 4. Unduh binary jika belum ada
+$ExePath = "$TargetDir\\soar-agent.exe"
+if (-not (Test-Path $ExePath)) {{
+    Write-Host "      Mengunduh binary soar-agent.exe..." -ForegroundColor Gray
+    $BinUrl = "$ServerUrl/api/installer/download/soar-agent.exe"
+    try {{
+        Invoke-WebRequest -Uri $BinUrl -OutFile $ExePath
+    }} catch {{
+        Write-Host "[!] Binary tidak dapat diunduh otomatis dari server. Pastikan soar-agent.exe tersedia di $TargetDir" -ForegroundColor Yellow
+    }}
+}}
+
+Write-Host "========================================================" -ForegroundColor Green
+Write-Host " [✓] Instalasi Selesai!" -ForegroundColor Green
+Write-Host " Agent ID   : $AgentId" -ForegroundColor Gray
+Write-Host " Nama Agent : $AgentName" -ForegroundColor Gray
+Write-Host " Direktori  : $TargetDir" -ForegroundColor Gray
+Write-Host "========================================================" -ForegroundColor Green
+"""
 
 
 def _indexer_enabled():
@@ -2355,6 +2785,69 @@ class Handler(BaseHTTPRequestHandler):
             email = qs.get("email", [""])[0].strip()
             user = _user_by_email(email)
             self._json(200, {"user": user})
+        elif parsed.path == "/api/enroll/status":
+            qs = parse_qs(parsed.query)
+            req_id = qs.get("request_id", [""])[0].strip()
+            if not req_id:
+                self._json(400, {"error": "request_id diperlukan"})
+                return
+            req = _enroll_request_get(req_id)
+            if not req:
+                self._json(404, {"error": "request tidak ditemukan"})
+                return
+            self._json(200, {
+                "status": req["status"],
+                "agent_id": req.get("agent_id"),
+                "agent_name": f"agent-{req.get('hostname')}",
+                "poll_token": req.get("poll_token"),
+            })
+        elif parsed.path == "/api/enroll/requests":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                return
+            qs = parse_qs(parsed.query)
+            status_filter = qs.get("status", [""])[0].strip() or None
+            self._json(200, {"requests": _enroll_requests_list(status_filter)})
+        elif parsed.path == "/api/enroll/script/linux":
+            host = self.headers.get("Host", "127.0.0.1:8080")
+            proto = "https" if "soar.raviarnan.dev" in host or self.headers.get("X-Forwarded-Proto") == "https" else "http"
+            origin = f"{proto}://{host}"
+            script = _generate_linux_installer_script(origin)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(script.encode("utf-8"))
+        elif parsed.path == "/api/enroll/script/windows":
+            host = self.headers.get("Host", "127.0.0.1:8080")
+            proto = "https" if "soar.raviarnan.dev" in host or self.headers.get("X-Forwarded-Proto") == "https" else "http"
+            origin = f"{proto}://{host}"
+            script = _generate_windows_installer_script(origin)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(script.encode("utf-8"))
+        elif parsed.path in ("/api/installer/download/soar-agent", "/api/installer/download/soar-agent.exe"):
+            is_win = parsed.path.endswith(".exe")
+            search_paths = [
+                "/deploy/bundle/soar-agent.exe" if is_win else "/agent-rs/target/release/soar-agent",
+                os.path.join(os.path.dirname(__file__), "../deploy/bundle/soar-agent.exe" if is_win else "../agent-rs/target/release/soar-agent"),
+                os.path.join(os.path.dirname(__file__), "soar-agent.exe" if is_win else "soar-agent"),
+            ]
+            found_path = None
+            for p in search_paths:
+                if os.path.isfile(p):
+                    found_path = p
+                    break
+            if found_path:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(os.path.getsize(found_path)))
+                self.end_headers()
+                with open(found_path, "rb") as bf:
+                    while chunk := bf.read(65536):
+                        self.wfile.write(chunk)
+            else:
+                self._json(404, {"error": "Binary belum tersedia di server"})
         elif parsed.path == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -2772,6 +3265,56 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, {"success": True, "user": user})
             except Exception as e:
                 self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/enroll/request":
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                hostname = str(data.get("hostname", "")).strip()
+                os_name = str(data.get("os", "linux")).strip()
+                arch = str(data.get("arch", "x86_64")).strip()
+                ip = (
+                    self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                    or self.client_address[0]
+                )
+                req = _enroll_request_create(hostname, os_name, arch, ip)
+                self._json(201, {"success": True, "request_id": req["request_id"], "status": "pending"})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/enroll/approve":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                req_id = str(data.get("request_id", "")).strip()
+                custom_id = data.get("agent_id")
+                custom_name = data.get("agent_name")
+                approved_by = str(data.get("approved_by", "admin")).strip()
+                res = _enroll_request_approve(req_id, custom_id, custom_name, approved_by)
+                self._json(200, {"success": True, "agent": res})
+            except ValueError as ve:
+                self._json(400, {"error": str(ve)})
+            except Exception as e:
+                self._json(500, {"error": str(e)})
+        elif parsed.path == "/api/enroll/reject":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                req_id = str(data.get("request_id", "")).strip()
+                rejected_by = str(data.get("rejected_by", "admin")).strip()
+                res = _enroll_request_reject(req_id, rejected_by)
+                self._json(200, {"success": True, "result": res})
+            except ValueError as ve:
+                self._json(400, {"error": str(ve)})
+            except Exception as e:
+                self._json(500, {"error": str(e)})
         elif parsed.path == "/api/commands":
             valid_key, key_info = _verify_api_key(self.headers, "write:actions")
             if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
