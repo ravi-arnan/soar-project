@@ -12,14 +12,14 @@ export async function GET(request: Request): Promise<Response> {
   const upstreamUrl = `${fleetBaseUrl()}${scriptPath}`;
 
   // Meneruskan host header publik ke backend
-  const host = request.headers.get("host") || "127.0.0.1:3000";
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "soar.raviarnan.dev";
   const proto = request.headers.get("x-forwarded-proto") || (host.includes("soar.raviarnan.dev") ? "https" : "http");
 
   try {
     const upstream = await fetch(upstreamUrl, {
       method: "GET",
       headers: {
-        Host: host,
+        "X-Forwarded-Host": host,
         "X-Forwarded-Proto": proto,
         Accept: "text/plain",
       },
