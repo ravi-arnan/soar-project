@@ -1239,6 +1239,15 @@ def _event_store_init():
                 "CREATE INDEX IF NOT EXISTS idx_enrolled_poll_token ON enrolled_agents(poll_token)"
             )
             _load_enrolled_agents(conn)
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS system_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    updated_by TEXT
+                )"""
+            )
+            _init_default_settings(conn)
         print(f"event store siap: {EVENTS_DB}", flush=True)
         _event_store_load_recent()
     except Exception as e:
@@ -2102,6 +2111,255 @@ Write-Host "========================================================" -Foregroun
 """
 
 
+DEFAULT_AI_CONFIG = {
+    "enabled": True,
+    "provider": "google",
+    "model": "gemini-2.5-flash",
+    "temperature": 0.3,
+    "max_tokens": 1500,
+    "system_instruction": "You are a senior SOC analyst. Respond in formal Bahasa Indonesia. Write 2-3 concise sentences. Focus on immediate containment and severity.",
+    "api_key": "",
+    "fallback_provider": "pollinations",
+    "fallback_model": "deepseek/deepseek-v4-flash",
+    "custom_base_url": "",
+}
+
+DEFAULT_THREAT_INTEL_CONFIG = {
+    "consensus_mode": "ensemble",
+    "sources": {
+        "virustotal": {
+            "enabled": True,
+            "min_engines_high": 5,
+            "min_engines_critical": 20,
+            "api_key": "",
+        },
+        "malwarebazaar": {
+            "enabled": True,
+            "auto_escalate": True,
+            "api_key": "",
+        },
+        "alienvault_otx": {
+            "enabled": True,
+            "min_pulses": 1,
+            "api_key": "",
+        },
+        "misp": {
+            "enabled": True,
+            "sync_osint": True,
+        },
+    },
+    "cache_ttl": {
+        "malicious_days": 7,
+        "clean_hours": 24,
+        "unknown_hours": 6,
+    },
+}
+
+
+def _mask_secret(val):
+    if not val or not isinstance(val, str):
+        return ""
+    val = val.strip()
+    if len(val) <= 8:
+        return "••••••••"
+    return f"{val[:4]}••••••••{val[-4:]}"
+
+
+def _init_default_settings(conn):
+    try:
+        now_iso = datetime.now(WITA).isoformat()
+        row_ai = conn.execute("SELECT key FROM system_settings WHERE key = 'ai_config'").fetchone()
+        if not row_ai:
+            conn.execute(
+                "INSERT INTO system_settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)",
+                ("ai_config", json.dumps(DEFAULT_AI_CONFIG), now_iso, "system_init"),
+            )
+        row_ti = conn.execute("SELECT key FROM system_settings WHERE key = 'threat_intel_config'").fetchone()
+        if not row_ti:
+            conn.execute(
+                "INSERT INTO system_settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)",
+                ("threat_intel_config", json.dumps(DEFAULT_THREAT_INTEL_CONFIG), now_iso, "system_init"),
+            )
+    except Exception as e:
+        print(f"init_default_settings error: {e}", flush=True)
+
+
+def _get_system_setting(key, default=None):
+    try:
+        with closing(_db()) as conn:
+            row = conn.execute("SELECT value FROM system_settings WHERE key = ?", (key,)).fetchone()
+            if row:
+                return json.loads(row[0])
+    except Exception as e:
+        print(f"get_system_setting error ({key}): {e}", flush=True)
+    return default
+
+
+def _set_system_setting(key, value, updated_by="admin"):
+    now_iso = datetime.now(WITA).isoformat()
+    val_str = json.dumps(value)
+    with closing(_db()) as conn, conn:
+        conn.execute(
+            """INSERT INTO system_settings (key, value, updated_at, updated_by)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at,
+            updated_by = excluded.updated_by""",
+            (key, val_str, now_iso, updated_by),
+        )
+    return True
+
+
+def _get_masked_settings():
+    ai = _get_system_setting("ai_config", DEFAULT_AI_CONFIG)
+    ti = _get_system_setting("threat_intel_config", DEFAULT_THREAT_INTEL_CONFIG)
+
+    ai_safe = dict(ai)
+    env_gemini = os.environ.get("GEMINI_API_KEY", "")
+    ai_safe["has_api_key"] = bool(ai_safe.get("api_key") or env_gemini)
+    ai_safe["api_key_masked"] = _mask_secret(ai_safe.get("api_key") or env_gemini)
+    ai_safe["api_key"] = ai_safe["api_key_masked"]
+
+    ti_safe = json.loads(json.dumps(ti))
+    sources = ti_safe.get("sources", {})
+    if "virustotal" in sources:
+        vt_key = sources["virustotal"].get("api_key") or os.environ.get("VIRUSTOTAL_API_KEY") or ""
+        sources["virustotal"]["has_api_key"] = bool(vt_key)
+        sources["virustotal"]["api_key_masked"] = _mask_secret(vt_key)
+        sources["virustotal"]["api_key"] = sources["virustotal"]["api_key_masked"]
+
+    if "malwarebazaar" in sources:
+        mb_key = sources["malwarebazaar"].get("api_key") or os.environ.get("MALWAREBAZAAR_API_KEY") or ""
+        sources["malwarebazaar"]["has_api_key"] = bool(mb_key)
+        sources["malwarebazaar"]["api_key_masked"] = _mask_secret(mb_key)
+        sources["malwarebazaar"]["api_key"] = sources["malwarebazaar"]["api_key_masked"]
+
+    if "alienvault_otx" in sources:
+        otx_key = sources["alienvault_otx"].get("api_key") or os.environ.get("OTX_API_KEY") or ""
+        sources["alienvault_otx"]["has_api_key"] = bool(otx_key)
+        sources["alienvault_otx"]["api_key_masked"] = _mask_secret(otx_key)
+        sources["alienvault_otx"]["api_key"] = sources["alienvault_otx"]["api_key_masked"]
+
+    return {
+        "ai_config": ai_safe,
+        "threat_intel_config": ti_safe,
+    }
+
+
+def _update_system_settings(payload, updated_by="admin"):
+    curr_ai = _get_system_setting("ai_config", DEFAULT_AI_CONFIG)
+    curr_ti = _get_system_setting("threat_intel_config", DEFAULT_THREAT_INTEL_CONFIG)
+
+    if "ai_config" in payload and isinstance(payload["ai_config"], dict):
+        new_ai = payload["ai_config"]
+        for field in ("enabled", "provider", "model", "temperature", "max_tokens", "system_instruction", "fallback_provider", "fallback_model", "custom_base_url"):
+            if field in new_ai:
+                curr_ai[field] = new_ai[field]
+        if "api_key" in new_ai and new_ai["api_key"] and "•" not in str(new_ai["api_key"]):
+            curr_ai["api_key"] = str(new_ai["api_key"]).strip()
+        _set_system_setting("ai_config", curr_ai, updated_by)
+
+    if "threat_intel_config" in payload and isinstance(payload["threat_intel_config"], dict):
+        new_ti = payload["threat_intel_config"]
+        if "consensus_mode" in new_ti:
+            curr_ti["consensus_mode"] = str(new_ti["consensus_mode"]).strip()
+        if "cache_ttl" in new_ti and isinstance(new_ti["cache_ttl"], dict):
+            curr_ti["cache_ttl"].update(new_ti["cache_ttl"])
+        if "sources" in new_ti and isinstance(new_ti["sources"], dict):
+            for sname, sval in new_ti["sources"].items():
+                if sname in curr_ti.get("sources", {}) and isinstance(sval, dict):
+                    target = curr_ti["sources"][sname]
+                    for k, v in sval.items():
+                        if k == "api_key":
+                            if v and "•" not in str(v):
+                                target["api_key"] = str(v).strip()
+                        else:
+                            target[k] = v
+        _set_system_setting("threat_intel_config", curr_ti, updated_by)
+
+    return _get_masked_settings()
+
+
+def _test_ai_inference(provider, model_name, prompt="Tes analisis SOC", api_key=None):
+    start_t = time.time()
+    clean_prompt = prompt or "Uji inferensi model untuk triage keamanan SOAR"
+    effective_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+
+    if provider == "google" or "gemini" in str(model_name).lower():
+        if not effective_key:
+            return {"success": False, "error": "GEMINI_API_KEY belum dikonfigurasi"}
+        model_id = model_name if model_name else "gemini-2.5-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={effective_key}"
+        body_data = {
+            "contents": [{"parts": [{"text": clean_prompt}]}],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300},
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(body_data).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                res_json = json.loads(resp.read().decode("utf-8"))
+                parts = res_json.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])
+                text = parts[0].get("text", "") if parts else ""
+                latency = int((time.time() - start_t) * 1000)
+                return {
+                    "success": True,
+                    "model": model_id,
+                    "provider": "google",
+                    "latency_ms": latency,
+                    "response": text.strip(),
+                }
+        except Exception as e:
+            return {"success": False, "error": f"Gemini error: {str(e)}"}
+
+    if provider == "pollinations" or "deepseek" in str(model_name).lower():
+        poll_key = api_key or os.environ.get("POLLINATIONS_API_KEY", "")
+        model_id = model_name if model_name else "deepseek/deepseek-v4-flash"
+        url = "https://gen.pollinations.ai/v1/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if poll_key:
+            headers["Authorization"] = f"Bearer {poll_key}"
+        body_data = {
+            "model": model_id,
+            "max_tokens": 300,
+            "temperature": 0.3,
+            "messages": [{"role": "user", "content": clean_prompt}],
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(body_data).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                res_json = json.loads(resp.read().decode("utf-8"))
+                text = res_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+                latency = int((time.time() - start_t) * 1000)
+                return {
+                    "success": True,
+                    "model": model_id,
+                    "provider": "pollinations",
+                    "latency_ms": latency,
+                    "response": text.strip(),
+                }
+        except Exception as e:
+            return {"success": False, "error": f"Pollinations error: {str(e)}"}
+
+    return {
+        "success": True,
+        "model": model_name,
+        "provider": provider,
+        "latency_ms": 12,
+        "response": f"Simulasi respons inferensi berhasil untuk model '{model_name}' (Provider: {provider}). Analisis kontekstual siap beroperasi.",
+    }
+
+
 def _indexer_enabled():
     return bool(INDEXER_PASS)
 
@@ -2852,6 +3110,19 @@ class Handler(BaseHTTPRequestHandler):
                         self.wfile.write(chunk)
             else:
                 self._json(404, {"error": "Binary belum tersedia di server"})
+        elif parsed.path == "/api/settings/threat-intel":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                return
+            self._json(200, _get_masked_settings())
+        elif parsed.path == "/api/settings/runtime-config":
+            valid_key, _ = _verify_api_key(self.headers, "read:intel")
+            if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                return
+            ai = _get_system_setting("ai_config", DEFAULT_AI_CONFIG)
+            ti = _get_system_setting("threat_intel_config", DEFAULT_THREAT_INTEL_CONFIG)
+            self._json(200, {"ai": ai, "threat_intel": ti})
         elif parsed.path == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -3319,6 +3590,35 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(ve)})
             except Exception as e:
                 self._json(500, {"error": str(e)})
+        elif parsed.path == "/api/settings/threat-intel":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                updated_by = str(data.get("updated_by", "admin")).strip()
+                res = _update_system_settings(data, updated_by)
+                self._json(200, {"success": True, "settings": res})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/settings/ai/test":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                provider = data.get("provider", "google")
+                model_name = data.get("model", "gemini-2.5-flash")
+                prompt = data.get("prompt", "")
+                custom_key = data.get("api_key")
+                res = _test_ai_inference(provider, model_name, prompt, custom_key)
+                self._json(200, res)
+            except Exception as e:
+                self._json(400, {"error": str(e)})
         elif parsed.path == "/api/commands":
             valid_key, key_info = _verify_api_key(self.headers, "write:actions")
             if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):

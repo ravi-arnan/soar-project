@@ -12,10 +12,12 @@ import {
   Layers,
   Activity,
   MemoryStick,
+  Sparkles,
 } from 'lucide-react';
 import type { FleetHealth, FleetStats } from '@/lib/fleet';
 import { formatWazuhTime } from '@/lib/fleet';
 import { ApiKeysView } from './ApiKeysView';
+import { DynamicSettingsView } from './DynamicSettingsView';
 
 interface SettingsViewProps {
   health?: FleetHealth;
@@ -24,7 +26,7 @@ interface SettingsViewProps {
   online: boolean;
   refreshMs: number;
   onRefreshMsChange: (ms: number) => void;
-  initialTab?: 'general' | 'keys';
+  initialTab?: 'general' | 'keys' | 'dynamic-config';
 }
 
 interface ComponentResource {
@@ -47,7 +49,7 @@ export function SettingsView({
   onRefreshMsChange,
   initialTab = 'general',
 }: SettingsViewProps) {
-  const [activeTab, setActiveTab] = useState<'general' | 'keys'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'general' | 'keys' | 'dynamic-config'>(initialTab);
 
   // Data pemakaian resource riil kontainer Docker di server produksi (docker stats)
   const components: ComponentResource[] = [
@@ -169,6 +171,17 @@ export function SettingsView({
           General & Diagnostics
         </button>
         <button
+          onClick={() => setActiveTab('dynamic-config')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded transition ${
+            activeTab === 'dynamic-config'
+              ? 'bg-[#006BB4] text-white'
+              : 'text-[#5A626F] hover:bg-[#F0F4F8]'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>AI Engine &amp; Threat Intel (Dinamis)</span>
+        </button>
+        <button
           onClick={() => setActiveTab('keys')}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded transition ${
             activeTab === 'keys'
@@ -177,11 +190,13 @@ export function SettingsView({
           }`}
         >
           <Key className="w-3.5 h-3.5" />
-          API Keys & Agent Access
+          API Keys &amp; Agent Access
         </button>
       </div>
 
-      {activeTab === 'keys' ? (
+      {activeTab === 'dynamic-config' ? (
+        <DynamicSettingsView />
+      ) : activeTab === 'keys' ? (
         <ApiKeysView />
       ) : (
         <div className="space-y-4">
