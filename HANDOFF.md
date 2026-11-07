@@ -1,3 +1,42 @@
+# Handoff SOAR - 2026-11-07 Siang (User Management RBAC, Cloudflare Access SSO & Deploy Produksi)
+
+## Status Terakhir (Checkpoint: 7 November 2026, 12:56 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **User Management & Role-Based Access Control (RBAC)**:
+  - Database SQLite durable (`users` table di `scripts/.fleet-events.db` dan `/state/events.db` di server).
+  - Skema pengguna: `id`, `username`, `password_hash`, `role` (`admin`, `analyst`, `viewer`), `email`, `name`, `created_at`, `last_login_at`, `active`.
+  - Hashing PBKDF2-HMAC-SHA256 (100.000 iterasi) dengan random 16-byte hex salt (100% Python stdlib).
+  - Tiga akun default di-seed otomatis saat startup:
+    - `admin` (Role: `admin`) -> email `raviarnankeren@gmail.com`, nama `Ravi Arnan (SOC Lead)`.
+    - `analyst` (Role: `analyst`) -> email `analyst@soar.local`, nama `SOC Tier 2 Analyst`.
+    - `auditor` (Role: `viewer`) -> email `auditor@soar.local`, nama `Compliance Auditor`.
+  - Guard proteksi admin aktif terakhir agar tidak bisa dihapus, dinonaktifkan, atau di-demote.
+- **Integrasi Cloudflare Access Zero Trust (Email Header SSO)**:
+  - Header `cf-access-authenticated-user-email` dibaca langsung oleh Next.js `getAuthorizedSession`.
+  - Email `raviarnankeren@gmail.com` secara otomatis diotentikasi sebagai Admin SOC (`Ravi Arnan`).
+  - Pengguna lain otomatis dipetakan sesuai role terdaftar di database.
+- **Enforcement Otorisasi Berjenjang**:
+  - `/api/commands`: Role `viewer` diblokir (HTTP 403 Forbidden) saat mengeksekusi aksi mitigasi (karantina berkas/sinkhole domain).
+  - `/api/keys`: Hanya role `admin` yang boleh membuat/mencabut API keys.
+  - `/api/users`: Hanya role `admin` yang dapat mengelola database pengguna.
+- **Antarmuka UI**:
+  - `UserManagementView.tsx`: 4 kartu metrik pengguna, matriks izin RBAC, tabel pengguna interaktif, modal tambah/edit pengguna.
+  - `WazuhHeader.tsx`: Profil pengguna aktif dan role badge (`admin`, `analyst`, `viewer`) di samping workspace selector.
+  - `WazuhSidebar.tsx` & `ModulesHub.tsx`: Menu navigasi dan kartu cepat User Management.
+- **Commit & Deploy ke Server Produksi `ravi-debian` (`100.73.91.17`)**:
+  - Commit `cd5c1b1` ter-push ke `origin/main`.
+  - Image `soar-fleet-dashboard:latest` di-rebuild dan dijalankan (`Up healthy`).
+  - Container `fleet-monitor` direstart dan melayani API di `0.0.0.0:8080`.
+  - Localhost development server dimatikan sesuai permintaan.
+
+### 2. Status Verifikasi
+- Backend Python: 151/151 tests PASS (`python3 -m unittest discover -s scripts`).
+- Frontend Next.js: 17/17 tests PASS (`npm run check` -> test:commands, test:placeholder, test:events, test:session, test:session-rate, test:rbac, eslint, tsc, next build).
+- Produksi Live Probe: `http://127.0.0.1:3000/api/auth/me` dan `http://127.0.0.1:3000/api/users` berfungsi normal dengan Cloudflare Access email header.
+
+---
+
 # Handoff SOAR - 2026-11-06 Malam (Autentikasi 2FA Dual-Channel Resend Email & Telegram Bot, serta SOAR MCP Server)
 
 ## Status Terakhir (Checkpoint: 6 November 2026, 22:50 WITA)
