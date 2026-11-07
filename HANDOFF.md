@@ -1,3 +1,103 @@
+# Handoff SOAR - 2026-11-06 Malam (Autentikasi 2FA Dual-Channel Resend Email & Telegram Bot, serta SOAR MCP Server)
+
+## Status Terakhir (Checkpoint: 6 November 2026, 22:50 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Migrasi ke Resend API (Bebas Batasan Authorized IP)**:
+  - Menggantikan Brevo dengan **Resend Transactional Email API** (`api.resend.com/emails`) menggunakan API Key `re_U63Fr6Wg_...`.
+  - Sepenuhnya bebas dari kerumitan IP whitelist / Authorized IP restrictions, dapat dipanggil dari IP cloud, server, maupun dynamic IP.
+  - Alur Dual-Channel Terverifikasi Live:
+    - **Email Resend**: Format HTML resmi *SOAR Security Operation Center* langsung masuk ke Primary Inbox `raviarnankeren@gmail.com`.
+    - **Telegram Bot**: Mengirimkan salinan kode secara *real-time* (0 detik) ke `@soar_ravi_bot`.
+  - Hasil Pengujian Live di Server Produksi: `{"success": true, "channels": {"email": true, "telegram": true}}`.
+- **Autentikasi Dua Langkah (2FA) Dual-Channel untuk Dashboard Admin** ([dashboard/src/lib/twoFactor.ts](file:///home/ravi/Projects/soar-project/dashboard/src/lib/twoFactor.ts), [dashboard/src/app/api/auth/2fa/](file:///home/ravi/Projects/soar-project/dashboard/src/app/api/auth/2fa/)):
+  - Menggantikan keharusan input manual master token `.env` dengan alur 2FA profesional siap-produk komersial (SaaS-ready).
+  - Alur Zero-Typing: Pengguna tidak perlu mengetik email; sistem mendeteksi administrator terdaftar (`raviarnankeren@gmail.com`) dan menampilkan masking `r****n@gmail.com`.
+  - Cooldown Anti-Spam: batas 1 permintaan per 30-60 detik per client.
+  - Endpoints: `POST /api/auth/2fa/request` dan `POST /api/auth/2fa/verify`.
+  - UI [dashboard/src/components/wazuh/ApiKeysView.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/ApiKeysView.tsx):
+    - Kartu verifikasi 2FA modern dengan ikon perisai `ShieldCheck`.
+    - Badge masked email `r****n@gmail.com`.
+    - Tombol *[Kirim Kode Verifikasi]* dengan timer hitung mundur.
+    - Input 6 digit angka dengan auto-filter non-digit.
+    - Tombol *[Verifikasi & Buka Akses]* yang langsung menerbitkan cookie sesi `soar_session` 12 jam.
+    - Opsi fallback darurat teknisi (*Master Token*) di bagian bawah.
+  - Verifikasi: 6 unit tests di `dashboard/src/app/api/auth/2fa/route.test.ts` (100% PASS), `npm run check` PASS (lint, typecheck, production build).
+- **Model Context Protocol (MCP) Server untuk AI Agent & Dev Tools** ([scripts/soar_mcp_server.py](file:///home/ravi/Projects/soar-project/scripts/soar_mcp_server.py)):
+  - Spesifikasi MCP JSON-RPC 2.0 stdio (6 tools: `soar_get_fleet_status`, `soar_list_agents`, `soar_get_threat_events`, `soar_lookup_hash`, `soar_execute_command`, `soar_get_stats`).
+  - Terhubung ke Antigravity CLI (`~/.gemini/config/mcp_config.json`) dan Claude Code ([.mcp.json](file:///home/ravi/Projects/soar-project/.mcp.json)).
+  - Verifikasi: 8 unit tests di [scripts/test_soar_mcp.py](file:///home/ravi/Projects/soar-project/scripts/test_soar_mcp.py) (total 144/144 tests PASS).
+- **Deploy ke Server `ravi-debian` (`100.73.91.17`)**:
+  - Image `soar-fleet-dashboard` di-rebuild dan dideploy live.
+  - Endpoint `POST /api/auth/2fa/request` aktif melayani permintaan dengan `email: true` dan `telegram: true`.
+
+### 2. Status Verifikasi
+- Unit test backend Python: `python3 -m unittest discover -s scripts` -> **144/144 tests PASS**.
+- Unit test Next.js & 2FA: `node --test` suite -> **16/16 tests PASS**.
+- TypeScript typecheck: `tsc --noEmit` -> **0 errors**.
+- ESLint: `npm run lint` -> **0 errors, 0 warnings**.
+- Next.js Production Build: `next build` -> **PASS**.
+- Server health check: `curl http://127.0.0.1:3000/healthz` -> **{"status":"ok"}** (HTTP 200).
+- Uji Live 2FA Request: **{"email": true, "telegram": true}** (Keduanya sukses terkirim).
+
+### 3. Next Action
+- Buka dashboard di `https://soar.raviarnan.dev` pada menu API Keys, klik tombol *[Kirim Kode Verifikasi]*, periksa email masuk di inbox Gmail (atau Telegram), dan masukkan kode 6-digit untuk verifikasi.
+- Server health check: `curl http://127.0.0.1:3000/healthz` -> **{"status":"ok"}** (HTTP 200).
+
+### 3. Next Action
+- Buka `https://app.brevo.com/security/authorised_ips` untuk menonaktifkan filter IP (atau menambahkan IP server) agar email transaksional Brevo dapat langsung masuk ke inbox Gmail admin.
+- Coba alur 2FA di dashboard web `https://soar.raviarnan.dev` pada menu API Keys.
+
+---
+
+# Handoff SOAR - 2026-11-06 Sore (Deteksi Ransomware Pre-Encryption, Manajemen API Keys M2M untuk AI Agent, dan Deployment Server)
+
+## Status Terakhir (Checkpoint: 6 November 2026, 17:20 WITA)
+
+### 1. Rangkuman Perubahan Utama
+- **Manajemen API Keys & Akses Machine-to-Machine untuk AI Agent** ([scripts/fleet-monitor.py](file:///home/ravi/Projects/soar-project/scripts/fleet-monitor.py), [dashboard/src/components/wazuh/ApiKeysView.tsx](file:///home/ravi/Projects/soar-project/dashboard/src/components/wazuh/ApiKeysView.tsx)):
+  - Backend SQLite API Key Engine: skema tabel `api_keys`, hashing SHA-256 satu arah, token format `soar_live_<48hex>`, preview prefix, pembatasan hak akses berbasis granular scopes (`read:intel`, `write:actions`, `read:fleet`, `admin:keys`).
+  - Proteksi Bearer Token pada endpoint SOAR: `POST /api/commands` (`write:actions`), `GET /api/fleet` (`read:fleet`), `GET /api/events` (`read:intel`).
+  - Endpoints manajemen: `GET /api/keys`, `POST /api/keys`, `POST /api/keys/revoke`.
+  - Next.js Proxy & Dashboard UI:
+    - View `ApiKeysView.tsx` terintegrasi dengan sidebar dan tab settings.
+    - One-time reveal token dialog dengan format clean lab-console box (border halus, latar putih, font monospace hijau, tombol salin instan).
+    - Snippet box perintah integrasi cURL interaktif untuk Agen AI otonom.
+    - Header bersih tanpa logo ikon kunci di sebelah kiri judul.
+  - Verifikasi: 6 unit tests baru di [scripts/test_api_keys.py](file:///home/ravi/Projects/soar-project/scripts/test_api_keys.py) (total 136/136 tests PASS).
+- **Deteksi Ransomware Pre-Encryption & Persistence** ([scripts/process-chain-rules.xml](file:///home/ravi/Projects/soar-project/scripts/process-chain-rules.xml), [docs/ilmiah/MITRE-ATTACK-MAPPING.md](file:///home/ravi/Projects/soar-project/docs/ilmiah/MITRE-ATTACK-MAPPING.md)):
+  - Adaptasi aturan Sentinel & SigmaHQ: T1490 Inhibit System Recovery (vssadmin, wmic shadowcopy, bcdedit, wbadmin), T1547.001 Boot/Logon Autostart Execution (reg add Run), dan T1053.005 Scheduled Tasks (schtasks /create dari folder user).
+  - Verifikasi: 5 unit tests baru di [scripts/test_process_chain_rules.py](file:///home/ravi/Projects/soar-project/scripts/test_process_chain_rules.py) (total 130 tests PASS).
+- **Deploy & Sinkronisasi Produksi ke Server `ravi-debian` (`100.73.91.17`)**:
+  - Sinkronisasi branch `main` hingga commit `5f03b1c`.
+  - Rebuild Docker image `soar-fleet-dashboard` di host Debian (Next.js standalone).
+  - Container `fleet-dashboard` dan `fleet-monitor` berjalan aktif dan sehat (HTTP 200 /healthz).
+
+### 2. Daftar File Diubah & Status Git
+- `scripts/fleet-monitor.py`: implementasi engine SQLite API keys, verifikasi Bearer token, audit timestamp `last_used_at`.
+- `scripts/test_api_keys.py`: unit test validasi pembuatan, listing, revokasi, dan verifikasi scope Bearer token.
+- `dashboard/src/app/api/keys/route.ts`: route API Next.js meneruskan permintaan ke fleet-monitor dengan penanganan cookie session wazuh.
+- `dashboard/src/components/wazuh/ApiKeysView.tsx`: komponen UI manajemen API Keys, modal token reveal bergaya lab box, dan snippet interaktif.
+- `dashboard/src/components/wazuh/SettingsView.tsx`: penambahan tab switcher menuju menu API Keys.
+- `dashboard/src/components/wazuh/WazuhSidebar.tsx`: navigasi sidebar menuju view `api-keys`.
+- `dashboard/src/app/page.tsx`: penambahan case view `api-keys` pada routing aplikasi dashboard.
+- `scripts/process-chain-rules.xml`: aturan korelasi XML Wazuh untuk T1490, T1547.001, dan T1053.005.
+- `scripts/test_process_chain_rules.py`: unit test korelasi aturan ransomware pre-encryption dan persistence.
+- `docs/ilmiah/MITRE-ATTACK-MAPPING.md`: pembaruan matriks status deteksi MITRE ATT&CK.
+- Commit `a411aaa` dan `5f03b1c` telah ter-push ke `origin/main` dan ter-deploy di server `ravi-debian`.
+
+### 3. Status Verifikasi
+- Unit test backend: `python3 -m unittest discover -s scripts` -> **136/136 tests PASS**.
+- TypeScript typecheck: `tsc --noEmit` -> **0 errors**.
+- ESLint: `npm run lint` -> **0 errors, 0 warnings**.
+- Dashboard production build: `npm run build` -> **PASS**.
+- Server health check: `curl http://127.0.0.1:3000/healthz` -> **{"status":"ok"}** (HTTP 200).
+
+### 4. Next Action
+- Lakukan pengetesan end-to-end pemanggilan API endpoint SOAR oleh agen AI otonom menggunakan token `soar_live_*` yang telah dibuat.
+
+---
+
 # Handoff SOAR - 2026-10-26 Sore (Hardening Health Monitor Host Network & Garansi Pengiriman Callback Telegram)
 
 ## Status Terakhir (Checkpoint: 26 Oktober 2026, 16:50 WITA)

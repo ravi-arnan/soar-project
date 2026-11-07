@@ -16,7 +16,9 @@ import {
   XCircle,
   ChevronDown,
   ChevronUp,
-  Lock,
+  Mail,
+  Send,
+  ShieldCheck,
 } from 'lucide-react';
 import { formatWazuhTime } from '@/lib/fleet';
 
@@ -97,6 +99,31 @@ export function ApiKeysView() {
   const [loginInput, setLoginInput] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // State 2FA (Email & Telegram)
+  const [otpInput, setOtpInput] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('r****n@gmail.com');
+  const [isRequestingOtp, setIsRequestingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [otpMessage, setOtpMessage] = useState<string | null>(null);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [showManualToken, setShowManualToken] = useState(false);
+
+  // Timer cooldown 2FA
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setOtpCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [otpCooldown]);
+
   // State panduan integrasi (default tertutup agar UI utama tetap bersih)
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
@@ -144,6 +171,60 @@ export function ApiKeysView() {
   const handleRefresh = () => {
     setLoading(true);
     loadKeys();
+  };
+
+  const handleRequestOtp = async () => {
+    try {
+      setIsRequestingOtp(true);
+      setOtpError(null);
+      setOtpMessage(null);
+      const res = await fetch('/api/auth/2fa/request', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setOtpError(data.error || 'Gagal mengirim kode verifikasi 2FA.');
+        return;
+      }
+      if (data.maskedEmail) setMaskedEmail(data.maskedEmail);
+      setOtpCooldown(data.cooldownSeconds || 30);
+      setOtpMessage(data.message || 'Kode verifikasi telah dikirim.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setOtpError(`Koneksi gagal: ${msg}`);
+    } finally {
+      setIsRequestingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpInput.trim()) return;
+
+    try {
+      setIsVerifyingOtp(true);
+      setOtpError(null);
+      const res = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: otpInput.trim() }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setOtpError(data.error || 'Kode verifikasi salah.');
+        return;
+      }
+
+      setOtpInput('');
+      setOtpMessage(null);
+      setIsAuthRequired(false);
+      setLoading(true);
+      loadKeys();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setOtpError(`Verifikasi gagal: ${msg}`);
+    } finally {
+      setIsVerifyingOtp(false);
+    }
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -380,36 +461,118 @@ export function ApiKeysView() {
         </div>
       </div>
 
-      {/* Kartu Autentikasi jika diperlukan login */}
+      {/* Kartu Autentikasi Dua Langkah (2FA) jika diperlukan login */}
       {isAuthRequired && (
-        <div className="bg-white border border-[#CCE3F5] rounded-lg p-5 shadow-xs">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded bg-[#EBF5FB] text-[#006BB4] mt-0.5">
-              <Lock className="w-5 h-5" />
+        <div className="bg-white border border-[#B8D7ED] rounded-lg p-5 shadow-xs transition">
+          <div className="flex items-start gap-3.5">
+            <div className="p-2.5 rounded-lg bg-[#EBF5FB] text-[#006BB4] mt-0.5 shrink-0">
+              <ShieldCheck className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <h3 className="text-[14px] font-semibold text-[#1A1C21]">
-                Autentikasi Dashboard Diperlukan
-              </h3>
-              <p className="text-[12px] text-[#5A626F] mt-1 max-w-xl">
-                Pengelolaan API Key dilindungi oleh token autentikasi dashboard. Masukkan token dashboard Anda untuk membuka akses pengelolaan kunci.
+              <div className="flex items-center gap-2">
+                <h3 className="text-[15px] font-semibold text-[#1A1C21]">
+                  Verifikasi Keamanan Dua Langkah (2FA)
+                </h3>
+                <span className="px-2 py-0.5 text-[10px] font-medium bg-[#EBF5FB] text-[#006BB4] rounded-full border border-[#CCE3F5]">
+                  Admin Gate
+                </span>
+              </div>
+              <p className="text-[12px] text-[#5A626F] mt-1 max-w-xl leading-relaxed">
+                Pengelolaan API Key dilindungi oleh verifikasi identitas administrator. Sistem akan mengirimkan kode OTP 6-digit ke email resmi administrator yang terdaftar.
               </p>
-              <form onSubmit={handleLoginSubmit} className="mt-3 flex items-center gap-2 max-w-md">
+
+              {/* Status Pengiriman Email Administrator */}
+              <div className="mt-3.5 p-3 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3 max-w-xl">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-[#5A626F]" />
+                  <span className="text-[12px] text-[#5A626F]">Email Terdaftar:</span>
+                  <code className="text-[12px] font-mono font-medium text-[#1A1C21] bg-white px-2 py-0.5 rounded border border-[#D3DAE6]">
+                    {maskedEmail}
+                  </code>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRequestOtp}
+                  disabled={isRequestingOtp || otpCooldown > 0}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#004B80] rounded transition disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed shadow-2xs"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {isRequestingOtp
+                    ? 'Mengirim...'
+                    : otpCooldown > 0
+                    ? `Kirim Ulang (${otpCooldown}s)`
+                    : 'Kirim Kode Verifikasi'}
+                </button>
+              </div>
+
+              {/* Pesan Feedback Pengiriman */}
+              {otpMessage && (
+                <div className="mt-2.5 p-2.5 rounded bg-[#F0FDF4] border border-[#BBF7D0] text-[#15803D] text-[12px] flex items-center gap-2 max-w-xl">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{otpMessage}</span>
+                </div>
+              )}
+
+              {otpError && (
+                <div className="mt-2.5 p-2.5 rounded bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] text-[12px] flex items-center gap-2 max-w-xl">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{otpError}</span>
+                </div>
+              )}
+
+              {/* Form Input Kode Verifikasi OTP */}
+              <form onSubmit={handleVerifyOtp} className="mt-4 flex items-center gap-2 max-w-md">
                 <input
-                  type="password"
-                  placeholder="Masukkan DASHBOARD_LOGIN_TOKEN"
-                  value={loginInput}
-                  onChange={(e) => setLoginInput(e.target.value)}
-                  className="flex-1 px-3 py-1.5 text-[12px] bg-[#F8FAFC] border border-[#D3DAE6] rounded focus:outline-none focus:border-[#006BB4]"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  placeholder="000000"
+                  value={otpInput}
+                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                  className="w-36 px-3 py-1.5 text-[15px] font-mono font-bold tracking-[6px] text-center bg-[#F8FAFC] border border-[#D3DAE6] rounded focus:outline-none focus:border-[#006BB4] focus:bg-white"
                 />
                 <button
                   type="submit"
-                  disabled={isLoggingIn || !loginInput.trim()}
-                  className="px-3 py-1.5 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#004B80] rounded transition disabled:opacity-50"
+                  disabled={isVerifyingOtp || otpInput.trim().length !== 6}
+                  className="px-4 py-1.5 text-[12px] font-medium text-white bg-[#15803D] hover:bg-[#166534] rounded transition disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed shadow-2xs"
                 >
-                  {isLoggingIn ? 'Memverifikasi...' : 'Buka Akses'}
+                  {isVerifyingOtp ? 'Memverifikasi...' : 'Verifikasi & Buka Akses'}
                 </button>
               </form>
+
+              {/* Opsi Darurat Teknisi (Fallback Master Token) */}
+              <div className="mt-4 pt-3 border-t border-[#EBF2F7] max-w-xl">
+                <button
+                  type="button"
+                  onClick={() => setShowManualToken((prev) => !prev)}
+                  className="text-[11px] text-[#5A626F] hover:text-[#1A1C21] underline cursor-pointer"
+                >
+                  {showManualToken
+                    ? 'Sembunyikan opsi master token'
+                    : 'Opsi Teknisi: Buka dengan Master Token (.env)'}
+                </button>
+
+                {showManualToken && (
+                  <form onSubmit={handleLoginSubmit} className="mt-2.5 flex items-center gap-2 max-w-md">
+                    <input
+                      type="password"
+                      placeholder="Masukkan DASHBOARD_LOGIN_TOKEN"
+                      value={loginInput}
+                      onChange={(e) => setLoginInput(e.target.value)}
+                      className="flex-1 px-3 py-1 text-[11px] bg-[#F8FAFC] border border-[#D3DAE6] rounded focus:outline-none focus:border-[#006BB4]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isLoggingIn || !loginInput.trim()}
+                      className="px-3 py-1 text-[11px] font-medium text-[#1A1C21] bg-[#E2E8F0] hover:bg-[#CBD5E1] rounded transition disabled:opacity-50"
+                    >
+                      {isLoggingIn ? 'Verifikasi...' : 'Login Token'}
+                    </button>
+                  </form>
+                )}
+              </div>
             </div>
           </div>
         </div>

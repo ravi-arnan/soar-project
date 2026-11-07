@@ -1188,6 +1188,23 @@ def _event_store_init():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)"
             )
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'viewer',
+                    email TEXT,
+                    name TEXT,
+                    created_at TEXT NOT NULL,
+                    last_login_at TEXT,
+                    active INTEGER NOT NULL DEFAULT 1
+                )"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)"
+            )
+            _init_default_users(conn)
         print(f"event store siap: {EVENTS_DB}", flush=True)
         _event_store_load_recent()
     except Exception as e:
@@ -1392,6 +1409,226 @@ def _verify_api_key(headers, required_scope=""):
     except Exception as e:
         print(f"verify_api_key error: {e}", flush=True)
         return False, None
+
+
+def _hash_password(password, salt=None):
+    if salt is None:
+        salt = secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000)
+    return f"{salt}${h.hex()}"
+
+
+def _verify_password(password, stored_hash):
+    try:
+        salt, hash_val = stored_hash.split("$", 1)
+        test_h = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000).hex()
+        return hmac.compare_digest(hash_val, test_h)
+    except Exception:
+        return False
+
+
+def _init_default_users(conn):
+    try:
+        cur = conn.execute("SELECT count(*) FROM users")
+        count = cur.fetchone()[0]
+        if count == 0:
+            now_iso = datetime.now(WITA).isoformat()
+            admin_email = os.environ.get("ADMIN_EMAIL", "raviarnankeren@gmail.com")
+            defaults = [
+                ("usr_admin", "admin", _hash_password(os.environ.get("ADMIN_INITIAL_PASSWORD", "Admin@SOAR2026!")), "admin", admin_email, "Ravi Arnan (SOC Lead)", now_iso, 1),
+                ("usr_analyst", "analyst", _hash_password("Analyst@SOAR2026!"), "analyst", "analyst@soar.local", "SOC Tier 2 Analyst", now_iso, 1),
+                ("usr_viewer", "auditor", _hash_password("Viewer@SOAR2026!"), "viewer", "auditor@soar.local", "Compliance Auditor", now_iso, 1),
+            ]
+            conn.executemany(
+                """INSERT INTO users (id, username, password_hash, role, email, name, created_at, active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                defaults,
+            )
+            print("default users initialized: admin, analyst, auditor", flush=True)
+    except Exception as e:
+        print(f"init_default_users error: {e}", flush=True)
+
+
+def _user_list():
+    try:
+        with closing(_db()) as conn:
+            rows = conn.execute(
+                """SELECT id, username, role, email, name, created_at, last_login_at, active
+                FROM users ORDER BY created_at ASC"""
+            ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "username": r["username"],
+                "role": r["role"],
+                "email": r["email"] or "",
+                "name": r["name"] or "",
+                "created_at": r["created_at"],
+                "last_login_at": r["last_login_at"],
+                "active": bool(r["active"]),
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"user_list error: {e}", flush=True)
+        return []
+
+
+def _user_create(username, password, role="viewer", email="", name=""):
+    clean_username = (username or "").strip().lower()
+    if not re.fullmatch(r"^[a-zA-Z0-9_.-]{3,32}$", clean_username):
+        raise ValueError("Username harus 3-32 karakter alfanumerik (._- diperbolehkan)")
+    if role not in ("admin", "analyst", "viewer"):
+        role = "viewer"
+    if not password or len(password) < 8:
+        raise ValueError("Password minimal 8 karakter")
+
+    user_id = f"usr_{uuid.uuid4().hex[:12]}"
+    created_at = datetime.now(WITA).isoformat()
+    pass_hash = _hash_password(password)
+    clean_email = (email or "").strip()[:120]
+    clean_name = (name or clean_username).strip()[:100]
+
+    with closing(_db()) as conn, conn:
+        existing = conn.execute("SELECT id FROM users WHERE username = ?", (clean_username,)).fetchone()
+        if existing:
+            raise ValueError(f"Username '{clean_username}' sudah digunakan")
+        conn.execute(
+            """INSERT INTO users (id, username, password_hash, role, email, name, created_at, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+            (user_id, clean_username, pass_hash, role, clean_email, clean_name, created_at),
+        )
+
+    return {
+        "id": user_id,
+        "username": clean_username,
+        "role": role,
+        "email": clean_email,
+        "name": clean_name,
+        "created_at": created_at,
+        "last_login_at": None,
+        "active": True,
+    }
+
+
+def _user_update(user_id, updates):
+    clean_id = str(user_id).strip()
+    if not clean_id:
+        raise ValueError("User ID diperlukan")
+
+    with closing(_db()) as conn, conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (clean_id,)).fetchone()
+        if not row:
+            raise ValueError("User tidak ditemukan")
+
+        # Guard: tidak boleh menonaktifkan atau demote admin terakhir
+        new_role = updates.get("role", row["role"])
+        new_active = int(updates.get("active", row["active"]))
+        if row["role"] == "admin" and (new_role != "admin" or new_active == 0):
+            admin_count = conn.execute(
+                "SELECT count(*) FROM users WHERE role = 'admin' AND active = 1 AND id != ?",
+                (clean_id,),
+            ).fetchone()[0]
+            if admin_count < 1:
+                raise ValueError("Tidak dapat mengubah role atau menonaktifkan akun Admin aktif terakhir")
+
+        set_clauses = []
+        params = []
+        if "role" in updates and updates["role"] in ("admin", "analyst", "viewer"):
+            set_clauses.append("role = ?")
+            params.append(updates["role"])
+        if "active" in updates:
+            set_clauses.append("active = ?")
+            params.append(1 if updates["active"] else 0)
+        if "email" in updates:
+            set_clauses.append("email = ?")
+            params.append(str(updates["email"]).strip()[:120])
+        if "name" in updates:
+            set_clauses.append("name = ?")
+            params.append(str(updates["name"]).strip()[:100])
+        if "password" in updates and updates["password"]:
+            pwd = str(updates["password"])
+            if len(pwd) < 8:
+                raise ValueError("Password baru minimal 8 karakter")
+            set_clauses.append("password_hash = ?")
+            params.append(_hash_password(pwd))
+
+        if not set_clauses:
+            return {
+                "id": row["id"],
+                "username": row["username"],
+                "role": row["role"],
+                "email": row["email"] or "",
+                "name": row["name"] or "",
+                "created_at": row["created_at"],
+                "last_login_at": row["last_login_at"],
+                "active": bool(row["active"]),
+            }
+
+        params.append(clean_id)
+        conn.execute(f"UPDATE users SET {', '.join(set_clauses)} WHERE id = ?", params)
+        updated = conn.execute(
+            "SELECT id, username, role, email, name, created_at, last_login_at, active FROM users WHERE id = ?",
+            (clean_id,),
+        ).fetchone()
+        return {
+            "id": updated["id"],
+            "username": updated["username"],
+            "role": updated["role"],
+            "email": updated["email"] or "",
+            "name": updated["name"] or "",
+            "created_at": updated["created_at"],
+            "last_login_at": updated["last_login_at"],
+            "active": bool(updated["active"]),
+        }
+
+
+def _user_delete(user_id):
+    clean_id = str(user_id).strip()
+    with closing(_db()) as conn, conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (clean_id,)).fetchone()
+        if not row:
+            return False
+        if row["role"] == "admin":
+            admin_count = conn.execute(
+                "SELECT count(*) FROM users WHERE role = 'admin' AND active = 1 AND id != ?",
+                (clean_id,),
+            ).fetchone()[0]
+            if admin_count < 1:
+                raise ValueError("Tidak dapat menghapus akun Admin aktif terakhir")
+        conn.execute("DELETE FROM users WHERE id = ?", (clean_id,))
+        return True
+
+
+def _user_authenticate(username, password):
+    clean_username = (username or "").strip().lower()
+    if not clean_username or not password:
+        return None
+    try:
+        with closing(_db()) as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE username = ? AND active = 1",
+                (clean_username,),
+            ).fetchone()
+        if not row:
+            return None
+        if not _verify_password(password, row["password_hash"]):
+            return None
+
+        now_iso = datetime.now(WITA).isoformat()
+        with closing(_db()) as conn, conn:
+            conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now_iso, row["id"]))
+
+        return {
+            "id": row["id"],
+            "username": row["username"],
+            "role": row["role"],
+            "email": row["email"] or "",
+            "name": row["name"] or "",
+        }
+    except Exception as e:
+        print(f"user_authenticate error: {e}", flush=True)
+        return None
 
 
 def _indexer_enabled():
@@ -2062,6 +2299,15 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             self._json(200, {"keys": _api_key_list()})
+        elif parsed.path == "/api/users":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            self._json(200, {"users": _user_list()})
         elif parsed.path == "/healthz":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -2427,6 +2673,56 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 ok = _api_key_revoke(key_id)
                 self._json(200, {"revoked": ok, "id": key_id})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/users":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                action = data.get("action", "create")
+                if action == "create":
+                    created = _user_create(
+                        username=data.get("username", ""),
+                        password=data.get("password", ""),
+                        role=data.get("role", "viewer"),
+                        email=data.get("email", ""),
+                        name=data.get("name", ""),
+                    )
+                    self._json(201, {"success": True, "user": created})
+                elif action == "update":
+                    user_id = data.get("id") or data.get("user_id")
+                    updated = _user_update(user_id, data)
+                    self._json(200, {"success": True, "user": updated})
+                elif action == "delete":
+                    user_id = data.get("id") or data.get("user_id")
+                    ok = _user_delete(user_id)
+                    self._json(200, {"success": ok, "id": user_id})
+                else:
+                    self._json(400, {"error": f"action '{action}' tidak dikenal"})
+            except ValueError as ve:
+                self._json(400, {"error": str(ve)})
+            except Exception as e:
+                self._json(500, {"error": str(e)})
+        elif parsed.path == "/api/auth/login":
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                username = data.get("username", "")
+                password = data.get("password", "")
+                user = _user_authenticate(username, password)
+                if not user:
+                    self._json(401, {"error": "Username atau password salah atau akun nonaktif"})
+                    return
+                self._json(200, {"success": True, "user": user})
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/commands":

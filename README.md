@@ -26,6 +26,7 @@ Threat intelligence multi-sumber, respons berjenjang berbasis keyakinan, ringkas
 - **Hemat kuota & anti-noise** — filter noise pra-scan, cache verdict berbasis hash dengan TTL diferensial, dan dedup claim-check di sisi server.
 - **Agen ringan lintas OS** — `soar-agent` (Rust, ~5 MB) untuk Linux, Windows, dan macOS; mengirim metadata + hash saja, isi berkas tidak pernah keluar endpoint.
 - **Bukti yang bisa dipantau** — dashboard web (UI bergaya Wazuh), TUI terminal, dan API monitoring dengan heartbeat 60 detik.
+- **Akses machine-to-machine AI Agent & Integrasi MCP** (Model Context Protocol JSON-RPC 2.0 stdio dan antarmuka API Keys berbasis granular scopes untuk integrasi AI Agent seperti agy, Claude Code, Codex, dan Cursor).
 - **Setup lintas-device** — bootstrap server satu perintah + empat jalur pemasangan agent, termasuk rollout fleet via Ansible.
 
 ---
@@ -66,7 +67,7 @@ Penjelasan awam dan diagram lain: [`docs/arsitektur/ARCHITECTURE.md`](docs/arsit
 | **Wazuh Dashboard** | Antarmuka bawaan Wazuh (opsional) | 4.14.8 |
 | **n8n** | Mesin orkestrasi playbook (otak SOAR) | 2.42.5 |
 | **soar-agent** | Agen endpoint Rust: FIM, hash, karantina, scan on-demand | - |
-| **fleet-monitor** | API monitoring (heartbeat, event, command queue, cache verdict) | stdlib Python |
+| **fleet-monitor** | API monitoring (heartbeat, event, command queue, cache verdict, API Keys M2M) | stdlib Python |
 | **misp-index** | Sumber threat-intel MISP (feed CIRCL OSINT) + API lookup | stdlib Python |
 | **alert-log** | Pencatat alert Telegram keluar (observability) | stdlib Python |
 | **dashboard** | UI monitoring (gaya Wazuh) | Next.js |
