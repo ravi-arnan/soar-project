@@ -52,6 +52,10 @@ const ApiKeysView = dynamic(
   () => import('@/components/wazuh/ApiKeysView').then((m) => m.ApiKeysView),
   { loading: () => <ViewSkeleton /> }
 );
+const UserManagementView = dynamic(
+  () => import('@/components/wazuh/UserManagementView').then((m) => m.UserManagementView),
+  { loading: () => <ViewSkeleton /> }
+);
 
 export default function Home() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -144,6 +148,12 @@ export default function Home() {
         { label: 'API Keys & Agent Access' },
       ];
     }
+    if (currentView === 'users') {
+      return [
+        { label: 'Modules', onClick: () => setCurrentView('modules') },
+        { label: 'User Management' },
+      ];
+    }
     if (currentView === 'agent-detail') {
       return [
         { label: 'Modules', onClick: () => setCurrentView('modules') },
@@ -232,6 +242,7 @@ export default function Home() {
               else if (modKey === 'threat-intel') setCurrentView('threat-intel');
               else if (modKey === 'mitre') setCurrentView('mitre');
               else if (modKey === 'network-map') setCurrentView('network-map');
+              else if (modKey === 'users') setCurrentView('users');
               else if (modKey === 'api-keys') setCurrentView('api-keys');
               else if (modKey === 'settings') setCurrentView('settings');
               else handleNavigate('security-events', opts);
@@ -291,6 +302,8 @@ export default function Home() {
         )}
 
         {currentView === 'threat-intel' && <ThreatIntelView />}
+
+        {currentView === 'users' && <UserManagementView />}
 
         {currentView === 'api-keys' && <ApiKeysView />}
 

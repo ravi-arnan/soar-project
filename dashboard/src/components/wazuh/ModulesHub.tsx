@@ -13,6 +13,8 @@ import {
   Workflow,
   Bot,
   ArrowUpRight,
+  Users,
+  Key,
 } from 'lucide-react';
 
 import type {
@@ -212,6 +214,18 @@ export const ModulesHub = React.memo(function ModulesHub({
             title: 'Network map',
             description: `Hub-and-spoke topology of ${stats.active}/${stats.total} active agents. Interactive node exploration.`,
             icon: Network,
+          },
+          {
+            id: 'users',
+            title: 'User Management (RBAC)',
+            description: 'Kelola akun personel SOC dan tentukan hak akses berjenjang (Admin, Analyst, Viewer).',
+            icon: Users,
+          },
+          {
+            id: 'api-keys',
+            title: 'API Keys & Machine Access',
+            description: 'Penerbitan dan audit token akses M2M untuk AI agent dan integrasi workflow eksternal.',
+            icon: Key,
           },
         ],
       },

@@ -1,4 +1,9 @@
-import { isValidSession, sessionFromRequest, validLoginToken } from "../../../lib/session.ts";
+import {
+  getAuthorizedSession,
+  isValidSession,
+  sessionFromRequest,
+  validLoginToken,
+} from "../../../lib/session.ts";
 
 export const runtime = "nodejs";
 
@@ -90,6 +95,13 @@ async function readJsonBody(request: Request): Promise<unknown> {
 export async function POST(request: Request): Promise<Response> {
   if (!isDashboardRequestAuthorized(request)) {
     return errorResponse("login dashboard diperlukan", 401);
+  }
+  const sessionUser = getAuthorizedSession(request);
+  if (sessionUser && sessionUser.role === "viewer") {
+    return errorResponse(
+      "Akses ditolak: Role 'viewer' tidak memiliki izin untuk mengeksekusi aksi mitigasi",
+      403,
+    );
   }
   if (!isAllowedOrigin(request)) {
     return errorResponse("origin tidak diizinkan", 403);

@@ -17,6 +17,10 @@ import {
   FileCheck2,
   Info,
   X,
+  User,
+  Users,
+  LogOut,
+  Key,
 } from 'lucide-react';
 import { WazuhLogo } from './WazuhLogo';
 import type {
@@ -56,10 +60,27 @@ export const WazuhHeader = React.memo(function WazuhHeader({
   onRefresh,
 }: WazuhHeaderProps) {
   const [activeMenu, setActiveMenu] = useState<
-    'api' | 'tenant' | 'help' | 'notifications' | 'more' | null
+    'api' | 'tenant' | 'user' | 'help' | 'notifications' | 'more' | null
   >(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{
+    username: string;
+    role: 'admin' | 'analyst' | 'viewer';
+    email?: string;
+    name?: string;
+  } | null>(null);
   const menuContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authenticated && data.user) {
+          setCurrentUser(data.user);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const totalThreats =
     (stats?.severity?.CRITICAL || 0) + (stats?.severity?.HIGH || 0);
@@ -88,7 +109,7 @@ export const WazuhHeader = React.memo(function WazuhHeader({
     };
   }, []);
 
-  const toggleMenu = (menu: 'api' | 'tenant' | 'help' | 'notifications' | 'more') => {
+  const toggleMenu = (menu: 'api' | 'tenant' | 'user' | 'help' | 'notifications' | 'more') => {
     setActiveMenu((prev) => (prev === menu ? null : menu));
   };
 
@@ -275,6 +296,104 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                 </div>
                 <div className="px-3 py-1.5 border-t border-[#E1E6EB] text-[11px] text-[#5A626F]">
                   Mengawasi {stats?.total || 7} endpoint dalam sistem fleet saat ini.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* User Profile & Role Selector */}
+          <div className="relative">
+            <button
+              onClick={() => toggleMenu('user')}
+              className={`flex items-center gap-1.5 text-[12px] px-2 py-1 rounded transition-colors border border-[#D3DAE6] ${
+                activeMenu === 'user' ? 'bg-[#E1E6EB] border-[#006BB4]' : 'bg-[#F8FAFC] hover:bg-[#F0F4F8]'
+              }`}
+              title="Profil & Role Pengguna"
+              aria-expanded={activeMenu === 'user'}
+            >
+              <User className="w-3.5 h-3.5 text-[#006BB4]" />
+              <span className="font-medium text-[#1A1C21] max-w-[90px] truncate">
+                {currentUser?.username || 'admin'}
+              </span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                  (currentUser?.role || 'admin') === 'admin'
+                    ? 'bg-[#FDE8E8] text-[#BD271E]'
+                    : currentUser?.role === 'analyst'
+                    ? 'bg-[#EBF5FB] text-[#006BB4]'
+                    : 'bg-[#E6F6F4] text-[#00A389]'
+                }`}
+              >
+                {currentUser?.role || 'admin'}
+              </span>
+              <ChevronDown className="w-3 h-3 text-[#5A626F]" />
+            </button>
+
+            {/* User Dropdown */}
+            {activeMenu === 'user' && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-[#D3DAE6] rounded shadow-lg z-50 py-1">
+                <div className="px-3 py-2 border-b border-[#E1E6EB]">
+                  <div className="text-[12px] font-semibold text-[#1A1C21]">
+                    {currentUser?.name || currentUser?.username || 'Administrator'}
+                  </div>
+                  <div className="text-[11px] text-[#5A626F] truncate">
+                    {currentUser?.email || 'admin@soar.local'}
+                  </div>
+                  <div className="mt-1 flex items-center gap-1">
+                    <span className="text-[11px] text-[#8A94A6]">Role:</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        (currentUser?.role || 'admin') === 'admin'
+                          ? 'bg-[#FDE8E8] text-[#BD271E]'
+                          : currentUser?.role === 'analyst'
+                          ? 'bg-[#EBF5FB] text-[#006BB4]'
+                          : 'bg-[#E6F6F4] text-[#00A389]'
+                      }`}
+                    >
+                      {currentUser?.role || 'admin'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="py-1 text-[12px]">
+                  {onNavigate && (
+                    <button
+                      onClick={() => {
+                        onNavigate('users');
+                        setActiveMenu(null);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[#1A1C21] hover:bg-[#F5F7FA] transition-colors"
+                    >
+                      <Users className="w-3.5 h-3.5 text-[#5A626F]" />
+                      <span>Kelola Pengguna (RBAC)</span>
+                    </button>
+                  )}
+                  {onNavigate && (
+                    <button
+                      onClick={() => {
+                        onNavigate('api-keys');
+                        setActiveMenu(null);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[#1A1C21] hover:bg-[#F5F7FA] transition-colors"
+                    >
+                      <Key className="w-3.5 h-3.5 text-[#5A626F]" />
+                      <span>API Keys &amp; 2FA Gate</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      try {
+                        await fetch('/api/auth/logout', { method: 'POST' });
+                        window.location.reload();
+                      } catch {
+                        window.location.reload();
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-[#BD271E] hover:bg-[#FDF3F2] transition-colors border-t border-[#E1E6EB]"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-[#BD271E]" />
+                    <span>Keluar / Logout</span>
+                  </button>
                 </div>
               </div>
             )}

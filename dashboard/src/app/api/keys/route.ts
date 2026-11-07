@@ -1,4 +1,9 @@
-import { isValidSession, sessionFromRequest, validLoginToken } from "../../../lib/session.ts";
+import {
+  getAuthorizedSession,
+  isValidSession,
+  sessionFromRequest,
+  validLoginToken,
+} from "../../../lib/session.ts";
 
 export const runtime = "nodejs";
 
@@ -22,13 +27,17 @@ function errorResponse(message: string, status: number): Response {
 }
 
 function fleetBaseUrl(): string {
-  const rawBase = process.env.FLEET_API_URL || "http://host.docker.internal:8080";
+  const rawBase = process.env.FLEET_API_URL || "http://127.0.0.1:8080";
   return rawBase.split("?")[0].replace(/\/$/, "");
 }
 
 export async function GET(request: Request): Promise<Response> {
   if (!isDashboardRequestAuthorized(request)) {
     return errorResponse("login dashboard diperlukan", 401);
+  }
+  const sessionUser = getAuthorizedSession(request);
+  if (sessionUser && sessionUser.role !== "admin") {
+    return errorResponse("Akses ditolak: Hanya role 'admin' yang dapat mengelola API Key", 403);
   }
 
   const commandToken = process.env.FLEET_COMMAND_TOKEN;
@@ -59,6 +68,10 @@ export async function GET(request: Request): Promise<Response> {
 export async function POST(request: Request): Promise<Response> {
   if (!isDashboardRequestAuthorized(request)) {
     return errorResponse("login dashboard diperlukan", 401);
+  }
+  const sessionUser = getAuthorizedSession(request);
+  if (sessionUser && sessionUser.role !== "admin") {
+    return errorResponse("Akses ditolak: Hanya role 'admin' yang dapat mengelola API Key", 403);
   }
 
   const commandToken = process.env.FLEET_COMMAND_TOKEN;
