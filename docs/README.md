@@ -57,6 +57,8 @@ docs/
 ## bimbingan/
 | Dokumen | Isi |
 |---|---|
+| `CATATAN-DOSPEM-2026-11-07.md` | Catatan bimbingan 7 Nov 2026 (User Management, Installer UI, Dinamisasi AI & Threat Intel) |
+| `LEMBAR-KEMAJUAN-BIMBINGAN-2026-11-07.md` / `.pdf` | Lembar kemajuan bimbingan 7 Nov 2026 |
 | `CATATAN-DOSPEM-2026-09-03.md` | Catatan bimbingan 3 Sep 2026 |
 | `LAPORAN-BIMBINGAN-2026-10-08.html` / `.pdf` | Laporan update + perbandingan milestone |
 | `BIMBINGAN-TA-SOAR.pptx` / `.pdf` | Materi bimbingan |

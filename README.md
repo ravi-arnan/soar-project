@@ -20,14 +20,17 @@ Threat intelligence multi-sumber, respons berjenjang berbasis keyakinan, ringkas
 
 ## Sorotan
 
-- **SOAR penuh dari komponen open-source** — setara kapabilitas Cortex XSOAR atau Splunk SOAR tanpa biaya lisensi.
-- **Respons berjenjang (confidence-based)** — sistem yakin bertindak otomatis; sistem ragu menyerahkan keputusan ke analis (human-in-the-loop).
-- **Threat intelligence multi-sumber** — VirusTotal + MalwareBazaar + **MISP** (feed OSINT komunitas) untuk malware, GSB + URLScan.io untuk phishing, AlienVault OTX sebagai fallback saat rate-limit.
-- **Hemat kuota & anti-noise** — filter noise pra-scan, cache verdict berbasis hash dengan TTL diferensial, dan dedup claim-check di sisi server.
-- **Agen ringan lintas OS** — `soar-agent` (Rust, ~5 MB) untuk Linux, Windows, dan macOS; mengirim metadata + hash saja, isi berkas tidak pernah keluar endpoint.
-- **Bukti yang bisa dipantau** — dashboard web (UI bergaya Wazuh), TUI terminal, dan API monitoring dengan heartbeat 60 detik.
+- **SOAR penuh dari komponen open-source** - setara kapabilitas Cortex XSOAR atau Splunk SOAR tanpa biaya lisensi.
+- **Respons berjenjang (confidence-based)** - sistem yakin bertindak otomatis; sistem ragu menyerahkan keputusan ke analis (human-in-the-loop).
+- **Threat intelligence multi-sumber** - VirusTotal + MalwareBazaar + **MISP** (feed OSINT komunitas) untuk malware, GSB + URLScan.io untuk phishing, AlienVault OTX sebagai fallback saat rate-limit.
+- **Dinamisasi AI Engine & Threat Intel Synthesis** - model LLM (Gemini 2.5 Flash, 1.5 Pro, DeepSeek V4, Claude), bobot skor, threshold, dan API key dapat dikonfigurasi runtime via UI tanpa restart server, lengkap dengan Live AI Playground.
+- **Hemat kuota & anti-noise** - filter noise pra-scan dan selective media triage (mengabaikan media pasif murni ekspor chat tanpa mengorbankan proteksi berkas eksekutabel/arsip), cache verdict berbasis hash dengan TTL diferensial, serta dedup claim-check di sisi server.
+- **Agen ringan lintas OS** - `soar-agent` (Rust, ~5 MB) untuk Linux, Windows, dan macOS; mengirim metadata + hash saja, isi berkas tidak pernah keluar endpoint.
+- **Installer UI & Pendaftaran Agent Tanpa Konfigurasi (Zero-Config)** - instalasi endpoint cukup satu baris perintah (`curl -sSL ... | sudo bash`), pendaftaran host masuk antrean persetujuan, dan admin cukup klik Approve di dashboard.
+- **User Management & Cloudflare Access Zero Trust RBAC** - otentikasi SSO email berbasis header Cloudflare Access dengan pemisahan peran Admin (mitigasi penuh) dan Viewer (audit read-only).
+- **Bukti yang bisa dipantau** - dashboard web (UI bergaya Wazuh), TUI terminal, dan API monitoring dengan heartbeat 60 detik.
 - **Akses machine-to-machine AI Agent & Integrasi MCP** (Model Context Protocol JSON-RPC 2.0 stdio dan antarmuka API Keys berbasis granular scopes untuk integrasi AI Agent seperti agy, Claude Code, Codex, dan Cursor).
-- **Setup lintas-device** — bootstrap server satu perintah + empat jalur pemasangan agent, termasuk rollout fleet via Ansible.
+- **Setup lintas-device** - bootstrap server satu perintah + empat jalur pemasangan agent, termasuk rollout fleet via Ansible.
 
 ---
 
