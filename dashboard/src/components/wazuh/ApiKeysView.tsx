@@ -142,6 +142,7 @@ export function ApiKeysView() {
 
   // State revoke
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; name: string } | null>(null);
 
   const loadKeys = useCallback(async () => {
     try {
@@ -241,7 +242,7 @@ export function ApiKeysView() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Token tidak valid');
+        setOtpError(err.error || 'Token tidak valid');
         return;
       }
 
@@ -251,7 +252,7 @@ export function ApiKeysView() {
       loadKeys();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`Login gagal: ${msg}`);
+      setOtpError(`Login gagal: ${msg}`);
     } finally {
       setIsLoggingIn(false);
     }
@@ -315,7 +316,7 @@ export function ApiKeysView() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Gagal membuat API Key');
+        setError(err.error || 'Gagal membuat API Key');
         return;
       }
 
@@ -327,39 +328,38 @@ export function ApiKeysView() {
       loadKeys();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`Error membuat API Key: ${msg}`);
+      setError(`Error membuat API Key: ${msg}`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleRevokeKey = async (id: string, name: string) => {
-    if (
-      !window.confirm(
-        `Yakin ingin mencabut (revoke) API Key "${name}"? Tindakan ini tidak dapat dibatalkan.`
-      )
-    ) {
-      return;
-    }
+  const handleRevokeKey = (id: string, name: string) => {
+    setRevokeTarget({ id, name });
+  };
+
+  const executeRevokeKey = async () => {
+    if (!revokeTarget) return;
 
     try {
-      setRevokingId(id);
+      setRevokingId(revokeTarget.id);
       const res = await fetch('/api/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'revoke', id }),
+        body: JSON.stringify({ action: 'revoke', id: revokeTarget.id }),
       });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error || 'Gagal mencabut API Key');
+        setError(err.error || 'Gagal mencabut API Key');
         return;
       }
 
+      setRevokeTarget(null);
       loadKeys();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`Error saat revoke: ${msg}`);
+      setError(`Error saat revoke: ${msg}`);
     } finally {
       setRevokingId(null);
     }
@@ -885,6 +885,51 @@ export function ApiKeysView() {
               >
                 Selesai & Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Revoke API Key Confirmation Modal */}
+      {revokeTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white border border-[#D3DAE6] rounded w-full max-w-md p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-full bg-[#FDF3F2] text-[#BD271E] shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-[14px] font-bold text-[#1A1C21]">
+                  Cabut API Key
+                </h3>
+                <p className="text-[12px] text-[#5A626F] mt-1 leading-relaxed">
+                  Apakah Anda yakin ingin mencabut (revoke) API Key{' '}
+                  <strong className="text-[#1A1C21] font-mono">{revokeTarget.name}</strong>? Akses mesin/agen yang menggunakan token ini akan langsung terputus. Tindakan ini tidak dapat dibatalkan.
+                </p>
+
+                <div className="flex items-center justify-end gap-2.5 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => setRevokeTarget(null)}
+                    className="px-3 py-1.5 border border-[#D3DAE6] rounded text-[12px] font-medium text-[#5A626F] hover:bg-[#F5F7FA] transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={executeRevokeKey}
+                    disabled={revokingId === revokeTarget.id}
+                    className="px-3 py-1.5 rounded text-[12px] font-semibold text-white bg-[#BD271E] hover:bg-[#9E1F18] transition flex items-center gap-1.5"
+                  >
+                    {revokingId === revokeTarget.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                    <span>Cabut Kunci</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

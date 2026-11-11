@@ -45,11 +45,13 @@ export function AgentDeploymentView({ onBackToAgents, userRole = 'admin' }: Agen
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Modal approve state
+  // Modal approve & reject state
   const [selectedReq, setSelectedReq] = useState<EnrollmentRequest | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<EnrollmentRequest | null>(null);
   const [customName, setCustomName] = useState('');
   const [customId, setCustomId] = useState('');
   const [isApproving, setIsApproving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
 
   // Host origin detection
   const [origin] = useState(() => {
@@ -171,8 +173,13 @@ export function AgentDeploymentView({ onBackToAgents, userRole = 'admin' }: Agen
     }
   };
 
-  const handleReject = async (req: EnrollmentRequest) => {
-    if (!confirm(`Tolak permohonan pendaftaran dari host '${req.hostname}'?`)) return;
+  const handleReject = (req: EnrollmentRequest) => {
+    setRejectTarget(req);
+  };
+
+  const executeReject = async () => {
+    if (!rejectTarget) return;
+    setIsRejecting(true);
     setError(null);
     try {
       const res = await fetch('/api/enroll', {
@@ -180,18 +187,22 @@ export function AgentDeploymentView({ onBackToAgents, userRole = 'admin' }: Agen
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'reject',
-          request_id: req.id,
+          request_id: rejectTarget.id,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         setError(data.error || 'Gagal menolak permohonan.');
+        setIsRejecting(false);
         return;
       }
-      setSuccessMsg(`Permohonan dari host '${req.hostname}' telah ditolak.`);
+      setSuccessMsg(`Permohonan dari host '${rejectTarget.hostname}' telah ditolak.`);
+      setRejectTarget(null);
       fetchRequests();
     } catch (err) {
       setError(`Gagal menolak: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -562,6 +573,57 @@ export function AgentDeploymentView({ onBackToAgents, userRole = 'admin' }: Agen
                   {isApproving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
                   <span>Setujui &amp; Aktifkan</span>
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Confirmation Modal */}
+      {rejectTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white border border-[#D3DAE6] rounded w-full max-w-md p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-full bg-[#FDF3F2] text-[#BD271E] shrink-0">
+                <XCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-[14px] font-bold text-[#1A1C21]">
+                  Tolak Pendaftaran Agent
+                </h3>
+                <p className="text-[12px] text-[#5A626F] mt-1 leading-relaxed">
+                  Apakah Anda yakin ingin menolak permohonan pendaftaran dari host{' '}
+                  <strong className="text-[#1A1C21] font-mono">{rejectTarget.hostname}</strong>?
+                </p>
+
+                <div className="mt-3 p-2.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] font-mono space-y-1">
+                  <div><span className="text-[#8A94A6]">IP Address:</span> {rejectTarget.ip}</div>
+                  <div><span className="text-[#8A94A6]">OS / Arch:</span> {rejectTarget.os} ({rejectTarget.arch})</div>
+                  <div><span className="text-[#8A94A6]">Request ID:</span> {rejectTarget.id}</div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => setRejectTarget(null)}
+                    className="px-3 py-1.5 border border-[#D3DAE6] rounded text-[12px] font-medium text-[#5A626F] hover:bg-[#F5F7FA] transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={executeReject}
+                    disabled={isRejecting}
+                    className="px-3 py-1.5 rounded text-[12px] font-semibold text-white bg-[#BD271E] hover:bg-[#9E1F18] transition flex items-center gap-1.5"
+                  >
+                    {isRejecting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                    <span>Tolak Permohonan</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -158,24 +158,24 @@ export function SettingsView({
   return (
     <div className="space-y-4">
       {/* Tab Switcher */}
-      <div className="flex items-center gap-2 border-b border-[#D3DAE6] pb-2">
+      <div className="flex flex-wrap items-center gap-6 border-b border-[#D3DAE6] pb-2 text-[13px]">
         <button
           onClick={() => setActiveTab('general')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded transition ${
+          className={`flex items-center gap-1.5 pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
             activeTab === 'general'
-              ? 'bg-[#006BB4] text-white'
-              : 'text-[#5A626F] hover:bg-[#F0F4F8]'
+              ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
+              : 'text-[#5A626F] hover:text-[#1A1C21]'
           }`}
         >
           <Sliders className="w-3.5 h-3.5" />
-          General & Diagnostics
+          <span>General &amp; Diagnostics</span>
         </button>
         <button
           onClick={() => setActiveTab('dynamic-config')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded transition ${
+          className={`flex items-center gap-1.5 pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
             activeTab === 'dynamic-config'
-              ? 'bg-[#006BB4] text-white'
-              : 'text-[#5A626F] hover:bg-[#F0F4F8]'
+              ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
+              : 'text-[#5A626F] hover:text-[#1A1C21]'
           }`}
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -183,14 +183,14 @@ export function SettingsView({
         </button>
         <button
           onClick={() => setActiveTab('keys')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded transition ${
+          className={`flex items-center gap-1.5 pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
             activeTab === 'keys'
-              ? 'bg-[#006BB4] text-white'
-              : 'text-[#5A626F] hover:bg-[#F0F4F8]'
+              ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
+              : 'text-[#5A626F] hover:text-[#1A1C21]'
           }`}
         >
           <Key className="w-3.5 h-3.5" />
-          API Keys &amp; Agent Access
+          <span>API Keys &amp; Agent Access</span>
         </button>
       </div>
 
@@ -313,13 +313,13 @@ export function SettingsView({
                         <div className="font-medium text-[#1A1C21]">{comp.name}</div>
                         <div className="text-[11px] text-[#64748b] mt-0.5">{comp.role}</div>
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-[#5A626F]">
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-[#5A626F] tabular-nums">
                         {comp.port || '-'}
                       </td>
-                      <td className="py-2.5 px-3 font-mono font-semibold text-[#006BB4]">
+                      <td className="py-2.5 px-3 font-mono font-semibold text-[#006BB4] tabular-nums">
                         {comp.memory}
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-[#5A626F]">
+                      <td className="py-2.5 px-3 font-mono text-[#5A626F] tabular-nums">
                         {comp.memPercent}
                       </td>
                       <td className="py-2.5 pl-3 text-right">

@@ -58,20 +58,18 @@ function generateThreatAnalysis(event: FleetEvent): ThreatAnalysis {
   const ruleDesc = (event.rule_desc || '').toLowerCase();
   const hash = event.hash || '';
 
-  // 1. Tentukan Model AI yang bertugas
-  let modelName = 'Gemini 2.5 Flash';
-  if (event.ai && event.ai.toLowerCase().includes('deepseek')) {
-    modelName = 'DeepSeek-V4-Flash';
-  } else if (
-    filename.endsWith('.ps1') ||
-    filename.endsWith('.sh') ||
-    filename.endsWith('.bat') ||
-    ruleDesc.includes('powershell') ||
-    ruleDesc.includes('script')
-  ) {
-    modelName = 'DeepSeek-V4-Flash (Logic Analyzer)';
+  // 1. Tentukan Model / Mesin Analisis
+  let modelName = 'Gemini 2.5 Flash (SOC Threat Engine)';
+  const hasRealAi = Boolean(event.ai && event.ai.trim().length > 10);
+
+  if (hasRealAi) {
+    if (event.ai?.toLowerCase().includes('deepseek')) {
+      modelName = 'DeepSeek-V4-Flash (Code/Script Logic)';
+    } else {
+      modelName = 'Gemini 2.5 Flash (Autonomous SOC Triage)';
+    }
   } else {
-    modelName = 'Gemini 2.5 Flash (SOC Threat Engine)';
+    modelName = 'Wazuh Syscheck & Rule Heuristic';
   }
 
   // 2. Evaluasi Verdict & MITRE ATT&CK
@@ -139,21 +137,15 @@ function generateThreatAnalysis(event: FleetEvent): ThreatAnalysis {
 
   // 3. Bangun Narasi Penalaran (Reasoning)
   let reasoning = '';
-  if (event.ai && event.ai.trim().length > 15) {
-    reasoning = event.ai.trim();
+  if (hasRealAi) {
+    reasoning = (event.ai || '').trim();
   } else {
     if (verdict === 'MALICIOUS') {
-      reasoning = `AI Agent mendeteksi anomali kritis pada artefak ${filename}. Karakteristik hash ${hash.slice(
-        0,
-        12
-      )}... menunjukkan kecocokan dengan pola taktik ${mitreTechnique}. Pola aktivitas mengindikasikan upaya enkripsi, manipulasi integritas data, atau pembongkaran mekanisme pemulihan sistem. Integritas host berisiko tinggi bila proses dibiarkan berjalan.`;
+      reasoning = `Telemetri mendeteksi anomali kritis pada artefak ${filename} (hash: ${hash ? hash.slice(0, 16) + '...' : '-'}). Karakteristik FIM dan pola ekstensi sesuai taktik ${mitreTechnique}. Direkomendasikan segera memicu Active Response karantina.`;
     } else if (verdict === 'SUSPICIOUS') {
-      reasoning = `AI Agent mendeteksi indikator yang patut dicurigai pada ${filename}. Eksekusi atau modifikasi file di jalur pemantauan agent ${event.agent} tidak memiliki tanda tangan digital resmi dan menunjukkan kemiripan dengan teknik ${mitreTechnique}. Diperlukan korelasi silang dengan feed eksternal sebelum tindakan isolasi penuh dijalankan.`;
+      reasoning = `Indikator mencurigakan terdeteksi pada ${filename} di agent ${event.agent || 'endpoint'}. Modifikasi atau eksekusi memerlukan tinjauan lebih lanjut terhadap reputasi IoC eksternal.`;
     } else {
-      reasoning = `AI Agent telah meninjau artefak ${filename} (hash: ${hash.slice(
-        0,
-        12
-      )}...) yang dilaporkan oleh agent ${event.agent}. Analisis reputasi multi-sumber (VirusTotal, MalwareBazaar, OTX) tidak menemukan adanya signature malicious atau korelasi ancaman aktif. Status file dinilai aman dalam batas baseline FIM.`;
+      reasoning = `Artefak ${filename} berada dalam batas toleransi baseline FIM normal tanpa indikasi anomali aktif.`;
     }
   }
 
@@ -373,22 +365,22 @@ export function ThreatIntelView() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-white border border-[#D3DAE6] rounded p-4 text-center">
         <div>
           <div className="text-[12px] text-[#5A626F] font-medium">Total Artefak Dianalisis</div>
-          <div className="text-[28px] font-semibold text-[#006BB4] leading-tight mt-1">{intel.total}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">{intel.uniq} hash unik diverifikasi</div>
+          <div className="text-[28px] font-semibold text-[#006BB4] font-mono tabular-nums leading-tight mt-1">{intel.total}</div>
+          <div className="text-[11px] text-[#8A94A6] font-mono tabular-nums mt-0.5">{intel.uniq} hash unik diverifikasi</div>
         </div>
         <div>
           <div className="text-[12px] text-[#5A626F] font-medium">Malicious (Critical)</div>
-          <div className="text-[28px] font-semibold text-[#BD271E] leading-tight mt-1">{intel.crit}</div>
+          <div className="text-[28px] font-semibold text-[#BD271E] font-mono tabular-nums leading-tight mt-1">{intel.crit}</div>
           <div className="text-[11px] text-[#BD271E] mt-0.5">Perlu isolasi segera</div>
         </div>
         <div>
           <div className="text-[12px] text-[#5A626F] font-medium">Malicious (High)</div>
-          <div className="text-[28px] font-semibold text-[#B25E09] leading-tight mt-1">{intel.high}</div>
+          <div className="text-[28px] font-semibold text-[#B25E09] font-mono tabular-nums leading-tight mt-1">{intel.high}</div>
           <div className="text-[11px] text-[#B25E09] mt-0.5">Persistensi / Scripting</div>
         </div>
         <div>
           <div className="text-[12px] text-[#5A626F] font-medium">Suspicious / Review</div>
-          <div className="text-[28px] font-semibold text-[#6B7280] leading-tight mt-1">{intel.med}</div>
+          <div className="text-[28px] font-semibold text-[#6B7280] font-mono tabular-nums leading-tight mt-1">{intel.med}</div>
           <div className="text-[11px] text-[#6B7280] mt-0.5">Tinjau aktivitas proses</div>
         </div>
       </div>

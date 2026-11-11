@@ -31,7 +31,7 @@ interface MetricPoint {
   ram_total: number;
 }
 
-/** Grafik garis resource (CPU% + RAM GB) dari /api/metrics, SVG native. */
+/** Grafik garis resource (CPU% + RAM GB) dari /api/metrics, SVG area chart ala Datadog/Kibana. */
 function ResourceChart({ agentId }: { agentId: string }) {
   const [points, setPoints] = useState<MetricPoint[]>([]);
   useEffect(() => {
@@ -49,39 +49,133 @@ function ResourceChart({ agentId }: { agentId: string }) {
 
   if (!points.length) {
     return (
-      <div className="text-[12px] text-[#8A94A6] py-6 text-center">
-        Belum ada data resource — menunggu heartbeat agent (60 dtk).
+      <div className="text-[12px] text-[#8A94A6] py-8 text-center font-mono">
+        Belum ada data resource · menunggu heartbeat agent (siklus 60 dtk).
       </div>
     );
   }
 
-  const W = 400;
-  const H = 120;
+  const W = 460;
+  const H = 130;
+  const PAD_BOTTOM = 20;
+  const PAD_TOP = 10;
+  const CHART_H = H - PAD_BOTTOM - PAD_TOP;
+
   const maxCpu = Math.max(10, ...points.map((p) => p.cpu_pct));
   const maxRam = Math.max(1, ...points.map((p) => p.ram_total || p.ram_used));
   const n = points.length;
-  const x = (i: number) => (n === 1 ? W / 2 : (i / (n - 1)) * W);
-  const cpuLine = points.map((p, i) => `${x(i).toFixed(1)},${(H - (p.cpu_pct / maxCpu) * (H - 10) - 5).toFixed(1)}`).join(' ');
-  const ramLine = points.map((p, i) => `${x(i).toFixed(1)},${(H - (p.ram_used / maxRam) * (H - 10) - 5).toFixed(1)}`).join(' ');
+  const x = (i: number) => (n <= 1 ? W / 2 : (i / (n - 1)) * W);
+  const yCpu = (p: MetricPoint) =>
+    PAD_TOP + (1 - Math.min(1, p.cpu_pct / maxCpu)) * CHART_H;
+  const yRam = (p: MetricPoint) =>
+    PAD_TOP + (1 - Math.min(1, (p.ram_used / maxRam))) * CHART_H;
+
+  const cpuPoints = points.map((p, i) => `${x(i).toFixed(1)},${yCpu(p).toFixed(1)}`).join(' ');
+  const ramPoints = points.map((p, i) => `${x(i).toFixed(1)},${yRam(p).toFixed(1)}`).join(' ');
+
+  // Area paths for subtle gradients
+  const cpuArea = `${x(0).toFixed(1)},${PAD_TOP + CHART_H} ${cpuPoints} ${x(n - 1).toFixed(1)},${PAD_TOP + CHART_H}`;
+  const ramArea = `${x(0).toFixed(1)},${PAD_TOP + CHART_H} ${ramPoints} ${x(n - 1).toFixed(1)},${PAD_TOP + CHART_H}`;
+
   const last = points[n - 1];
 
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-28">
-        <line x1="0" y1={H - 1} x2={W} y2={H - 1} stroke="#D3DAE6" strokeWidth="1" />
-        <polyline points={cpuLine} fill="none" stroke="#006BB4" strokeWidth="1.5" />
-        <polyline points={ramLine} fill="none" stroke="#00A389" strokeWidth="1.5" />
-      </svg>
-      <div className="flex items-center gap-4 mt-1 text-[11px] text-[#5A626F]">
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#006BB4]"></span>
-          CPU {last.cpu_pct.toFixed(1)}%
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#00A389]"></span>
-          RAM {last.ram_used.toFixed(1)}/{last.ram_total.toFixed(1)} GB
-        </span>
-        <span className="ml-auto">{n} titik</span>
+    <div className="space-y-2">
+      <div className="relative">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-32 select-none overflow-visible">
+          <defs>
+            <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#006BB4" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#006BB4" stopOpacity="0.0" />
+            </linearGradient>
+            <linearGradient id="ramGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#00A389" stopOpacity="0.20" />
+              <stop offset="100%" stopColor="#00A389" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines & Y-axis labels */}
+          <line
+            x1="0"
+            y1={PAD_TOP}
+            x2={W}
+            y2={PAD_TOP}
+            stroke="#EBEFF5"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+          />
+          <text x="4" y={PAD_TOP + 8} fill="#8A94A6" fontSize="8" fontFamily="monospace">
+            MAX ({maxCpu.toFixed(0)}% / {maxRam.toFixed(1)} GB)
+          </text>
+
+          <line
+            x1="0"
+            y1={PAD_TOP + CHART_H / 2}
+            x2={W}
+            y2={PAD_TOP + CHART_H / 2}
+            stroke="#EBEFF5"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+          />
+          <text x="4" y={PAD_TOP + CHART_H / 2 + 8} fill="#8A94A6" fontSize="8" fontFamily="monospace">
+            50%
+          </text>
+
+          <line
+            x1="0"
+            y1={PAD_TOP + CHART_H}
+            x2={W}
+            y2={PAD_TOP + CHART_H}
+            stroke="#D3DAE6"
+            strokeWidth="1"
+          />
+          <text x="4" y={PAD_TOP + CHART_H - 3} fill="#8A94A6" fontSize="8" fontFamily="monospace">
+            0%
+          </text>
+
+          {/* Gradient area fills */}
+          <polygon points={cpuArea} fill="url(#cpuGradient)" />
+          <polygon points={ramArea} fill="url(#ramGradient)" />
+
+          {/* Metric polyline paths */}
+          <polyline points={cpuPoints} fill="none" stroke="#006BB4" strokeWidth="1.75" strokeLinecap="round" />
+          <polyline points={ramPoints} fill="none" stroke="#00A389" strokeWidth="1.75" strokeLinecap="round" />
+
+          {/* Latest data point markers */}
+          <circle
+            cx={x(n - 1)}
+            cy={yCpu(last)}
+            r="3"
+            fill="#006BB4"
+            stroke="#FFFFFF"
+            strokeWidth="1.5"
+          />
+          <circle
+            cx={x(n - 1)}
+            cy={yRam(last)}
+            r="3"
+            fill="#00A389"
+            stroke="#FFFFFF"
+            strokeWidth="1.5"
+          />
+        </svg>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-[11px] text-[#5A626F] border-t border-[#EBEFF5] font-mono tabular-nums">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#006BB4]" />
+            <span className="font-sans text-[#1A1C21] font-semibold">CPU</span> {last.cpu_pct.toFixed(1)}%
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#00A389]" />
+            <span className="font-sans text-[#1A1C21] font-semibold">RAM</span> {last.ram_used.toFixed(2)}/{last.ram_total.toFixed(2)} GB (
+            {last.ram_total > 0 ? ((last.ram_used / last.ram_total) * 100).toFixed(0) : 0}%)
+          </span>
+        </div>
+        <div className="text-[10px] text-[#8A94A6]">
+          {n} sampel · Realtime Fleet Stream
+        </div>
       </div>
     </div>
   );
