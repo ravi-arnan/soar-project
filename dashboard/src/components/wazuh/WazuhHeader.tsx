@@ -330,15 +330,7 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                   </div>
                   <div className="mt-1 flex items-center gap-1">
                     <span className="text-[11px] text-[#8A94A6]">Role:</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                        (currentUser?.role || 'admin') === 'admin'
-                          ? 'bg-[#FDE8E8] text-[#BD271E]'
-                          : currentUser?.role === 'analyst'
-                          ? 'bg-[#EBF5FB] text-[#006BB4]'
-                          : 'bg-[#E6F6F4] text-[#00A389]'
-                      }`}
-                    >
+                    <span className="text-[11px] font-mono font-semibold text-[#1A1C21] uppercase">
                       {currentUser?.role || 'admin'}
                     </span>
                   </div>
