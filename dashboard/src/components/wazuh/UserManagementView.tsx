@@ -10,6 +10,7 @@ import {
   XCircle,
   Search,
   Check,
+  Minus,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
@@ -392,21 +393,21 @@ export function UserManagementView() {
                       {p.admin ? (
                         <Check className="w-4 h-4 text-[#00A389] mx-auto" />
                       ) : (
-                        <span className="text-[10px] font-mono font-semibold text-[#BD271E] bg-[#FDF3F2] px-1.5 py-0.5 rounded border border-[#F5C2C0]">403</span>
+                        <Minus className="w-3.5 h-3.5 text-[#8A94A6] mx-auto" />
                       )}
                     </td>
                     <td className="py-2 px-3 text-center">
                       {p.analyst ? (
                         <Check className="w-4 h-4 text-[#00A389] mx-auto" />
                       ) : (
-                        <span className="text-[10px] font-mono font-semibold text-[#BD271E] bg-[#FDF3F2] px-1.5 py-0.5 rounded border border-[#F5C2C0]">403</span>
+                        <Minus className="w-3.5 h-3.5 text-[#8A94A6] mx-auto" />
                       )}
                     </td>
                     <td className="py-2 px-3 text-center">
                       {p.viewer ? (
                         <Check className="w-4 h-4 text-[#00A389] mx-auto" />
                       ) : (
-                        <span className="text-[10px] font-mono font-semibold text-[#BD271E] bg-[#FDF3F2] px-1.5 py-0.5 rounded border border-[#F5C2C0]">403</span>
+                        <Minus className="w-3.5 h-3.5 text-[#8A94A6] mx-auto" />
                       )}
                     </td>
                   </tr>
