@@ -2,20 +2,16 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Users,
   UserPlus,
-  Shield,
-  ShieldCheck,
-  ShieldAlert,
-  Eye,
   Trash2,
   Edit2,
   RefreshCw,
   CheckCircle2,
   XCircle,
-  User,
   Search,
   Check,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { formatWazuhTime } from '@/lib/fleet';
 
@@ -30,6 +26,15 @@ export interface UserItem {
   active: boolean;
 }
 
+const PERMISSIONS = [
+  { action: 'Monitoring Dashboard, Security Events, Network Map & FIM', admin: true, analyst: true, viewer: true },
+  { action: 'Lihat Detail Telemetri Agent & Hasil Sintesis Threat Intel', admin: true, analyst: true, viewer: true },
+  { action: 'Eksekusi Active Response (Karantina File & Sinkhole Domain)', admin: true, analyst: true, viewer: false },
+  { action: 'Jalankan On-Demand FIM Scan pada Endpoint', admin: true, analyst: true, viewer: false },
+  { action: 'Manajemen API Keys Mesin (Penerbitan & Pencabutan Token)', admin: true, analyst: false, viewer: false },
+  { action: 'Manajemen Pengguna (User Management, Tambah/Edit Role, Reset Sandi)', admin: true, analyst: false, viewer: false },
+];
+
 export function UserManagementView() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +42,7 @@ export function UserManagementView() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'analyst' | 'viewer'>('all');
+  const [showMatrix, setShowMatrix] = useState(false);
 
   // Modal State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -266,27 +272,26 @@ export function UserManagementView() {
   return (
     <div className="space-y-6">
       {/* Top Banner / Heading */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-6 shadow-sm">
+      <div className="bg-white border border-[#D3DAE6] rounded p-5 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-[#E8F3FA] rounded-md text-[#006BB4]">
-                <Users className="w-5 h-5" />
-              </div>
               <h2 className="text-xl font-bold text-[#1A1C21]">
-                User Management &amp; Role-Based Access Control (RBAC)
+                User Management &amp; Access Control
               </h2>
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E6F6F4] text-[#00A389] border border-[#A3E5DD]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#00A389]" />
+                Cloudflare Access SSO Active
+              </span>
             </div>
-            <p className="text-[13px] text-[#5A626F] mt-1.5 max-w-3xl leading-relaxed">
-              Pusat kendali hak otorisasi berjenjang untuk personel SOC. Terintegrasi langsung dengan 
-              autentikasi Cloudflare Access Zero Trust berbasis email. Tentukan hak akses Admin (penuh),
-              Analyst (respons mitigasi insiden), dan Viewer (audit kepatuhan &amp; monitoring read-only).
+            <p className="text-[13px] text-[#5A626F] mt-1 max-w-3xl leading-relaxed">
+              Manajemen akun personel SOC dan otorisasi berjenjang (RBAC). Sesi login otomatis dipetakan dari header email Cloudflare Access.
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => fetchUsers()}
-              className="h-9 px-3 border border-[#D3DAE6] hover:bg-[#F5F7FA] text-[#1A1C21] rounded text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="h-8 px-3 border border-[#D3DAE6] hover:bg-[#F5F7FA] text-[#1A1C21] rounded text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Refresh Data"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -297,160 +302,133 @@ export function UserManagementView() {
                 resetForm();
                 setIsCreateOpen(true);
               }}
-              className="h-9 px-4 bg-[#006BB4] hover:bg-[#005593] text-white rounded text-[13px] font-medium flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+              className="h-8 px-3.5 bg-[#006BB4] hover:bg-[#005593] text-white rounded text-[12px] font-medium flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
-              <UserPlus className="w-4 h-4" />
+              <UserPlus className="w-3.5 h-3.5" />
               <span>Tambah Pengguna</span>
             </button>
           </div>
         </div>
 
-        {/* Cloudflare Access Integration Info */}
-        <div className="mt-4 p-3.5 bg-[#F0F6FA] border border-[#CBE0F0] rounded flex items-start gap-3 text-[12px] text-[#004A80]">
-          <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-[#006BB4]" />
-          <div>
-            <span className="font-semibold text-[#1A1C21]">Terintegrasi Cloudflare Access Zero Trust: </span>
-            <span>
-              Otorisasi sesi dashboard otomatis memetakan email login pengguna (dari header <code>cf-access-authenticated-user-email</code>)
-              ke peran yang terdaftar di sistem ini. Misalnya <code>raviarnankeren@gmail.com</code> sebagai Admin dan <code>ravinewgemini@gmail.com</code> sebagai Viewer.
-            </span>
-          </div>
-        </div>
-
         {/* Notifications */}
         {error && (
-          <div className="mt-4 p-3 bg-[#FDF3F2] border border-[#F5C2C0] rounded flex items-center gap-2.5 text-[12px] text-[#BD271E]">
+          <div className="mt-3 p-2.5 bg-[#FDF3F2] border border-[#F5C2C0] rounded flex items-center gap-2 text-[12px] text-[#BD271E]">
             <XCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
         {successMsg && (
-          <div className="mt-4 p-3 bg-[#E6F6F4] border border-[#A3E5DD] rounded flex items-center gap-2.5 text-[12px] text-[#00A389]">
+          <div className="mt-3 p-2.5 bg-[#E6F6F4] border border-[#A3E5DD] rounded flex items-center gap-2 text-[12px] text-[#00A389]">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{successMsg}</span>
           </div>
         )}
       </div>
 
-      {/* 4 Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-[#D3DAE6] rounded p-4">
+      {/* Summary Metrics Bar */}
+      <div className="bg-white border border-[#D3DAE6] rounded divide-y md:divide-y-0 md:divide-x divide-[#EBEFF5] grid grid-cols-2 md:grid-cols-4 shadow-xs">
+        <div className="p-4">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
             Total Pengguna
           </div>
-          <div className="text-2xl font-bold text-[#1A1C21] mt-1">{users.length}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-1">Akun personel terdaftar</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-[#1A1C21] mt-1">{users.length}</div>
+          <div className="text-[11px] text-[#8A94A6] mt-0.5">Akun personel terdaftar</div>
         </div>
 
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 border-l-4 border-l-[#BD271E]">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
-              Administrators
-            </span>
-            <ShieldAlert className="w-4 h-4 text-[#BD271E]" />
+        <div className="p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
+            Administrators
           </div>
-          <div className="text-2xl font-bold text-[#BD271E] mt-1">{adminCount}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-1">Hak akses penuh &amp; API keys</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-[#1A1C21] mt-1">{adminCount}</div>
+          <div className="text-[11px] text-[#8A94A6] mt-0.5">Akses penuh &amp; API keys</div>
         </div>
 
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 border-l-4 border-l-[#006BB4]">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
-              Security Analysts
-            </span>
-            <Shield className="w-4 h-4 text-[#006BB4]" />
+        <div className="p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
+            Security Analysts
           </div>
-          <div className="text-2xl font-bold text-[#006BB4] mt-1">{analystCount}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-1">Mitigasi &amp; respons ancaman</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-[#1A1C21] mt-1">{analystCount}</div>
+          <div className="text-[11px] text-[#8A94A6] mt-0.5">Mitigasi &amp; respons ancaman</div>
         </div>
 
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 border-l-4 border-l-[#00A389]">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
-              Auditors &amp; Viewers
-            </span>
-            <Eye className="w-4 h-4 text-[#00A389]" />
+        <div className="p-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
+            Auditors &amp; Viewers
           </div>
-          <div className="text-2xl font-bold text-[#00A389] mt-1">{viewerCount}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-1">Monitoring read-only</div>
+          <div className="text-2xl font-bold font-mono tabular-nums text-[#1A1C21] mt-1">{viewerCount}</div>
+          <div className="text-[11px] text-[#8A94A6] mt-0.5">Monitoring read-only</div>
         </div>
       </div>
 
-      {/* Role Permission Matrix Card */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-5">
-        <h3 className="text-[14px] font-bold text-[#1A1C21] flex items-center gap-2 mb-3">
-          <ShieldCheck className="w-4 h-4 text-[#006BB4]" />
-          <span>Matriks Izin Role-Based Access Control (RBAC)</span>
-        </h3>
-        <div className="overflow-x-auto border border-[#EBEFF5] rounded">
-          <table className="w-full text-left border-collapse text-[12px]">
-            <thead>
-              <tr className="bg-[#F8FAFC] border-b border-[#D3DAE6] text-[#5A626F]">
-                <th className="py-2.5 px-3 font-semibold">Kapabilitas &amp; Hak Operasi</th>
-                <th className="py-2.5 px-3 font-semibold text-center w-28">Admin</th>
-                <th className="py-2.5 px-3 font-semibold text-center w-28">Analyst</th>
-                <th className="py-2.5 px-3 font-semibold text-center w-28">Viewer</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#EBEFF5]">
-              <tr>
-                <td className="py-2 px-3 text-[#1A1C21] font-medium">
-                  Monitoring Dashboard, Security Events, Network Map &amp; FIM
-                </td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 text-[#1A1C21] font-medium">
-                  Lihat Detail Telemetri Agent &amp; Hasil Sintesis Threat Intel
-                </td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 text-[#1A1C21] font-medium">
-                  Eksekusi Active Response (Karantina File &amp; Sinkhole Domain)
-                </td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#BD271E] font-medium">Ditolak (403)</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 text-[#1A1C21] font-medium">
-                  Jalankan On-Demand FIM Scan pada Endpoint
-                </td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#BD271E] font-medium">Ditolak (403)</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 text-[#1A1C21] font-medium">
-                  Manajemen API Keys Mesin (Penerbitan &amp; Pencabutan Token)
-                </td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#BD271E] font-medium">Ditolak (403)</td>
-                <td className="py-2 px-3 text-center text-[#BD271E] font-medium">Ditolak (403)</td>
-              </tr>
-              <tr>
-                <td className="py-2 px-3 text-[#1A1C21] font-medium">
-                  Manajemen Pengguna (User Management, Tambah/Edit Role, Reset Sandi)
-                </td>
-                <td className="py-2 px-3 text-center text-[#00A389] font-bold">Dizinkan</td>
-                <td className="py-2 px-3 text-center text-[#BD271E] font-medium">Ditolak (403)</td>
-                <td className="py-2 px-3 text-center text-[#BD271E] font-medium">Ditolak (403)</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      {/* Role Permission Matrix (Collapsible) */}
+      <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowMatrix(!showMatrix)}
+          className="w-full bg-[#FAFBFD] px-4 py-2.5 flex items-center justify-between text-left hover:bg-[#F0F4F8] transition-colors border-b border-[#EBEFF5]"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-bold text-[#1A1C21]">Matriks Hak Akses Role (RBAC)</span>
+            <span className="text-[11px] text-[#5A626F] font-normal">(6 kapabilitas operasional)</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[12px] text-[#006BB4] font-medium">
+            <span>{showMatrix ? 'Sembunyikan' : 'Lihat Detail'}</span>
+            {showMatrix ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </div>
+        </button>
+
+        {showMatrix && (
+          <div className="p-4 overflow-x-auto">
+            <table className="w-full text-left border-collapse text-[12px]">
+              <thead>
+                <tr className="bg-[#F8FAFC] border-b border-[#D3DAE6] text-[#5A626F]">
+                  <th className="py-2 px-3 font-semibold">Kapabilitas &amp; Hak Operasi</th>
+                  <th className="py-2 px-3 font-semibold text-center w-28">Admin</th>
+                  <th className="py-2 px-3 font-semibold text-center w-28">Analyst</th>
+                  <th className="py-2 px-3 font-semibold text-center w-28">Viewer</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EBEFF5]">
+                {PERMISSIONS.map((p, idx) => (
+                  <tr key={idx} className="hover:bg-[#F8FAFC] transition-colors">
+                    <td className="py-2 px-3 text-[#1A1C21] font-medium">{p.action}</td>
+                    <td className="py-2 px-3 text-center">
+                      {p.admin ? (
+                        <Check className="w-4 h-4 text-[#00A389] mx-auto" />
+                      ) : (
+                        <span className="text-[10px] font-mono font-semibold text-[#BD271E] bg-[#FDF3F2] px-1.5 py-0.5 rounded border border-[#F5C2C0]">403</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      {p.analyst ? (
+                        <Check className="w-4 h-4 text-[#00A389] mx-auto" />
+                      ) : (
+                        <span className="text-[10px] font-mono font-semibold text-[#BD271E] bg-[#FDF3F2] px-1.5 py-0.5 rounded border border-[#F5C2C0]">403</span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      {p.viewer ? (
+                        <Check className="w-4 h-4 text-[#00A389] mx-auto" />
+                      ) : (
+                        <span className="text-[10px] font-mono font-semibold text-[#BD271E] bg-[#FDF3F2] px-1.5 py-0.5 rounded border border-[#F5C2C0]">403</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Users Table Card */}
       <div className="bg-white border border-[#D3DAE6] rounded p-5">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
-            <h3 className="text-[14px] font-bold text-[#1A1C21]">Daftar Pengguna ({filteredUsers.length})</h3>
+            <h3 className="text-[14px] font-bold text-[#1A1C21]">Daftar Pengguna</h3>
+            <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-[#F0F4F8] text-[#5A626F] border border-[#D3DAE6]">
+              {filteredUsers.length}
+            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
@@ -467,15 +445,15 @@ export function UserManagementView() {
             </div>
 
             {/* Role Filter Tabs */}
-            <div className="flex rounded border border-[#D3DAE6] overflow-hidden text-[11px] font-medium">
+            <div className="flex items-center gap-0.5 bg-[#F0F4F8] p-0.5 rounded border border-[#D3DAE6] text-[11px]">
               {(['all', 'admin', 'analyst', 'viewer'] as const).map((r) => (
                 <button
                   key={r}
                   onClick={() => setRoleFilter(r)}
-                  className={`px-3 py-1.5 capitalize transition-colors ${
+                  className={`px-2.5 py-1 rounded capitalize font-medium transition-colors ${
                     roleFilter === r
-                      ? 'bg-[#006BB4] text-white'
-                      : 'bg-white text-[#5A626F] hover:bg-[#F5F7FA]'
+                      ? 'bg-white text-[#1A1C21] shadow-xs font-semibold'
+                      : 'text-[#5A626F] hover:text-[#1A1C21]'
                   }`}
                 >
                   {r === 'all' ? 'Semua' : r}
@@ -489,7 +467,7 @@ export function UserManagementView() {
         <div className="overflow-x-auto border border-[#EBEFF5] rounded">
           <table className="w-full text-left border-collapse text-[12px]">
             <thead>
-              <tr className="bg-[#F8FAFC] border-b border-[#D3DAE6] text-[#5A626F] font-semibold">
+              <tr className="bg-[#FAFBFD] border-b border-[#D3DAE6] text-[#5A626F] font-semibold text-[11px] uppercase tracking-wider">
                 <th className="py-2.5 px-3">Username</th>
                 <th className="py-2.5 px-3">Nama Lengkap</th>
                 <th className="py-2.5 px-3">Email (Cloudflare Access)</th>
@@ -519,36 +497,26 @@ export function UserManagementView() {
               ) : (
                 filteredUsers.map((u) => (
                   <tr key={u.id} className="hover:bg-[#F8FAFC] transition-colors">
-                    <td className="py-2.5 px-3 font-semibold text-[#1A1C21] flex items-center gap-2">
-                      <User className="w-3.5 h-3.5 text-[#8A94A6]" />
-                      <span>{u.username}</span>
+                    <td className="py-2.5 px-3 font-mono font-semibold text-[#1A1C21]">
+                      {u.username}
                     </td>
                     <td className="py-2.5 px-3 text-[#1A1C21] font-medium">{u.name || '-'}</td>
-                    <td className="py-2.5 px-3 text-[#5A626F]">{u.email || '-'}</td>
+                    <td className="py-2.5 px-3 text-[#5A626F] font-mono text-[11px]">{u.email || '-'}</td>
                     <td className="py-2.5 px-3">
                       <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold uppercase ${
+                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider border ${
                           u.role === 'admin'
-                            ? 'bg-[#FDE8E8] text-[#BD271E]'
+                            ? 'bg-[#FDE8E8] text-[#BD271E] border-[#F5C2C0]'
                             : u.role === 'analyst'
-                            ? 'bg-[#EBF5FB] text-[#006BB4]'
-                            : 'bg-[#E6F6F4] text-[#00A389]'
+                            ? 'bg-[#EBF5FB] text-[#006BB4] border-[#CBE0F0]'
+                            : 'bg-[#E6F6F4] text-[#00A389] border-[#A3E5DD]'
                         }`}
                       >
-                        {u.role === 'admin' && <ShieldAlert className="w-3 h-3" />}
-                        {u.role === 'analyst' && <Shield className="w-3 h-3" />}
-                        {u.role === 'viewer' && <Eye className="w-3 h-3" />}
-                        <span>{u.role}</span>
+                        {u.role}
                       </span>
                     </td>
                     <td className="py-2.5 px-3">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                          u.active
-                            ? 'bg-[#E6F6F4] text-[#00A389]'
-                            : 'bg-[#F5F7FA] text-[#8A94A6]'
-                        }`}
-                      >
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#1A1C21]">
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
                             u.active ? 'bg-[#00A389]' : 'bg-[#8A94A6]'
@@ -557,24 +525,24 @@ export function UserManagementView() {
                         <span>{u.active ? 'Aktif' : 'Nonaktif'}</span>
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 text-[#5A626F] font-mono text-[11px]">
+                    <td className="py-2.5 px-3 text-[#5A626F] font-mono tabular-nums text-[11px]">
                       {u.last_login_at ? formatWazuhTime(u.last_login_at) : 'Belum pernah'}
                     </td>
-                    <td className="py-2.5 px-3 text-[#5A626F] font-mono text-[11px]">
+                    <td className="py-2.5 px-3 text-[#5A626F] font-mono tabular-nums text-[11px]">
                       {formatWazuhTime(u.created_at)}
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => openEditModal(u)}
-                          className="p-1 rounded text-[#5A626F] hover:text-[#006BB4] hover:bg-[#EBF5FB] transition-colors"
-                          title="Edit Pengguna &amp; Role"
+                          className="p-1.5 rounded text-[#5A626F] hover:text-[#006BB4] hover:bg-[#EBF5FB] transition-colors"
+                          title="Edit Pengguna"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDelete(u)}
-                          className="p-1 rounded text-[#5A626F] hover:text-[#BD271E] hover:bg-[#FDF3F2] transition-colors"
+                          className="p-1.5 rounded text-[#5A626F] hover:text-[#BD271E] hover:bg-[#FDF3F2] transition-colors"
                           title="Hapus Pengguna"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -614,7 +582,7 @@ export function UserManagementView() {
                 <input
                   type="email"
                   required
-                  placeholder="misal: ravinewgemini@gmail.com"
+                  placeholder="user@domain.com"
                   value={formEmail}
                   onChange={(e) => setFormEmail(e.target.value)}
                   className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
@@ -632,7 +600,7 @@ export function UserManagementView() {
                   type="text"
                   required
                   pattern="^[a-zA-Z0-9_.-]{3,32}$"
-                  placeholder="misal: analyst_budi"
+                  placeholder="username"
                   value={formUsername}
                   onChange={(e) => setFormUsername(e.target.value)}
                   className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
@@ -644,7 +612,7 @@ export function UserManagementView() {
                 <label className="block text-[#1A1C21] font-medium mb-1">Nama Lengkap</label>
                 <input
                   type="text"
-                  placeholder="misal: Budi Santoso"
+                  placeholder="Nama Lengkap"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"

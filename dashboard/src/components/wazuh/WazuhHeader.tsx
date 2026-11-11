@@ -315,17 +315,6 @@ export const WazuhHeader = React.memo(function WazuhHeader({
               <span className="font-medium text-[#1A1C21] max-w-[90px] truncate">
                 {currentUser?.username || 'admin'}
               </span>
-              <span
-                className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                  (currentUser?.role || 'admin') === 'admin'
-                    ? 'bg-[#FDE8E8] text-[#BD271E]'
-                    : currentUser?.role === 'analyst'
-                    ? 'bg-[#EBF5FB] text-[#006BB4]'
-                    : 'bg-[#E6F6F4] text-[#00A389]'
-                }`}
-              >
-                {currentUser?.role || 'admin'}
-              </span>
               <ChevronDown className="w-3 h-3 text-[#5A626F]" />
             </button>
 
