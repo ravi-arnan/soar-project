@@ -279,10 +279,6 @@ export function UserManagementView() {
               <h2 className="text-xl font-bold text-[#1A1C21]">
                 User Management &amp; Access Control
               </h2>
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E6F6F4] text-[#00A389] border border-[#A3E5DD]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#00A389]" />
-                Cloudflare Access SSO Active
-              </span>
             </div>
             <p className="text-[13px] text-[#5A626F] mt-1 max-w-3xl leading-relaxed">
               Manajemen akun personel SOC dan otorisasi berjenjang (RBAC). Sesi login otomatis dipetakan dari header email Cloudflare Access.
@@ -502,28 +498,11 @@ export function UserManagementView() {
                     </td>
                     <td className="py-2.5 px-3 text-[#1A1C21] font-medium">{u.name || '-'}</td>
                     <td className="py-2.5 px-3 text-[#5A626F] font-mono text-[11px]">{u.email || '-'}</td>
-                    <td className="py-2.5 px-3">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider border ${
-                          u.role === 'admin'
-                            ? 'bg-[#FDE8E8] text-[#BD271E] border-[#F5C2C0]'
-                            : u.role === 'analyst'
-                            ? 'bg-[#EBF5FB] text-[#006BB4] border-[#CBE0F0]'
-                            : 'bg-[#E6F6F4] text-[#00A389] border-[#A3E5DD]'
-                        }`}
-                      >
-                        {u.role}
-                      </span>
+                    <td className="py-2.5 px-3 font-mono text-[11px] font-semibold text-[#1A1C21] uppercase">
+                      {u.role}
                     </td>
-                    <td className="py-2.5 px-3">
-                      <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#1A1C21]">
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            u.active ? 'bg-[#00A389]' : 'bg-[#8A94A6]'
-                          }`}
-                        />
-                        <span>{u.active ? 'Aktif' : 'Nonaktif'}</span>
-                      </span>
+                    <td className="py-2.5 px-3 text-[12px] font-medium text-[#1A1C21]">
+                      {u.active ? 'Aktif' : 'Nonaktif'}
                     </td>
                     <td className="py-2.5 px-3 text-[#5A626F] font-mono tabular-nums text-[11px]">
                       {u.last_login_at ? formatWazuhTime(u.last_login_at) : 'Belum pernah'}
