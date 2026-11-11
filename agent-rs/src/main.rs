@@ -364,7 +364,66 @@ async fn post_to_n8n(
     Ok(())
 }
 
+fn is_benign_export_media(path: &Path) -> bool {
+    let lower_raw = path.to_string_lossy().to_lowercase();
+    let lower = lower_raw.replace('\\', "/");
+
+    // Hanya berlaku untuk struktur folder ekspor Telegram / media chat
+    let in_export_media_dir = lower.contains("/chatexport_")
+        && (lower.contains("/photos/")
+            || lower.contains("/video_files/")
+            || lower.contains("/stickers/")
+            || lower.contains("/images/")
+            || lower.contains("/css/"));
+
+    if !in_export_media_dir {
+        return false;
+    }
+
+    // JANGAN abaikan jika penyamaran ekstensi ganda (mis. foto.jpg.exe)
+    if has_deceptive_double_extension(path) {
+        return false;
+    }
+
+    // JANGAN abaikan jika memiliki ekstensi eksekutabel, skrip, arsip, atau makro
+    const DANGEROUS_OR_CONTAINER_EXT: &[&str] = &[
+        ".exe", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse",
+        ".wsf", ".wsh", ".scr", ".pif", ".hta", ".cpl", ".msi", ".msp", ".dll",
+        ".jar", ".apk", ".bin", ".elf", ".run", ".sh", ".bash", ".deb", ".rpm",
+        ".app", ".zip", ".rar", ".7z", ".tar", ".gz", ".iso", ".img", ".dmg",
+        ".docm", ".xlsm", ".pptm",
+    ];
+    if DANGEROUS_OR_CONTAINER_EXT.iter().any(|&e| lower.ends_with(e)) {
+        return false;
+    }
+
+    // JANGAN abaikan jika file memiliki izin eksekusi (Unix exec bit)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::symlink_metadata(path) {
+            if meta.permissions().mode() & 0o111 != 0 {
+                return false;
+            }
+        }
+    }
+
+    // Verifikasi bahwa ekstensi memang berupa media pasif / aset statis murni
+    const BENIGN_MEDIA_EXT: &[&str] = &[
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico",
+        ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mp3", ".wav", ".ogg",
+        ".m4a", ".opus", ".css", ".ttf", ".woff", ".woff2",
+    ];
+    BENIGN_MEDIA_EXT.iter().any(|&e| lower.ends_with(e))
+}
+
 fn should_ignore(path: &Path) -> bool {
+    // Triage media ekspor Telegram: abaikan foto/video pasif di subfolder media,
+    // tapi TETAP loloskan .exe, skrip, arsip zip, double-extension, dan file di files/.
+    if is_benign_export_media(path) {
+        return true;
+    }
+
     // ponytail: filter sama dengan scripts/custom-n8n.py noise filter
     // jangan kirim /tmp, /var/cache, dll biar hemat VT quota
     // Juga filter ekstensi noise: file ISO installer, DS_Store, thumbs.db, desktop.ini
@@ -1527,6 +1586,33 @@ mod tests {
             "C:\\Users\\Bapak\\Downloads\\doc.pdf.exe",
         ] {
             assert!(!should_ignore(Path::new(p)), "jangan diabaikan: {p}");
+        }
+    }
+
+    #[test]
+    fn ignore_benign_export_media_preserve_threats() {
+        // Media pasif di subfolder media Telegram ekspor harus diabaikan (cegah banjir event)
+        for p in [
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/photos/photo_1.jpg",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/photos/photo_1_thumb.jpg",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/video_files/video_30.mp4",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/stickers/sticker (1).webp",
+            r"C:\Users\User\Downloads\Telegram Desktop\ChatExport_2026-11-09\photos\photo_2.png",
+        ] {
+            assert!(should_ignore(Path::new(p)), "media pasif harus diabaikan: {p}");
+        }
+
+        // TAPI file berbahaya / executable / arsip / di folder files/ di ChatExport TETAP WAJIB LOLOS
+        for p in [
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/files/malware.exe",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/files/payload.zip",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/files/script.bat",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/photos/foto.jpg.exe",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/video_files/video.mp4.scr",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/photos/trojan.exe",
+            "/home/ravi/Downloads/Telegram Desktop/ChatExport_2026-11-09/messages.html",
+        ] {
+            assert!(!should_ignore(Path::new(p)), "ancaman di ChatExport jangan diabaikan: {p}");
         }
     }
 

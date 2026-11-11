@@ -127,6 +127,7 @@ RUN_JS = r"""
   });
   cases.hosts         = await pipeline(fim('c:\\windows\\system32\\drivers\\etc\\hosts', 7, '550'), vt404);
   cases.mp4_vt_error  = await pipeline(fim(dl + 'film.mp4', 5), vtErr429);
+  cases.exe_vt_error  = await pipeline(fim(dl + 'malware-setup.exe', 5), vtErr429);
 
   const pick = (c) => ({ r: c.r, b: c.b });
   console.log(JSON.stringify({
@@ -140,6 +141,7 @@ RUN_JS = r"""
     mp4_weak: pick(cases.mp4_weak),
     hosts: pick(cases.hosts),
     mp4_vt_error: pick(cases.mp4_vt_error),
+    exe_vt_error: pick(cases.exe_vt_error),
   }));
 })().catch((e) => { console.error('ERR', (e && e.stack) || e); process.exit(1); });
 """
@@ -262,8 +264,14 @@ class BehaviourTests(unittest.TestCase):
         self.assertTrue(c["r"]["notify"])
         self.assertEqual(c["b"]["alert_title"], "PERUBAHAN FILE KONFIGURASI SISTEM")
 
-    def test_vt_error_bukan_disenyapkan(self):
+    def test_vt_error_benign_media_diamkan(self):
         c = self.out["mp4_vt_error"]
+        self.assertEqual(c["r"]["severity"], "INFO")
+        self.assertEqual(c["r"]["decision"], "no-indicator")
+        self.assertFalse(c["r"]["notify"])
+
+    def test_vt_error_risky_exe_tetap_unverified_review(self):
+        c = self.out["exe_vt_error"]
         self.assertEqual(c["r"]["severity"], "MEDIUM")
         self.assertEqual(c["r"]["decision"], "unverified")
         self.assertTrue(c["r"]["notify"])
