@@ -1,39 +1,132 @@
-# Handoff SOAR - 2026-11-07 Siang (User Management RBAC, Cloudflare Access SSO & Deploy Produksi)
+# Handoff SOAR - 2026-11-11 Malam (Wazuh Dashboard UI Elevation, Vector Network Topology, In-App Action Modals & Production Deploy)
 
-## Status Terakhir (Checkpoint: 7 November 2026, 12:56 WITA)
+## Status Terakhir (Checkpoint: 11 November 2026, 23:50 WITA)
 
-### 1. Rangkuman Perubahan Utama
-- **User Management & Role-Based Access Control (RBAC)**:
-  - Database SQLite durable (`users` table di `scripts/.fleet-events.db` dan `/state/events.db` di server).
-  - Skema pengguna: `id`, `username`, `password_hash`, `role` (`admin`, `analyst`, `viewer`), `email`, `name`, `created_at`, `last_login_at`, `active`.
-  - Hashing PBKDF2-HMAC-SHA256 (100.000 iterasi) dengan random 16-byte hex salt (100% Python stdlib).
-  - Tiga akun default di-seed otomatis saat startup:
-    - `admin` (Role: `admin`) -> email `raviarnankeren@gmail.com`, nama `Ravi Arnan (SOC Lead)`.
-    - `analyst` (Role: `analyst`) -> email `analyst@soar.local`, nama `SOC Tier 2 Analyst`.
-    - `auditor` (Role: `viewer`) -> email `auditor@soar.local`, nama `Compliance Auditor`.
-  - Guard proteksi admin aktif terakhir agar tidak bisa dihapus, dinonaktifkan, atau di-demote.
-- **Integrasi Cloudflare Access Zero Trust (Email Header SSO)**:
-  - Header `cf-access-authenticated-user-email` dibaca langsung oleh Next.js `getAuthorizedSession`.
-  - Email `raviarnankeren@gmail.com` secara otomatis diotentikasi sebagai Admin SOC (`Ravi Arnan`).
-  - Pengguna lain otomatis dipetakan sesuai role terdaftar di database.
-- **Enforcement Otorisasi Berjenjang**:
-  - `/api/commands`: Role `viewer` diblokir (HTTP 403 Forbidden) saat mengeksekusi aksi mitigasi (karantina berkas/sinkhole domain).
-  - `/api/keys`: Hanya role `admin` yang boleh membuat/mencabut API keys.
+### 1. Masalah & Peningkatan UI Dashboard (Anti-AI Slop & Wazuh 4.x Alignment)
+- **Eliminasi AI Slop Design**:
+  - Menghapus floating pill badges yang memotong border container di `ModulesHub.tsx` dan `AgentsManagement.tsx`. Menggantinya dengan Wazuh Section Header Bar terintegrasi (`bg-[#FAFBFD] border-b border-[#EBEFF5]`) dengan aksen biru `#006BB4`.
+  - Mengganti SVG kartun PC/laptop di `NetworkMapView.tsx` dengan Vector Topology Graph korporat (Central SOAR Hub, links/spokes dengan visual status traffic, terminal/workstation chip modern, status ping dot).
+  - Mengganti `<polyline>` polos di `AgentDetailView.tsx` dengan Dual Area Sparkline (gradien `#006BB4` dan `#00A389`), grid horizontal bertingkat, dan titik penanda nilai data terbaru.
+  - Mengganti seluruh pop-up browser bawaan (`window.confirm` dan `alert()`) dengan modal in-app yang aman dan konsisten di seluruh modul (`SecurityEventsDashboard`, `FimDashboard`, `AgentDeploymentView`, `UserManagementView`, `ApiKeysView`).
+  - Menstandarkan seluruh metrik angka, IP address, hash, dan port menggunakan `font-mono tabular-nums`.
+  - Menghapus teks narasi AI tiruan di sisi klien pada `ThreatIntelView.tsx`, memisahkan analisis AI aktual n8n dan heuristik FIM secara transparan.
+
+### 2. Status Verifikasi Lokal
+- ESLint: 0 errors, 0 warnings.
+- TypeScript compiler (`tsc --noEmit`): 0 errors.
+- Unit Test Suite: 6/6 test suites PASS (`test:commands`, `test:placeholder`, `test:events`, `test:session`, `test:session-rate`, `test:rbac`).
+- Grep audit: 0 kemunculan `alert()` atau `window.confirm()` di `dashboard/src`.
+
+### 3. Next Action
+- Push branch `main` ke GitHub repository.
+- Rebuild dan restart kontainer `fleet-dashboard` di server produksi `ravi@100.73.91.17`.
+- Verifikasi status health kontainer live di `https://soar.raviarnan.dev`.
+
+---
+
+# Handoff SOAR - 2026-11-09 Malam (Perbaikan Anti-Spam Telegram & Selective Threat Triage Agen Rust)
+
+## Status Terakhir (Checkpoint: 9 November 2026, 23:10 WITA)
+
+### 1. Masalah yang Diselesaikan (Telegram Spam Storm)
+- **Akar Masalah**: Pengguna melakukan ekspor riwayat chat Telegram Desktop (1.118 file) ke `~/Downloads`. Agen `soar-agent` (PID 1461) memantau rekursif dan mengirim ratusan event ke n8n. Kuota VirusTotal habis (HTTP 429), dan fail-safe `vt_unverified` secara keliru menaikkan file media pasif ke `severity: MEDIUM` yang memicu tombol karantina Telegram. Selain itu, ribuan URL aman dari `messages*.html` memicu notifikasi `URL AMAN` pada workflow Phishing.
+- **Selective Threat Triage pada `agent-rs/src/main.rs`**:
+  - Menambahkan filter `is_benign_export_media()` pada `should_ignore()`.
+  - Media pasif murni di subfolder `photos/`, `video_files/`, `stickers/`, `images/`, `css/` dalam `ChatExport_*` diabaikan sejak awal tanpa hashing atau webhook.
+  - **Threat Guard Tetap Aktif**: Berkas eksekutabel (`.exe`, `.bat`, `.ps1`, `.scr`, `.vbs`, `.sh`, `.elf`), arsip (`.zip`, `.tar`), double extension (`*.pdf.exe`), berkas dengan izin eksekusi (`executable bit`), serta seluruh berkas di subfolder `files/` tetap dipindai secara penuh.
+- **Fail-Safe Granular n8n Malware Workflow**:
+  - Logika JavaScript n8n diperbarui di `scripts/patch-n8n-noindicator.py`. Kondisi `vt_unverified` hanya menaikkan status ke `MEDIUM` jika berkas terindikasi risiko tinggi (`is_risky_ext || is_exec`). Berkas media jinak dengan status unverified tetap `INFO (no-indicator)` dengan `notify: false`.
+- **Mute Notifikasi "URL AMAN" di n8n Phishing**:
+  - Node `Build Payload Aman` diputus dari koneksi `Send Telegram Info` pada `n8n-workflows/deteksi-phishing.json`.
+
+### 2. Status Verifikasi & Deployment
+- **Unit Test Agent**: 14/14 tests PASS (`cargo test --manifest-path agent-rs/Cargo.toml`).
+- **Unit Test n8n Matrix**: 41/41 tests PASS (`test_patch_n8n_noindicator.py` & `test_patch_n8n_hitl_matrix.py`).
+- **Live n8n Server (`100.73.91.17:5678`)**: Workflow `Deteksi Malware` dan `Deteksi Phishing` live telah di-patch menggunakan `scripts/patch-anti-spam.py` (idempotent).
+- **Endpoint NixOS Switch**: `sudo nice -n 19 nixos-rebuild switch --impure --flake /etc/nixos#nixbox` berhasil dieksekusi. Service `soar-agent.service` telah aktif berjalan dengan binary baru (`/nix/store/rsz50f2r7vikglfj7wz89mg5i56cmaff-soar-agent-0.3.0/bin/soar-agent`).
+- **Uji Fungsional Langsung**: Pembuatan berkas media uji di folder `ChatExport_*/photos/` terbukti langsung diabaikan tanpa memicu hashing atau spam notifikasi ke Telegram.
+
+### 3. Next Action
+- Tinjau perubahan kode melalui `git diff` dan lakukan commit manual sesuai standar commit konvensional (`fix(agent): ...` dan `fix(n8n): ...`).
+
+---
+
+# Handoff SOAR - 2026-11-07 Sore (User Management RBAC, Installer UI Zero-Config, Dinamisasi AI & Threat Intel, serta Deploy Produksi)
+
+## Status Terakhir (Checkpoint: 7 November 2026, 16:30 WITA)
+
+### 1. Rangkuman Pengerjaan Butir Bimbingan Dospem (Tahap 1, 2, 3 Tuntas & Deployed)
+
+Menjawab langsung 5 butir arahan bimbingan dosen pembimbing (I Nyoman Piarsa, S.T., M.T.) pada 7 November 2026:
+
+#### A. Tahap 1: User Management & Cloudflare Access Zero Trust Email SSO
+- **Integrasi Cloudflare Access SSO**: Sesi pengguna diidentifikasi dari header `cf-access-authenticated-user-email` pada fungsi `resolveAuthorizedSession` (`dashboard/src/lib/session.ts`) dengan in-memory cache 10 detik.
+- **Seeding Akun Otomatis**:
+  - `raviarnankeren@gmail.com` -> Role `admin` (Ravi Arnan, SOC Lead).
+  - `ravinewgemini@gmail.com` -> Role `viewer` (Viewer / Compliance Auditor).
+- **Penegakan Granular RBAC**:
+  - `/api/commands`: Role `viewer` ditolak dengan HTTP 403 Forbidden saat memicu mitigasi aktif (karantina berkas atau sinkhole domain).
+  - `/api/keys`: Hanya role `admin` yang diizinkan mengelola token API keys M2M.
   - `/api/users`: Hanya role `admin` yang dapat mengelola database pengguna.
-- **Antarmuka UI**:
-  - `UserManagementView.tsx`: 4 kartu metrik pengguna, matriks izin RBAC, tabel pengguna interaktif, modal tambah/edit pengguna.
-  - `WazuhHeader.tsx`: Profil pengguna aktif dan role badge (`admin`, `analyst`, `viewer`) di samping workspace selector.
-  - `WazuhSidebar.tsx` & `ModulesHub.tsx`: Menu navigasi dan kartu cepat User Management.
-- **Commit & Deploy ke Server Produksi `ravi-debian` (`100.73.91.17`)**:
-  - Commit `cd5c1b1` ter-push ke `origin/main`.
-  - Image `soar-fleet-dashboard:latest` di-rebuild dan dijalankan (`Up healthy`).
-  - Container `fleet-monitor` direstart dan melayani API di `0.0.0.0:8080`.
-  - Localhost development server dimatikan sesuai permintaan.
+- **Antarmuka UI**: Komponen `UserManagementView.tsx` (tabel interaktif, matriks izin RBAC, modal pengguna) dan role badge di `WazuhHeader.tsx`.
 
-### 2. Status Verifikasi
-- Backend Python: 151/151 tests PASS (`python3 -m unittest discover -s scripts`).
-- Frontend Next.js: 17/17 tests PASS (`npm run check` -> test:commands, test:placeholder, test:events, test:session, test:session-rate, test:rbac, eslint, tsc, next build).
-- Produksi Live Probe: `http://127.0.0.1:3000/api/auth/me` dan `http://127.0.0.1:3000/api/users` berfungsi normal dengan Cloudflare Access email header.
+#### B. Tahap 2: Installer UI & Pendaftaran Agent Tanpa Konfigurasi (Zero-Config)
+- **Generator Skrip Dinamis**:
+  - Endpoint `/api/enroll/script/linux`: Skrip Bash yang otomatis mendeteksi arsitektur CPU (`x86_64` / `aarch64`), mengunduh binary statis musl `soar-agent` (4,1 MB), men-generate unique host ID, dan mendaftar ke backend. Menggunakan origin publik `https://soar.raviarnan.dev`.
+  - Endpoint `/api/enroll/script/windows`: Skrip PowerShell untuk host Windows.
+- **Perintah Satu Baris**:
+  `curl -sSL https://soar.raviarnan.dev/api/enroll/script/linux | sudo bash`
+- **Antrean Persetujuan (Pending Approvals Workflow)**:
+  - Host klien masuk ke antrean `agent_enrollment_requests` (status `pending`).
+  - Admin menekan tombol *Approve* di UI dashboard: token diterbitkan ke tabel `enrolled_agents` dan runtime `FLEET_AGENT_POLL_TOKENS` otomatis mengenali host tersebut.
+  - Klien yang melakukan polling di `/api/enroll/status?request_id=...` langsung menerima token autentikasi dan status berubah menjadi *Active*.
+- **Antarmuka UI**: Komponen `AgentDeploymentView.tsx` dengan alur visual 4 langkah, generator perintah terminal satu baris, filter hostname/OS, serta modal konfirmasi ID/nama sebelum persetujuan. Terhubung ke sidebar navigasi dan tombol "Deploy new agent (Installer UI)" di `AgentsManagement.tsx`.
+
+#### C. Tahap 3: Dinamisasi AI Engine & Multi-Source Threat Intel Synthesis
+- **Penyimpanan Konfigurasi Persisten**: Skema tabel SQLite `system_settings` di `scripts/fleet-monitor.py` menyimpan konfigurasi `ai_config` dan `threat_intel_config` secara dinamis tanpa restart container.
+- **AI Engine Dinamis**:
+  - Pilihan model runtime: `gemini-2.5-flash`, `gemini-1.5-pro`, `deepseek-v4-flash`, `claude-3-5-sonnet`, `gpt-4o-mini`, dll.
+  - Pengaturan parameter: `temperature`, `max_output_tokens`, `prompt_override`, dan API key.
+  - Live AI Playground: fasilitas uji inferensi interaktif langsung di dashboard dengan sampel payload malware Emotet dan phishing perbankan via endpoint `POST /api/settings/ai/test`.
+- **Multi-Source Threat Intel Synthesis Dinamis**:
+  - Konfigurasi runtime API Key untuk 4 sumber: VirusTotal, MalwareBazaar, AlienVault OTX, dan MISP Feed.
+  - Pengaturan bobot penilaian (Threat Score Weights): VirusTotal (40%), MalwareBazaar (30%), AlienVault OTX (15%), MISP (15%).
+  - Ambang batas keyakinan (Confidence Thresholds): Critical (≥75), High (≥50), Medium (≥20).
+  - Durasi cache verdict TTL dinamis (Malicious, Clean, Unknown) dan Fallback Timeout (detik).
+- **Keamanan Kredensial**: Masking otomatis `••••••••` pada output API dan antarmuka web, serta proteksi backend agar string mask tidak menimpa kredensial asli saat update form.
+- **Antarmuka UI**: Komponen `DynamicSettingsView.tsx` terintegrasi sebagai tab "AI Engine & Threat Intel (Dinamis)" di dalam `SettingsView.tsx`.
+
+### 2. Status Verifikasi & Deployment Produksi
+- **Backend Python Suite**: **163/163 unit tests PASS** (`python3 -m unittest discover -s scripts`).
+  - Termasuk pengujian pendaftaran agent (`test_enrollment.py`: 6 tests PASS).
+  - Termasuk pengujian dynamic settings (`test_dynamic_settings.py`: 5 tests PASS).
+  - Termasuk pengujian RBAC (`test_users_rbac.py`: 7 tests PASS).
+  - Termasuk pengujian API keys (`test_api_keys.py`: 6 tests PASS).
+  - Termasuk pengujian MCP server (`test_soar_mcp.py`: 8 tests PASS).
+- **Frontend Next.js Suite**: **17/17 tests PASS** (`npm run check` -> test:commands, test:placeholder, test:events, test:session, test:session-rate, test:rbac, eslint bersih, tsc bersih, next build sukses).
+- **Server Produksi Debian (`ravi@100.73.91.17`)**:
+  - Kontainer `fleet-monitor` (port 8080) dan `fleet-dashboard` (port 3000) berjalan sehat (*Up healthy*).
+  - Domain publik `https://soar.raviarnan.dev` terproteksi Cloudflare Access Zero Trust.
+  - Git commit riwayat: `cfa620a` (Tahap 1), `010c411` & `225b784` (Tahap 2), `043c8d3` (Tahap 3) seluruhnya terdorong ke branch `main`.
+
+### 3. Panduan Review Manual untuk Ravi
+1. **Verifikasi Login & RBAC (Cloudflare Access SSO)**:
+   - Akses `https://soar.raviarnan.dev`.
+   - Masukkan email `raviarnankeren@gmail.com`: periksa apakah dashboard menampilkan badge role **Admin** di header atas dan seluruh menu (User Management, API Keys, Command) dapat diakses penuh.
+   - Buka mode penyamaran (Incognito) dan coba masukkan email `ravinewgemini@gmail.com`: periksa apakah dashboard menampilkan badge role **Viewer** dan aksi mitigasi (karantina berkas / sinkhole) tertolak dengan peringatan HTTP 403 Forbidden.
+2. **Verifikasi Installer UI & Persetujuan Agent**:
+   - Di dashboard admin, klik menu **Agent Deployment** pada sidebar atau klik tombol "Deploy new agent (Installer UI)" di halaman Agents.
+   - Periksa apakah generator perintah satu baris menampilkan format cURL dengan origin `https://soar.raviarnan.dev`.
+   - Salin perintah dan jalankan di terminal workstation uji coba (atau jalankan uji simulasi pendaftaran) lalu amati antrean *Pending Approvals* yang muncul di UI.
+   - Coba tombol *Approve* (bisa kustomisasi Agent ID/Name) dan pastikan host berpindah ke daftar *Active Agents*.
+3. **Verifikasi Dinamisasi AI & Threat Intel**:
+   - Buka menu **Settings** -> pilih tab **AI Engine & Threat Intel (Dinamis)**.
+   - Di tab **Model AI (LLM)**: coba ubah model (misalnya ke Gemini 1.5 Pro atau DeepSeek V4) dan ubah parameter temperature, lalu klik *Simpan Perubahan*.
+   - Di tab **Live AI Playground**: pilih sampel payload (contoh: Malware Trojan Emotet), klik *Jalankan Uji Inferensi AI*, dan amati respons analisis insiden yang dihasilkan.
+   - Di tab **Threat Intel Multi-Sumber**: amati konfigurasi bobot skor dan masking API key.
+
+### 4. Next Action
+Ravi melakukan review manual pada portal produksi `https://soar.raviarnan.dev` sesuai panduan di atas, kemudian melanjutkan penyusunan Bab IV Pembahasan Naskah Skripsi dengan merujuk data kuantitatif evaluasi di `docs/evaluasi/EVALUASI-METRIK.md`.
 
 ---
 
