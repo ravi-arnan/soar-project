@@ -42,6 +42,8 @@ export function UserManagementView() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Form State
   const [formUsername, setFormUsername] = useState('');
@@ -207,24 +209,33 @@ export function UserManagementView() {
     }
   };
 
-  const handleDelete = async (user: UserItem) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus pengguna '${user.username}'?`)) return;
+  const handleDelete = (user: UserItem) => {
+    setDeleteTarget(user);
+  };
+
+  const executeDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
     setError(null);
     try {
       const res = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', id: user.id }),
+        body: JSON.stringify({ action: 'delete', id: deleteTarget.id }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
         setError(data.error || 'Gagal menghapus pengguna');
+        setIsDeleting(false);
         return;
       }
-      showSuccess(`Pengguna '${user.username}' berhasil dihapus.`);
+      showSuccess(`Pengguna '${deleteTarget.username}' berhasil dihapus.`);
+      setDeleteTarget(null);
       fetchUsers();
     } catch (err) {
       setError(`Gagal menghapus: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -799,6 +810,57 @@ export function UserManagementView() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white border border-[#D3DAE6] rounded w-full max-w-md p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-full bg-[#FDF3F2] text-[#BD271E] shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-[14px] font-bold text-[#1A1C21]">
+                  Hapus Pengguna SOC
+                </h3>
+                <p className="text-[12px] text-[#5A626F] mt-1 leading-relaxed">
+                  Apakah Anda yakin ingin menghapus akun pengguna{' '}
+                  <strong className="text-[#1A1C21]">{deleteTarget.username}</strong> ({deleteTarget.name})? Tindakan ini tidak dapat dibatalkan.
+                </p>
+
+                <div className="mt-3 p-2.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] font-mono space-y-1">
+                  <div><span className="text-[#8A94A6]">Peran (Role):</span> {deleteTarget.role}</div>
+                  <div><span className="text-[#8A94A6]">Email:</span> {deleteTarget.email || '-'}</div>
+                  <div><span className="text-[#8A94A6]">User ID:</span> {deleteTarget.id}</div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(null)}
+                    className="px-3 py-1.5 border border-[#D3DAE6] rounded text-[12px] font-medium text-[#5A626F] hover:bg-[#F5F7FA] transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={executeDelete}
+                    disabled={isDeleting}
+                    className="px-3 py-1.5 rounded text-[12px] font-semibold text-white bg-[#BD271E] hover:bg-[#9E1F18] transition flex items-center gap-1.5"
+                  >
+                    {isDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                    <span>Hapus Pengguna</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

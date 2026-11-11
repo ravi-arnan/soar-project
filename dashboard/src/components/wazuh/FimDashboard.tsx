@@ -65,28 +65,13 @@ function resolveFileMetadata(e: FleetEvent | undefined, path: string) {
       : path !== '-'
       ? inferredUid
       : '-';
-  const size = formatFileSize(e?.size ?? (path !== '-' && path.endsWith('.bin') ? '2048' : undefined));
-
-  let defaultInode = '-';
-  if (path && path !== '-') {
-    let h = 0;
-    for (let i = 0; i < path.length; i++) {
-      h = (Math.imul(31, h) + path.charCodeAt(i)) | 0;
-    }
-    defaultInode = String(Math.abs(h % 900000) + 100000);
-  }
-  const inode = e?.inode ? String(e.inode) : defaultInode;
+  const size = formatFileSize(e?.size);
+  const inode = e?.inode ? String(e.inode) : '-';
 
   const md5 = e?.md5 || '-';
   const sha1 = e?.sha1 || '-';
   const sha256 = e?.hash || '-';
-  const permissions =
-    e?.perm ||
-    (path !== '-'
-      ? path.endsWith('.bin') || path.endsWith('.sh')
-        ? 'rwxr-xr-x (0755)'
-        : 'rw-r--r-- (0644)'
-      : '-');
+  const permissions = e?.perm || '-';
 
   return {
     lastAnalysis,
@@ -111,6 +96,11 @@ export function FimDashboard() {
   const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
   const [arState, setArState] = useState<Record<string, string>>({});
   const [copiedHash, setCopiedHash] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    agentId: string;
+    action: 'quarantine' | 'restore';
+    target: string;
+  } | null>(null);
 
   const handleCopyHash = (hash: string) => {
     if (!hash || hash === '-') return;
@@ -133,14 +123,22 @@ export function FimDashboard() {
     setSearchTerm('');
   };
 
-  /** Antrekan aksi karantina atau pemulihan ke agent. */
-  async function handleQueueAction(
+  /** Buka dialog konfirmasi aksi karantina atau pemulihan ke agent. */
+  function handleQueueAction(
     agentId: string,
     action: 'quarantine' | 'restore',
     target: string
   ) {
-    const label = action === 'quarantine' ? `karantina file ${target}` : `pulihkan file ${target}`;
-    if (!window.confirm(`Antrekan ${label} di agent ${agentId}?`)) return;
+    setConfirmAction({ agentId, action, target });
+  }
+
+  /** Eksekusi perintah Active Response setelah dikonfirmasi in-app. */
+  async function executeQueuedAction(
+    agentId: string,
+    action: 'quarantine' | 'restore',
+    target: string
+  ) {
+    setConfirmAction(null);
     setArState((s) => ({ ...s, [target]: 'mengirim...' }));
     try {
       const r = await postCommand({ agent_id: agentId, action, target });
@@ -759,6 +757,71 @@ export function FimDashboard() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* In-App Active Response Confirmation Modal */}
+      {confirmAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white border border-[#D3DAE6] rounded w-full max-w-md p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div
+                className={`p-2 rounded-full shrink-0 ${
+                  confirmAction.action === 'quarantine'
+                    ? 'bg-[#FDF3F2] text-[#BD271E]'
+                    : 'bg-[#F0F7FC] text-[#006BB4]'
+                }`}
+              >
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-[14px] font-bold text-[#1A1C21]">
+                  Konfirmasi Active Response FIM
+                </h3>
+                <p className="text-[12px] text-[#5A626F] mt-1 leading-relaxed">
+                  Apakah Anda yakin ingin mengeksekusi{' '}
+                  <strong className="text-[#1A1C21] uppercase font-mono">{confirmAction.action}</strong> pada file berikut?
+                </p>
+
+                <div className="mt-3 p-2.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] font-mono space-y-1">
+                  <div><span className="text-[#8A94A6]">Agent ID:</span> {confirmAction.agentId}</div>
+                  <div><span className="text-[#8A94A6]">Action:</span> {confirmAction.action}</div>
+                  <div className="break-all"><span className="text-[#8A94A6]">Target:</span> {confirmAction.target}</div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAction(null)}
+                    className="px-3 py-1.5 rounded border border-[#D3DAE6] text-[12px] font-medium text-[#5A626F] hover:bg-[#F5F7FA] transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      executeQueuedAction(
+                        confirmAction.agentId,
+                        confirmAction.action,
+                        confirmAction.target
+                      )
+                    }
+                    className={`px-3 py-1.5 rounded text-[12px] font-semibold text-white transition ${
+                      confirmAction.action === 'quarantine'
+                        ? 'bg-[#BD271E] hover:bg-[#9E1F18]'
+                        : 'bg-[#006BB4] hover:bg-[#005593]'
+                    }`}
+                  >
+                    Eksekusi Perintah
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

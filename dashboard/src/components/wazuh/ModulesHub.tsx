@@ -244,10 +244,10 @@ export const ModulesHub = React.memo(function ModulesHub({
           <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#006BB4] transition-colors">
             Total agents
           </div>
-          <div className="text-[32px] font-semibold text-[#006BB4] leading-tight mt-1">
+          <div className="text-[32px] font-semibold text-[#006BB4] font-mono tabular-nums leading-tight mt-1">
             {stats.total}
           </div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">
+          <div className="text-[11px] text-[#8A94A6] font-mono tabular-nums mt-0.5">
             {stats.rust} Rust · {stats.wazuh} Wazuh
           </div>
         </div>
@@ -259,10 +259,10 @@ export const ModulesHub = React.memo(function ModulesHub({
           <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#00A389] transition-colors">
             Active agents
           </div>
-          <div className="text-[32px] font-semibold text-[#00A389] leading-tight mt-1">
+          <div className="text-[32px] font-semibold text-[#00A389] font-mono tabular-nums leading-tight mt-1">
             {stats.active}
           </div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">
+          <div className="text-[11px] text-[#8A94A6] font-mono tabular-nums mt-0.5">
             {stats.total > 0 ? Math.round((stats.active / stats.total) * 100) : 0}% operational
           </div>
         </div>
@@ -274,10 +274,10 @@ export const ModulesHub = React.memo(function ModulesHub({
           <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#BD271E] transition-colors">
             Disconnected agents
           </div>
-          <div className="text-[32px] font-semibold text-[#BD271E] leading-tight mt-1">
+          <div className="text-[32px] font-semibold text-[#BD271E] font-mono tabular-nums leading-tight mt-1">
             {stats.disconnected}
           </div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">
+          <div className="text-[11px] text-[#8A94A6] font-mono tabular-nums mt-0.5">
             {stats.disconnected > 0 && stats.total > 0
               ? `${Math.round((stats.disconnected / stats.total) * 100)}% offline`
               : 'All connected'}
@@ -291,7 +291,7 @@ export const ModulesHub = React.memo(function ModulesHub({
           <div className="text-[12px] text-[#5A626F] font-medium group-hover:text-[#006BB4] transition-colors">
             Threat events (24h)
           </div>
-          <div className="text-[32px] font-semibold text-[#1A1C21] leading-tight mt-1">
+          <div className="text-[32px] font-semibold text-[#1A1C21] font-mono tabular-nums leading-tight mt-1">
             {stats.events_total.toLocaleString('en-US')}
           </div>
           {/* Clean Severity Numbers */}
@@ -304,7 +304,7 @@ export const ModulesHub = React.memo(function ModulesHub({
               className="hover:underline cursor-pointer"
               title="Filter Critical events (24h)"
             >
-              <span className="font-semibold text-[#BD271E]">{stats.severity?.CRITICAL || 0}</span> critical
+              <span className="font-semibold text-[#BD271E] font-mono tabular-nums">{stats.severity?.CRITICAL || 0}</span> critical
             </span>
             <span className="text-[#D3DAE6]">·</span>
             <span
@@ -315,29 +315,37 @@ export const ModulesHub = React.memo(function ModulesHub({
               className="hover:underline cursor-pointer"
               title="Filter High events (24h)"
             >
-              <span className="font-semibold text-[#D97706]">{stats.severity?.HIGH || 0}</span> high
+              <span className="font-semibold text-[#D97706] font-mono tabular-nums">{stats.severity?.HIGH || 0}</span> high
             </span>
           </div>
         </div>
       </div>
 
-      {/* 2x2 / Wide Category Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+      {/* Categorized Modules Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-1">
         {sections.map((section) => (
           <div
             key={section.title}
-            className={`relative border border-[#D3DAE6] rounded bg-white p-5 pt-7 flex flex-col ${
+            className={`border border-[#D3DAE6] rounded bg-white overflow-hidden flex flex-col ${
               section.wide ? 'lg:col-span-2' : ''
             }`}
           >
-            {/* Pill Header Badge */}
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-[#D3DAE6] px-4 py-0.5 rounded-full text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase whitespace-nowrap shadow-xs">
-              {section.title}
+            {/* Integrated Wazuh Section Header Bar */}
+            <div className="flex items-center justify-between border-b border-[#EBEFF5] px-4 py-2.5 bg-[#FAFBFD]">
+              <div className="flex items-center gap-2">
+                <div className="w-1 h-3.5 bg-[#006BB4] rounded-xs" />
+                <span className="text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase">
+                  {section.title}
+                </span>
+              </div>
+              <span className="text-[11px] font-medium text-[#8A94A6]">
+                {section.modules.length} {section.modules.length === 1 ? 'module' : 'modules'}
+              </span>
             </div>
 
             {/* Modules Grid */}
             <div
-              className={`grid gap-3.5 flex-1 auto-rows-fr ${
+              className={`p-4 grid gap-3.5 flex-1 auto-rows-fr ${
                 section.wide ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'
               }`}
             >
@@ -349,9 +357,9 @@ export const ModulesHub = React.memo(function ModulesHub({
                     onClick={() => {
                       onNavigate(mod.id);
                     }}
-                    className="relative border border-[#D3DAE6] rounded p-3.5 flex items-start gap-3 bg-white transition-all shadow-xs hover:border-[#006BB4] hover:bg-[#F8FAFC] cursor-pointer group"
+                    className="border border-[#E2E8F0] rounded p-3.5 flex items-start gap-3 bg-white transition-all hover:border-[#006BB4] hover:bg-[#F8FAFC] cursor-pointer group"
                   >
-                    <div className="mt-0.5 p-2 rounded bg-[#F5F7FA] text-[#006BB4] shrink-0 group-hover:bg-[#EBF5FB] group-hover:text-[#005593] transition-colors">
+                    <div className="mt-0.5 p-2 rounded bg-[#F0F5FA] text-[#006BB4] border border-[#E0ECF6] shrink-0 group-hover:bg-[#EBF5FB] group-hover:text-[#005593] transition-colors">
                       <Icon className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">

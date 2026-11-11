@@ -1,7 +1,17 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Radio, FileText, ChevronRight, ChevronDown, Filter, X } from 'lucide-react';
+import {
+  Radio,
+  FileText,
+  ChevronRight,
+  ChevronDown,
+  X,
+  Copy,
+  Check,
+  ExternalLink,
+  ShieldAlert,
+} from 'lucide-react';
 import { WazuhFilterBar } from './WazuhFilterBar';
 import { ExpandableCard } from './ExpandableCard';
 import { PeriodFilter } from './PeriodFilter';
@@ -92,6 +102,21 @@ export function SecurityEventsDashboard({
   const [rowsPerPage, setRowsPerPage] = useState(10);
   /** Status antrean AR per baris: queued | gagal | mengirim. */
   const [arState, setArState] = useState<Record<string, string>>({});
+  /** Modal konfirmasi Active Response in-app. */
+  const [confirmAction, setConfirmAction] = useState<{
+    rowId: string;
+    agentId: string;
+    action: 'quarantine' | 'restore' | 'sinkhole';
+    target: string;
+  } | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopyValue = (key: string, val: string) => {
+    if (!navigator?.clipboard) return;
+    navigator.clipboard.writeText(val);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 1800);
+  };
 
   // Serialisasi array prop agar tidak memicu reset terus-menerus akibat referensi array baru
   const serializeArray = (arr?: string[]) => (arr ? [...arr].sort().join(',') : '');
@@ -276,20 +301,24 @@ export function SecurityEventsDashboard({
     return m ? m[1] : '';
   }
 
-  /** Antrekan perintah ke agent via fleet-monitor (di-poll agent, keluar-saja). */
-  async function queueCommand(
+  /** Buka dialog konfirmasi Active Response. */
+  function queueCommand(
     rowId: string,
     agentId: string,
     action: 'quarantine' | 'restore' | 'sinkhole',
     target: string
   ) {
-    const label =
-      action === 'quarantine'
-        ? `karantina file ${target}`
-        : action === 'restore'
-        ? `pulihkan file ${target}`
-        : `sinkhole domain ${target}`;
-    if (!window.confirm(`Antrekan ${label} di agent ${agentId}?`)) return;
+    setConfirmAction({ rowId, agentId, action, target });
+  }
+
+  /** Antrekan perintah ke agent via fleet-monitor setelah dikonfirmasi pengguna. */
+  async function executeQueuedCommand(
+    rowId: string,
+    agentId: string,
+    action: 'quarantine' | 'restore' | 'sinkhole',
+    target: string
+  ) {
+    setConfirmAction(null);
     setArState((s) => ({ ...s, [rowId]: 'mengirim...' }));
     try {
       const r = await postCommand({ agent_id: agentId, action, target });
@@ -684,95 +713,100 @@ export function SecurityEventsDashboard({
           selectedSeverities.length === 1 && selectedSeverities.includes('MEDIUM');
 
         return (
-          <div className="bg-white border border-[#D3DAE6] rounded p-2.5 flex flex-wrap items-center justify-between gap-2.5 text-[12px]">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <div className="flex items-center gap-1 text-[#5A626F] font-semibold text-[11px] mr-1">
-                <Filter className="w-3.5 h-3.5 text-[#5A626F]" />
-                <span>Tingkat Keparahan:</span>
+          <div className="bg-white border border-[#D3DAE6] rounded px-3 py-2 flex flex-wrap items-center justify-between gap-3 text-[12px]">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-[#5A626F] uppercase tracking-wider mr-1">
+                Severity:
+              </span>
+
+              <div className="inline-flex rounded border border-[#D3DAE6] bg-[#F8FAFC] p-0.5 gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => handleSelectSeverityFilter([])}
+                  className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer ${
+                    isAll
+                      ? 'bg-white text-[#1A1C21] font-semibold shadow-2xs border border-[#D3DAE6]'
+                      : 'text-[#5A626F] hover:text-[#1A1C21] hover:bg-white/60'
+                  }`}
+                >
+                  All ({statsTotal.toLocaleString('en-US')})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectSeverityFilter(['CRITICAL', 'HIGH'])}
+                  className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                    isCritAndHigh
+                      ? 'bg-white text-[#BD271E] font-semibold shadow-2xs border border-[#F5C2C0]'
+                      : 'text-[#5A626F] hover:text-[#BD271E] hover:bg-white/60'
+                  }`}
+                  title="Filter Critical & High"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#BD271E]" />
+                  <span>Crit+High</span>
+                  <span className="font-mono tabular-nums text-[10px]">({sev.CRITICAL + sev.HIGH})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectSeverityFilter(['CRITICAL'])}
+                  className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                    isCritOnly
+                      ? 'bg-white text-[#BD271E] font-semibold shadow-2xs border border-[#F5C2C0]'
+                      : 'text-[#5A626F] hover:text-[#BD271E] hover:bg-white/60'
+                  }`}
+                  title="Filter Critical only"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#BD271E]" />
+                  <span>Critical</span>
+                  <span className="font-mono tabular-nums text-[10px]">({sev.CRITICAL})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectSeverityFilter(['HIGH'])}
+                  className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                    isHighOnly
+                      ? 'bg-white text-[#D97706] font-semibold shadow-2xs border border-[#F5D9A8]'
+                      : 'text-[#5A626F] hover:text-[#D97706] hover:bg-white/60'
+                  }`}
+                  title="Filter High only"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
+                  <span>High</span>
+                  <span className="font-mono tabular-nums text-[10px]">({sev.HIGH})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectSeverityFilter(['MEDIUM'])}
+                  className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1.5 ${
+                    isMedOnly
+                      ? 'bg-white text-[#00A389] font-semibold shadow-2xs border border-[#B2E6DC]'
+                      : 'text-[#5A626F] hover:text-[#00A389] hover:bg-white/60'
+                  }`}
+                  title="Filter Medium only"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#00A389]" />
+                  <span>Medium</span>
+                  <span className="font-mono tabular-nums text-[10px]">({sev.MEDIUM})</span>
+                </button>
               </div>
-
-              <button
-                type="button"
-                onClick={() => handleSelectSeverityFilter([])}
-                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors cursor-pointer ${
-                  isAll
-                    ? 'bg-[#1A1C21] text-white shadow-xs'
-                    : 'bg-[#F0F4F8] text-[#5A626F] hover:bg-[#E1E6EB]'
-                }`}
-              >
-                Semua
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectSeverityFilter(['CRITICAL', 'HIGH'])}
-                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  isCritAndHigh
-                    ? 'bg-[#BD271E] text-white shadow-xs'
-                    : 'bg-[#FDE8E8] text-[#BD271E] hover:bg-[#FBD5D5]'
-                }`}
-                title="Tampilkan alert Critical dan High"
-              >
-                Critical + High ({sev.CRITICAL + sev.HIGH})
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectSeverityFilter(['CRITICAL'])}
-                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  isCritOnly
-                    ? 'bg-[#BD271E] text-white shadow-xs'
-                    : 'bg-[#FDF3F2] text-[#BD271E] hover:bg-[#FDE8E8]'
-                }`}
-                title="Filter hanya alert Critical"
-              >
-                Critical ({sev.CRITICAL})
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectSeverityFilter(['HIGH'])}
-                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  isHighOnly
-                    ? 'bg-[#D97706] text-white shadow-xs'
-                    : 'bg-[#FEF6E8] text-[#D97706] hover:bg-[#FDEFD4]'
-                }`}
-                title="Filter hanya alert High"
-              >
-                High ({sev.HIGH})
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectSeverityFilter(['MEDIUM'])}
-                className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  isMedOnly
-                    ? 'bg-[#00A389] text-white shadow-xs'
-                    : 'bg-[#F0FAF7] text-[#00A389] hover:bg-[#E1F7F2]'
-                }`}
-                title="Filter hanya alert Medium"
-              >
-                Medium ({sev.MEDIUM})
-              </button>
             </div>
 
             {selectedSeverities.length > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-[#5A626F]">
-                  Menampilkan {total} event (Keparahan:{' '}
-                  <span className="font-semibold text-[#1A1C21]">
-                    {selectedSeverities.join(', ')}
-                  </span>
-                  )
+                  Tersaring: <span className="font-mono font-semibold text-[#1A1C21]">{total}</span> event
                 </span>
                 <button
                   type="button"
                   onClick={() => handleSelectSeverityFilter([])}
-                  className="inline-flex items-center gap-1 text-[11px] text-[#BD271E] hover:text-[#9E1F18] font-medium bg-[#FDE8E8] hover:bg-[#FBD5D5] px-2 py-0.5 rounded cursor-pointer transition-colors"
-                  title="Hapus filter keparahan"
+                  className="inline-flex items-center gap-1 text-[11px] text-[#BD271E] hover:text-[#9E1F18] font-medium border border-[#F5C2C0] bg-white hover:bg-[#FDF3F2] px-2 py-0.5 rounded cursor-pointer transition-colors"
+                  title="Reset filter keparahan"
                 >
                   <X className="w-3 h-3" />
-                  <span>Reset filter</span>
+                  <span>Reset</span>
                 </button>
               </div>
             )}
@@ -975,60 +1009,105 @@ export function SecurityEventsDashboard({
                       </td>
                     </tr>
 
-                    {/* Expandable row with JSON details */}
+                    {/* Expandable row with Kibana-style formatted properties */}
                     {isExpanded && (
-                      <tr className="bg-[#F8FAFC]">
-                        <td colSpan={10} className="p-4">
-                          <div className="bg-white border border-[#D3DAE6] rounded p-3 text-[11px] font-mono text-[#1A1C21] space-y-1">
-                            <div className="text-[12px] font-bold text-[#006BB4] mb-2 font-sans">
-                              Alert Details: {row.ruleId}
-                            </div>
-                            <div><strong>timestamp:</strong> {row.time}</div>
-                            <div><strong>agent.id:</strong> &quot;{row.agentId}&quot;</div>
-                            <div><strong>agent.name:</strong> &quot;{row.agentName}&quot;</div>
-                            <div><strong>rule.level:</strong> {row.level}</div>
-                            <div><strong>rule.description:</strong> &quot;{row.description}&quot;</div>
-                            <div><strong>location:</strong> &quot;{row.source === 'wazuh' ? 'wazuh-alerts (indexer)' : 'wazuh-alerts'}&quot;</div>
-                            {mitre && (
-                              <div className="pt-1.5 border-t border-[#EDEEF2] mt-2 flex items-center gap-2 font-sans text-[11px]">
-                                <span className="font-semibold text-[#5A626F]">MITRE Technique:</span>
-                                <span className={`px-1.5 py-0.5 rounded font-mono font-semibold ${mitre.bg} ${mitre.text}`}>
-                                  {mitre.id}
+                      <tr className="bg-[#FAFBFD]">
+                        <td colSpan={10} className="p-3.5">
+                          <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden shadow-2xs">
+                            {/* Drawer Header */}
+                            <div className="flex flex-wrap items-center justify-between border-b border-[#EBEFF5] px-4 py-2.5 bg-[#F8FAFC]">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[12px] font-bold text-[#1A1C21]">
+                                  Alert Detail
                                 </span>
-                                <span className="text-[#1A1C21] font-medium">{mitre.name}</span>
+                                <span className="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-[#EBF5FB] text-[#006BB4]">
+                                  rule.id: {row.ruleId}
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold ${
+                                    row.level >= 12
+                                      ? 'bg-[#FDF3F2] text-[#BD271E]'
+                                      : row.level >= 7
+                                      ? 'bg-[#FEF6E8] text-[#D97706]'
+                                      : 'bg-[#F0FAF7] text-[#00A389]'
+                                  }`}
+                                >
+                                  level: {row.level}
+                                </span>
+                                {mitre && (
+                                  <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold ${mitre.bg} ${mitre.text}`}>
+                                    {mitre.id} · {mitre.name}
+                                  </span>
+                                )}
                               </div>
-                            )}
-                            {row.hash && (
-                              <div className="pt-1.5 border-t border-[#EDEEF2] mt-2 flex items-center gap-2 font-sans text-[11px]">
-                                <span className="font-semibold text-[#5A626F]">Investigasi Intel:</span>
-                                <a
-                                  href={`https://www.virustotal.com/gui/file/${row.hash}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[#006BB4] hover:underline"
-                                >
-                                  VirusTotal ↗
-                                </a>
-                                <span className="text-[#D3DAE6]">|</span>
-                                <a
-                                  href={`https://bazaar.abuse.ch/sample/${row.hash}/`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[#006BB4] hover:underline"
-                                >
-                                  MalwareBazaar ↗
-                                </a>
-                                <span className="text-[#D3DAE6]">|</span>
-                                <a
-                                  href={`https://otx.alienvault.com/indicator/file/${row.hash}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[#006BB4] hover:underline"
-                                >
-                                  AlienVault OTX ↗
-                                </a>
-                              </div>
-                            )}
+
+                              {row.hash && (
+                                <div className="flex items-center gap-3 text-[11px]">
+                                  <span className="text-[#8A94A6]">IoC Lookup:</span>
+                                  <a
+                                    href={`https://www.virustotal.com/gui/file/${row.hash}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[#006BB4] hover:underline flex items-center gap-1 font-medium"
+                                  >
+                                    VirusTotal <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                  <span className="text-[#D3DAE6]">·</span>
+                                  <a
+                                    href={`https://bazaar.abuse.ch/sample/${row.hash}/`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[#006BB4] hover:underline flex items-center gap-1 font-medium"
+                                  >
+                                    MalwareBazaar <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                  <span className="text-[#D3DAE6]">·</span>
+                                  <a
+                                    href={`https://otx.alienvault.com/indicator/file/${row.hash}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[#006BB4] hover:underline flex items-center gap-1 font-medium"
+                                  >
+                                    AlienVault <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Formatted Properties Table */}
+                            <div className="divide-y divide-[#EBEFF5] text-[11px] font-mono">
+                              {[
+                                { key: '@timestamp', val: row.time },
+                                { key: 'agent.id', val: row.agentId },
+                                { key: 'agent.name', val: row.agentName },
+                                { key: 'rule.id', val: String(row.ruleId) },
+                                { key: 'rule.level', val: String(row.level) },
+                                { key: 'rule.description', val: row.description },
+                                { key: 'file.path', val: row.rawPath || '-' },
+                                { key: 'network.url', val: row.rawUrl || '-' },
+                                { key: 'hash.sha256', val: row.hash || '-' },
+                                { key: 'telemetry.source', val: row.source === 'wazuh' ? 'wazuh-alerts (indexer)' : 'soar-agent pipeline' },
+                              ].map(({ key, val }) => (
+                                <div key={key} className="flex items-center px-4 py-1.5 hover:bg-[#F8FAFC] group">
+                                  <div className="w-48 text-[#5A626F] shrink-0 font-medium">{key}</div>
+                                  <div className="flex-1 text-[#1A1C21] break-all select-all">{val}</div>
+                                  {val !== '-' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyValue(key, val)}
+                                      className="opacity-0 group-hover:opacity-100 text-[#8A94A6] hover:text-[#006BB4] transition p-1"
+                                      title={`Salin ${key}`}
+                                    >
+                                      {copiedKey === key ? (
+                                        <Check className="w-3.5 h-3.5 text-[#00A389]" />
+                                      ) : (
+                                        <Copy className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -1050,6 +1129,72 @@ export function SecurityEventsDashboard({
           onRowsChange={setRowsPerPage}
         />
       </ExpandableCard>
+
+      {/* Active Response In-App Confirmation Modal */}
+      {confirmAction && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white border border-[#D3DAE6] rounded w-full max-w-md p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div
+                className={`p-2 rounded-full shrink-0 ${
+                  confirmAction.action === 'quarantine' || confirmAction.action === 'sinkhole'
+                    ? 'bg-[#FDF3F2] text-[#BD271E]'
+                    : 'bg-[#F0F7FC] text-[#006BB4]'
+                }`}
+              >
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-[14px] font-bold text-[#1A1C21]">
+                  Konfirmasi Active Response
+                </h3>
+                <p className="text-[12px] text-[#5A626F] mt-1 leading-relaxed">
+                  Apakah Anda yakin ingin mengeksekusi{' '}
+                  <strong className="text-[#1A1C21] uppercase font-mono">{confirmAction.action}</strong> pada target berikut?
+                </p>
+
+                <div className="mt-3 p-2.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] font-mono space-y-1">
+                  <div><span className="text-[#8A94A6]">Agent ID:</span> {confirmAction.agentId}</div>
+                  <div><span className="text-[#8A94A6]">Action:</span> {confirmAction.action}</div>
+                  <div className="break-all"><span className="text-[#8A94A6]">Target:</span> {confirmAction.target}</div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 mt-5">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAction(null)}
+                    className="px-3 py-1.5 rounded border border-[#D3DAE6] text-[12px] font-medium text-[#5A626F] hover:bg-[#F5F7FA] transition"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      executeQueuedCommand(
+                        confirmAction.rowId,
+                        confirmAction.agentId,
+                        confirmAction.action,
+                        confirmAction.target
+                      )
+                    }
+                    className={`px-3 py-1.5 rounded text-[12px] font-semibold text-white transition ${
+                      confirmAction.action === 'quarantine' || confirmAction.action === 'sinkhole'
+                        ? 'bg-[#BD271E] hover:bg-[#9E1F18]'
+                        : 'bg-[#006BB4] hover:bg-[#005593]'
+                    }`}
+                  >
+                    Eksekusi Perintah
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

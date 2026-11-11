@@ -37,6 +37,7 @@ export function AgentsManagement({
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(15);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [copiedSshId, setCopiedSshId] = useState<string | null>(null);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -123,15 +124,21 @@ export function AgentsManagement({
 
   return (
     <div className="space-y-4">
-      {/* 3 Top Cards: Status, Details, Evolution */}
+      {/* 3 Top Cards: Status, Details, OS Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Status Donut */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 relative pt-6">
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-[#D3DAE6] px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider text-[#1A1C21] uppercase">
-            STATUS
+        <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#EBEFF5] px-3.5 py-2 bg-[#FAFBFD]">
+            <div className="flex items-center gap-2">
+              <div className="w-1 h-3 bg-[#006BB4] rounded-xs" />
+              <span className="text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase">
+                STATUS
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-[#8A94A6]">{total} endpoints</span>
           </div>
 
-          <div className="flex items-center justify-center gap-6 h-36">
+          <div className="p-4 flex items-center justify-center gap-6 h-36">
             <div className="relative w-28 h-28 flex items-center justify-center">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
                 <circle
@@ -140,7 +147,7 @@ export function AgentsManagement({
                   r="38"
                   fill="none"
                   stroke="#00A389"
-                  strokeWidth="18"
+                  strokeWidth="16"
                   strokeDasharray={`${arcActive} ${DONUT_CIRCUMFERENCE - arcActive}`}
                   strokeDashoffset="0"
                 />
@@ -150,7 +157,7 @@ export function AgentsManagement({
                   r="38"
                   fill="none"
                   stroke="#BD271E"
-                  strokeWidth="18"
+                  strokeWidth="16"
                   strokeDasharray={`${arcDisconnected} ${DONUT_CIRCUMFERENCE - arcDisconnected}`}
                   strokeDashoffset={`-${arcActive}`}
                 />
@@ -160,92 +167,112 @@ export function AgentsManagement({
                   r="38"
                   fill="none"
                   stroke="#98A2B3"
-                  strokeWidth="18"
+                  strokeWidth="16"
                   strokeDasharray={`${arcNever} ${DONUT_CIRCUMFERENCE - arcNever}`}
                   strokeDashoffset={`-${arcActive + arcDisconnected}`}
                 />
               </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-[18px] font-bold font-mono tabular-nums text-[#1A1C21]">
+                  {total}
+                </span>
+                <span className="text-[9px] uppercase tracking-wider text-[#8A94A6]">Total</span>
+              </div>
             </div>
 
             <div className="text-[11px] space-y-1.5 text-[#5A626F]">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#00A389]"></span>
-                <span>Active</span>
+                <span>Active ({activeCount})</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#BD271E]"></span>
-                <span>Disconnected</span>
+                <span>Disconnected ({disconnectedCount})</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-[#98A2B3]"></span>
-                <span>Never Connected</span>
+                <span>Never ({neverCount})</span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Details Grid */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 relative pt-6">
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-[#D3DAE6] px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider text-[#1A1C21] uppercase">
-            DETAILS
+        <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#EBEFF5] px-3.5 py-2 bg-[#FAFBFD]">
+            <div className="flex items-center gap-2">
+              <div className="w-1 h-3 bg-[#00A389] rounded-xs" />
+              <span className="text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase">
+                DETAILS
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-[#8A94A6]">Coverage {coverage}%</span>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 text-center border-b border-[#EBEFF5] pb-3">
-            <div>
-              <div className="text-[11px] text-[#5A626F]">Active</div>
-              <div className="text-[20px] font-semibold text-[#006BB4]">{activeCount}</div>
+          <div className="p-4 flex-1 flex flex-col justify-between">
+            <div className="grid grid-cols-4 gap-2 text-center border-b border-[#EBEFF5] pb-3">
+              <div>
+                <div className="text-[11px] text-[#5A626F]">Active</div>
+                <div className="text-[20px] font-semibold text-[#006BB4] font-mono tabular-nums">{activeCount}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-[#5A626F]">Disconnected</div>
+                <div className="text-[20px] font-semibold text-[#BD271E] font-mono tabular-nums">{disconnectedCount}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-[#5A626F]">Never</div>
+                <div className="text-[20px] font-semibold text-[#8A94A6] font-mono tabular-nums">{neverCount}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-[#5A626F]">Coverage</div>
+                <div className="text-[16px] font-semibold text-[#1A1C21] font-mono tabular-nums mt-0.5">{coverage}%</div>
+              </div>
             </div>
-            <div>
-              <div className="text-[11px] text-[#5A626F]">Disconnected</div>
-              <div className="text-[20px] font-semibold text-[#006BB4]">{disconnectedCount}</div>
-            </div>
-            <div>
-              <div className="text-[11px] text-[#5A626F]">Never connected</div>
-              <div className="text-[20px] font-semibold text-[#006BB4]">{neverCount}</div>
-            </div>
-            <div>
-              <div className="text-[11px] text-[#5A626F]">Coverage</div>
-              <div className="text-[16px] font-semibold text-[#1A1C21] mt-0.5">{coverage}%</div>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-2 pt-3 text-[12px]">
-            <div>
-              <div className="text-[#8A94A6] text-[11px]">Last registered agent</div>
-              {lastRegistered ? (
-                <button
-                  onClick={() => onSelectAgent(lastRegistered.id)}
-                  className="font-medium text-[#006BB4] hover:underline cursor-pointer truncate"
-                >
-                  {lastRegistered.name}
-                </button>
-              ) : (
-                <div className="font-medium text-[#8A94A6]">-</div>
-              )}
-            </div>
-            <div>
-              <div className="text-[#8A94A6] text-[11px]">Most active agent</div>
-              {mostActive ? (
-                <button
-                  onClick={() => onSelectAgent(mostActive.id)}
-                  className="font-medium text-[#006BB4] hover:underline cursor-pointer truncate"
-                >
-                  {mostActive.name}
-                </button>
-              ) : (
-                <div className="font-medium text-[#8A94A6]">-</div>
-              )}
+            <div className="grid grid-cols-2 gap-2 pt-2 text-[12px]">
+              <div>
+                <div className="text-[#8A94A6] text-[10.5px]">Last registered agent</div>
+                {lastRegistered ? (
+                  <button
+                    onClick={() => onSelectAgent(lastRegistered.id)}
+                    className="font-medium text-[#006BB4] hover:underline cursor-pointer truncate block max-w-full"
+                  >
+                    {lastRegistered.name}
+                  </button>
+                ) : (
+                  <div className="font-medium text-[#8A94A6]">-</div>
+                )}
+              </div>
+              <div>
+                <div className="text-[#8A94A6] text-[10.5px]">Most active agent</div>
+                {mostActive ? (
+                  <button
+                    onClick={() => onSelectAgent(mostActive.id)}
+                    className="font-medium text-[#006BB4] hover:underline cursor-pointer truncate block max-w-full"
+                  >
+                    {mostActive.name}
+                  </button>
+                ) : (
+                  <div className="font-medium text-[#8A94A6]">-</div>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* OS Distribution (live dari data agent) */}
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 relative pt-6">
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-[#D3DAE6] px-3 py-0.5 rounded-full text-[10px] font-bold tracking-wider text-[#1A1C21] uppercase">
-            OS DISTRIBUTION
+        {/* OS Distribution */}
+        <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#EBEFF5] px-3.5 py-2 bg-[#FAFBFD]">
+            <div className="flex items-center gap-2">
+              <div className="w-1 h-3 bg-[#6366F1] rounded-xs" />
+              <span className="text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase">
+                OS DISTRIBUTION
+              </span>
+            </div>
+            <span className="text-[10px] font-mono text-[#8A94A6]">Platform Fleet</span>
           </div>
 
-          <div className="h-36 flex flex-col justify-center gap-3 px-2">
+          <div className="p-4 flex-1 flex flex-col justify-center gap-2.5">
             {[
               { label: 'Linux', count: linuxCount, color: '#00A389' },
               { label: 'Windows', count: windowsCount, color: '#006BB4' },
@@ -254,11 +281,11 @@ export function AgentsManagement({
               <div key={o.label}>
                 <div className="flex items-center justify-between text-[11px] mb-1">
                   <span className="text-[#1A1C21] font-medium">{o.label}</span>
-                  <span className="font-semibold text-[#5A626F]">{o.count}</span>
+                  <span className="font-semibold text-[#5A626F] font-mono tabular-nums">{o.count}</span>
                 </div>
-                <div className="h-2.5 bg-[#F0F4F8] rounded">
+                <div className="h-2 bg-[#F0F4F8] rounded overflow-hidden">
                   <div
-                    className="h-2.5 rounded"
+                    className="h-2 rounded transition-all duration-300"
                     style={{ width: `${Math.round((o.count / osMax) * 100)}%`, backgroundColor: o.color }}
                   />
                 </div>
@@ -399,16 +426,28 @@ export function AgentsManagement({
                         onClick={(e) => {
                           e.stopPropagation();
                           const cmd = `ssh ${sshUser(agent)}@${agent.ip}`;
-                          if (window.confirm(`Salin perintah SSH ke clipboard:\n${cmd}`)) {
-                            try {
-                              navigator.clipboard?.writeText(cmd);
-                            } catch {}
-                          }
+                          try {
+                            navigator.clipboard?.writeText(cmd);
+                            setCopiedSshId(agent.id);
+                            setTimeout(() => setCopiedSshId(null), 1800);
+                          } catch {}
                         }}
-                        title={`Salin perintah SSH ke agent ini (${agent.ip})`}
-                        className="hover:text-[#00A389]"
+                        title={
+                          copiedSshId === agent.id
+                            ? 'Perintah SSH tersalin ke clipboard!'
+                            : `Salin perintah SSH (ssh ${sshUser(agent)}@${agent.ip})`
+                        }
+                        className={`transition-colors ${
+                          copiedSshId === agent.id
+                            ? 'text-[#00A389] font-bold'
+                            : 'hover:text-[#00A389]'
+                        }`}
                       >
-                        <span className="font-mono text-[10px] font-bold">&gt;_</span>
+                        {copiedSshId === agent.id ? (
+                          <span className="font-mono text-[9px] font-bold text-[#00A389]">✓</span>
+                        ) : (
+                          <span className="font-mono text-[10px] font-bold">&gt;_</span>
+                        )}
                       </button>
                     </div>
                   </td>
