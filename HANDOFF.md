@@ -1,20 +1,22 @@
 # Handoff SOAR - 2026-11-12 Dini Hari (User Management AI Slop Cleanup, Header Role Badge Polish & Live Deployment)
 
-## Status Terakhir (Checkpoint: 12 November 2026, 00:27 WITA)
+## Status Terakhir (Checkpoint: 12 November 2026, 00:43 WITA)
 
 ### 1. Masalah & Peningkatan UI Dashboard (User Management & Header Profile)
 - **Eliminasi AI Slop pada User Management (`UserManagementView.tsx`)**:
-  - Dihapus kotak callout tutorial biru yang panjang dan chatty yang mengekspos contoh email spesifik; diganti dengan status badge minimalis terintegrasi: `Cloudflare Access SSO Active`.
+  - Dihapus label badge `Cloudflare Access SSO Active` di samping judul halaman agar judul tampil bersih.
+  - Dihapus kotak/latar warna pada kolom `Role`; sekarang murni teks monospaced kapital (`ADMIN`, `ANALYST`, `VIEWER`).
+  - Dihapus ikon bullet hijau pada kolom `Status`; sekarang murni teks biasa (`Aktif` atau `Nonaktif`).
   - Dihapus 4 kartu metrik bergaya SaaS dengan border warna tebal di sisi kiri (`border-l-4`) dan ikon mengambang; diganti dengan Wazuh 4.x Unified Summary Bar dengan angka `font-mono tabular-nums`.
   - Dibuat collapsible accordion untuk Matriks Hak Akses RBAC agar tidak mendominasi layar; teks berulang "Dizinkan" (12x) dan "Ditolak (403)" (6x) diganti dengan ikon checkmark hijau (`Check`) dan badge HTTP 403.
-  - Dibersihkan username dari ikon pengguna hiasan; tag role distandarkan menjadi monospaced text badge; status akun menggunakan dot indicator minimalis.
+  - Dibersihkan username dari ikon pengguna hiasan.
   - Seluruh placeholder input form modal dibersihkan dari awalan kata *"misal: ..."*.
 - **Pembersihan Header Profile Button (`WazuhHeader.tsx`)**:
   - Dihapus badge merah `ADMIN` di samping nama username pada tombol header profil agar tidak duplikat dengan teks `admin`.
 
 ### 2. Status Verifikasi & Deployment Produksi
 - **Lokal**: ESLint bersih (0 error/warning), `tsc --noEmit` lolos, unit tests 6/6 PASS, Next.js build lolos.
-- **Git Commit**: Commit `c16a1f2` (`refactor(ui): clean up user management rbac styling and header user badge`) di-push ke GitHub `origin main`.
+- **Git Commit**: Commit `ad410dc` (`refactor(ui): remove sso badge, role pill boxes, and status bullet in user management`) di-push ke GitHub `origin main`.
 - **Produksi (`ravi@100.73.91.17`)**: `git pull origin main` sukses, Docker image `soar-fleet-dashboard:latest` berhasil di-build ulang, kontainer `fleet-dashboard` ter-recreate dan berstatus `Up (healthy)`.
 - **Live URL**: `https://soar.raviarnan.dev` aktif melayani tampilan baru.
 
