@@ -75,6 +75,7 @@ BENIGN_EXT_JS = (
     "'tiff','raw','cr2','nef','psd',"
     "'pdf','txt','md','markdown','csv','tsv','rtf','doc','docx','xls','xlsx',"
     "'ppt','pptx','odt','ods','odp','epub','mobi',"
+    "'html','htm',"
     "'json','xml','yaml','yml','toml','ini','conf','properties',"
     "'ttf','otf','woff','woff2','eot','srt','vtt','ass','sub']"
 )
@@ -204,7 +205,7 @@ if (is_system_file) {
 } else if (has_indicator) {
   severity = 'MEDIUM'; severityIcon = '⚠️'; severityLabel = 'SEDANG';
   silent = true; decision = 'weak-indicator';
-} else if (vt_unverified) {
+} else if (vt_unverified && (is_risky_ext || is_exec)) {
   severity = 'MEDIUM'; severityIcon = '⚠️'; severityLabel = 'SEDANG';
   silent = true; decision = 'unverified';
 } else if (unknown_exec_review) {

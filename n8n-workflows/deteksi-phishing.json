@@ -744,13 +744,7 @@
     },
     "Build Payload Aman": {
       "main": [
-        [
-          {
-            "node": "Send Telegram Info",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Rangkum Phishing": {
