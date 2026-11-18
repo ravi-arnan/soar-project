@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Maximize2, X } from 'lucide-react';
+import { WuiIcon } from '../wui/WuiIcon';
 
 interface ExpandableCardProps {
   /** Judul kartu (header + modal). */
@@ -31,9 +31,9 @@ export const ExpandableCard = React.memo(function ExpandableCard({
               onClick={() => setOpen(true)}
               title={`Perbesar ${title}`}
               aria-label={`Perbesar ${title}`}
-              className="text-[#8A94A6] hover:text-[#1A1C21] transition-colors"
+              className="text-[#69707D] hover:text-[#1A1C21] transition-colors"
             >
-              <Maximize2 className="w-3.5 h-3.5" />
+              <WuiIcon type="fullScreen" size="s" />
             </button>
           </div>
         </div>
@@ -51,7 +51,7 @@ export const ExpandableCard = React.memo(function ExpandableCard({
           aria-label={title}
         >
           <div
-            className="bg-white border border-[#D3DAE6] rounded w-full max-w-4xl max-h-full overflow-y-auto p-4 lg:p-6"
+            className="bg-white border border-[#D3DAE6] rounded-[4px] w-full max-w-4xl max-h-full overflow-y-auto p-4 lg:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4 border-b border-[#D3DAE6] pb-2">
@@ -60,9 +60,9 @@ export const ExpandableCard = React.memo(function ExpandableCard({
                 onClick={() => setOpen(false)}
                 title="Tutup"
                 aria-label="Tutup"
-                className="p-1 rounded hover:bg-[#F5F7FA] text-[#5A626F] transition-colors"
+                className="p-1 rounded-[4px] hover:bg-[#F5F7FA] text-[#69707D] transition-colors"
               >
-                <X className="w-4 h-4" />
+                <WuiIcon type="cross" size="m" />
               </button>
             </div>
             {children}

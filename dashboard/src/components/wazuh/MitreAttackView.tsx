@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Grid, ShieldAlert, ShieldCheck, LayoutGrid, ListFilter } from 'lucide-react';
+import { WuiIcon } from '../wui/WuiIcon';
+import { WuiBadge, WuiPanel } from '../wui/WuiPrimitives';
 
 interface TechniqueItem {
   id: string;
@@ -197,65 +198,65 @@ export function MitreAttackView() {
   return (
     <div className="space-y-4">
       {/* KPI Header Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-white border border-[#D3DAE6] rounded p-4 text-center">
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Playbook dipetakan</div>
-          <div className="text-[32px] font-semibold text-[#006BB4] font-mono tabular-nums leading-tight mt-1">
+      <div className="grid grid-cols-1 sm:grid-cols-3 bg-white border border-[#D3DAE6] rounded-[4px] divide-y sm:divide-y-0 sm:divide-x divide-[#E9EDF3] text-center">
+        <div className="p-3.5">
+          <div className="text-[12px] text-[#535966] font-medium">Playbook dipetakan</div>
+          <div className="text-[28px] font-semibold text-[#006BB4] font-mono tabular-nums leading-tight mt-1">
             {PLAYBOOK_MAP.length}
           </div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">Workflow teruji n8n</div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">Workflow teruji n8n</div>
         </div>
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Teknik unik</div>
-          <div className="text-[32px] font-semibold text-[#00A389] font-mono tabular-nums leading-tight mt-1">
+        <div className="p-3.5">
+          <div className="text-[12px] text-[#535966] font-medium">Teknik unik</div>
+          <div className="text-[28px] font-semibold text-[#007871] font-mono tabular-nums leading-tight mt-1">
             {totalTech}
           </div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">Matrix v14.1 enterprise</div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">Matrix v14.1 enterprise</div>
         </div>
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Taktik tercover</div>
-          <div className="text-[32px] font-semibold text-[#1A1C21] font-mono tabular-nums leading-tight mt-1">
+        <div className="p-3.5">
+          <div className="text-[12px] text-[#535966] font-medium">Taktik tercover</div>
+          <div className="text-[28px] font-semibold text-[#1A1C21] font-mono tabular-nums leading-tight mt-1">
             {TACTICS_MATRIX.length}
           </div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">Fase rantai serangan</div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">Fase rantai serangan</div>
         </div>
       </div>
 
       {/* Subheader Toolbar & View Switcher */}
-      <div className="bg-white border border-[#D3DAE6] rounded px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-[12px]">
+      <div className="bg-white border border-[#D3DAE6] rounded-[4px] px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-[12px]">
         <div className="flex items-center gap-2">
-          <Grid className="w-4 h-4 text-[#006BB4]" />
+          <WuiIcon type="grokApp" size={18} />
           <span className="font-semibold text-[#1A1C21]">
             MITRE ATT&amp;CK Framework Navigator
           </span>
-          <span className="text-[#8A94A6] text-[11px]">
-            (Kesesuaian dengan Dokumen Ilmiah TA)
+          <span className="text-[#69707D] text-[11px]">
+            Playbook &amp; Detection Coverage Matrix
           </span>
         </div>
 
-        <div className="inline-flex rounded border border-[#D3DAE6] bg-[#F8FAFC] p-0.5">
+        <div className="inline-flex rounded-[4px] border border-[#D3DAE6] bg-[#FAFBFD] p-0.5">
           <button
             type="button"
             onClick={() => setActiveTab('matrix')}
-            className={`px-3 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1 rounded-[2px] text-[11px] font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'matrix'
-                ? 'bg-white text-[#1A1C21] font-semibold shadow-2xs border border-[#D3DAE6]'
-                : 'text-[#5A626F] hover:text-[#1A1C21]'
+                ? 'bg-white text-[#006BB4] font-semibold border border-[#D3DAE6]'
+                : 'text-[#535966] hover:text-[#1A1C21]'
             }`}
           >
-            <LayoutGrid className="w-3.5 h-3.5 text-[#006BB4]" />
+            <WuiIcon type="grid" size="s" className="text-[#006BB4]" />
             <span>Enterprise Matrix Grid</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('playbooks')}
-            className={`px-3 py-1 rounded text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`px-3 py-1 rounded-[2px] text-[11px] font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'playbooks'
-                ? 'bg-white text-[#1A1C21] font-semibold shadow-2xs border border-[#D3DAE6]'
-                : 'text-[#5A626F] hover:text-[#1A1C21]'
+                ? 'bg-white text-[#006BB4] font-semibold border border-[#D3DAE6]'
+                : 'text-[#535966] hover:text-[#1A1C21]'
             }`}
           >
-            <ListFilter className="w-3.5 h-3.5 text-[#00A389]" />
+            <WuiIcon type="bolt" size="s" className="text-[#017D73]" />
             <span>Playbook Pipeline View</span>
           </button>
         </div>
@@ -263,49 +264,47 @@ export function MitreAttackView() {
 
       {/* VIEW 1: Enterprise Matrix Grid */}
       {activeTab === 'matrix' && (
-        <div className="bg-white border border-[#D3DAE6] rounded p-4 overflow-x-auto">
+        <WuiPanel bodyClassName="p-4 overflow-x-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 min-w-[800px]">
             {TACTICS_MATRIX.map((tac) => (
               <div
                 key={tac.id}
-                className="border border-[#E2E8F0] rounded bg-[#FAFBFD] overflow-hidden flex flex-col"
+                className="border border-[#D3DAE6] rounded-[4px] bg-[#FAFBFD] overflow-hidden flex flex-col"
               >
-                {/* Tactic Column Header */}
-                <div className="bg-[#F0F5FA] border-b border-[#D3DAE6] px-3.5 py-2.5">
+                <div className="bg-[#EBF5FB] border-b border-[#D3DAE6] px-3.5 py-2.5">
                   <div className="text-[10px] font-mono font-bold text-[#006BB4]">
                     {tac.id}
                   </div>
                   <div className="text-[12px] font-bold text-[#1A1C21] truncate">
                     {tac.name}
                   </div>
-                  <div className="text-[10px] text-[#8A94A6] font-mono mt-0.5">
+                  <div className="text-[10px] text-[#535966] font-mono mt-0.5">
                     {tac.techniques.length} teknik aktif
                   </div>
                 </div>
 
-                {/* Techniques Stack */}
                 <div className="p-2.5 space-y-2 flex-1">
                   {tac.techniques.map((t) => (
                     <div
                       key={t.id}
-                      className="bg-white border border-[#D3DAE6] rounded p-2.5 hover:border-[#006BB4] hover:shadow-xs transition-all"
+                      className="bg-white border border-[#D3DAE6] rounded-[4px] p-2.5 hover:border-[#006BB4] transition-colors"
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="font-mono text-[11px] font-bold text-[#006BB4]">
                           {t.id}
                         </span>
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono bg-[#EBF5FB] text-[#006BB4]">
+                        <WuiBadge tone="primary" className="font-mono text-[10px]">
                           {t.count}x
-                        </span>
+                        </WuiBadge>
                       </div>
                       <div className="text-[11px] font-semibold text-[#1A1C21] mt-1 leading-snug">
                         {t.name}
                       </div>
-                      <div className="mt-2 pt-1.5 border-t border-[#F0F4F8] flex flex-wrap gap-1">
+                      <div className="mt-2 pt-1.5 border-t border-[#E9EDF3] flex flex-wrap gap-1">
                         {t.playbooks.map((pb) => (
                           <span
                             key={pb}
-                            className="text-[9.5px] px-1 py-0.5 rounded bg-[#F5F7FA] text-[#5A626F] border border-[#EBEFF5]"
+                            className="text-[9.5px] px-1.5 py-0.5 rounded-[2px] bg-[#FAFBFD] text-[#535966] border border-[#E9EDF3]"
                           >
                             {pb}
                           </span>
@@ -318,47 +317,45 @@ export function MitreAttackView() {
             ))}
           </div>
 
-          <div className="flex items-center justify-between border-t border-[#EBEFF5] mt-4 pt-3 text-[11px] text-[#5A626F]">
+          <div className="flex items-center justify-between border-t border-[#E9EDF3] mt-4 pt-3 text-[11px] text-[#535966]">
             <span>Heatmap intensitas didasarkan pada jumlah playbook yang mengimplementasikan deteksi.</span>
-            <span className="text-[#8A94A6] font-mono">MITRE ATT&amp;CK v14.1 Enterprise Matrix</span>
+            <span className="text-[#69707D] font-mono">MITRE ATT&amp;CK v14.1 Enterprise Matrix</span>
           </div>
-        </div>
+        </WuiPanel>
       )}
 
       {/* VIEW 2: Playbook Pipeline View */}
       {activeTab === 'playbooks' && (
         <div className="space-y-3">
           {PLAYBOOK_MAP.map((pb) => (
-            <div key={pb.playbook} className="bg-white border border-[#D3DAE6] rounded overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5 bg-[#FAFBFD] border-b border-[#EBEFF5]">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[#006BB4]" />
-                  <h2 className="text-[13px] font-bold text-[#1A1C21]">{pb.playbook}</h2>
-                </div>
-                <span className="text-[11px] font-mono text-[#8A94A6]">{pb.phase}</span>
-              </div>
-              <div className="p-3.5 grid grid-cols-1 md:grid-cols-2 gap-3">
-                {pb.techniques.map((t) => (
-                  <div
-                    key={t.id}
-                    className="border border-[#E2E8F0] rounded p-3 flex items-start gap-3 bg-white"
-                  >
-                    <div className="mt-0.5 p-2 rounded bg-[#F0F5FA] text-[#006BB4] shrink-0 border border-[#E0ECF6]">
-                      <ShieldAlert className="w-4 h-4" />
+            <WuiPanel
+              key={pb.playbook}
+              accentColor="#006BB4"
+              title={
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-[#1A1C21]">
+                  <WuiIcon type="bolt" size="s" className="text-[#006BB4]" />
+                  <span>{pb.playbook}</span>
+                </span>
+              }
+              right={<span className="text-[11px] font-mono text-[#535966]">{pb.phase}</span>}
+              bodyClassName="p-3.5 grid grid-cols-1 md:grid-cols-2 gap-3"
+            >
+              {pb.techniques.map((t) => (
+                <div
+                  key={t.id}
+                  className="border border-[#E9EDF3] rounded-[4px] p-3 flex items-start gap-2.5 bg-white"
+                >
+                  <WuiIcon type="securityAnalyticsApp" size="m" className="ouiIcon--mono text-[#006BB4] mt-0.5" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono text-[12px] font-semibold text-[#1A1C21]">{t.id}</span>
+                      <span className="text-[11px] font-mono text-[#535966]">{t.count} aturan</span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="font-mono text-[12px] font-bold text-[#1A1C21]">{t.id}</span>
-                        <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-[#EBF5FB] text-[#006BB4]">
-                          {t.count} aturan
-                        </span>
-                      </div>
-                      <div className="text-[12px] text-[#5A626F] mt-0.5 leading-snug">{t.name}</div>
-                    </div>
+                    <div className="text-[12px] text-[#535966] mt-0.5 leading-snug">{t.name}</div>
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              ))}
+            </WuiPanel>
           ))}
         </div>
       )}

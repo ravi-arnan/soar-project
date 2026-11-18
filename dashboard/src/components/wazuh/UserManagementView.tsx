@@ -1,20 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  UserPlus,
-  Trash2,
-  Edit2,
-  RefreshCw,
-  CheckCircle2,
-  XCircle,
-  Search,
-  Check,
-  Minus,
-  ChevronDown,
-  ChevronUp,
-} from 'lucide-react';
+import { WuiIcon } from '../wui/WuiIcon';
 import { formatWazuhTime } from '@/lib/fleet';
+import { WuiBadge, WuiCallOut, WuiHealth, WuiModal, WuiPageHeader, WuiPanel } from '../wui/WuiPrimitives';
 
 export interface UserItem {
   id: string;
@@ -25,6 +14,21 @@ export interface UserItem {
   created_at: string;
   last_login_at: string | null;
   active: boolean;
+}
+
+export interface CloudflareSyncInfo {
+  configured: boolean;
+  synced?: boolean;
+  status?: string;
+  last_status?: string;
+  detail?: string;
+  last_detail?: string;
+  policy_name?: string;
+  policy_id?: string;
+  active_emails_count?: number;
+  emails_count?: number;
+  last_synced_at?: string | null;
+  synced_at?: string | null;
 }
 
 const PERMISSIONS = [
@@ -38,9 +42,12 @@ const PERMISSIONS = [
 
 export function UserManagementView() {
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [cfSync, setCfSync] = useState<CloudflareSyncInfo | null>(null);
+  const [isSyncingCf, setIsSyncingCf] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [warningMsg, setWarningMsg] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'analyst' | 'viewer'>('all');
   const [showMatrix, setShowMatrix] = useState(false);
@@ -80,6 +87,7 @@ export function UserManagementView() {
         return;
       }
       setUsers(data.users || []);
+      if (data.cloudflare_sync) setCfSync(data.cloudflare_sync);
     } catch (err) {
       setError(`Kesalahan jaringan: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -107,6 +115,7 @@ export function UserManagementView() {
           setError(data.error || 'Gagal memuat daftar pengguna.');
         } else {
           setUsers(data.users || []);
+          if (data.cloudflare_sync) setCfSync(data.cloudflare_sync);
         }
       } catch (err) {
         if (!ignore) {
@@ -127,6 +136,53 @@ export function UserManagementView() {
   const showSuccess = (msg: string) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 5000);
+  };
+
+  const applySyncFeedback = (baseMsg: string, syncInfo?: CloudflareSyncInfo | null) => {
+    if (!syncInfo) {
+      showSuccess(baseMsg);
+      return;
+    }
+    setCfSync(syncInfo);
+    if (syncInfo.synced) {
+      setWarningMsg(null);
+      showSuccess(`${baseMsg} Cloudflare Access tersinkron (${syncInfo.emails_count ?? 0} email aktif).`);
+    } else if (syncInfo.configured && syncInfo.status === 'error') {
+      showSuccess(baseMsg);
+      setWarningMsg(syncInfo.detail || 'Perubahan tersimpan di SOAR, tetapi gagal sinkron ke Cloudflare Access.');
+    } else {
+      showSuccess(baseMsg);
+    }
+  };
+
+  const handleSyncCloudflare = async () => {
+    setIsSyncingCf(true);
+    setError(null);
+    setWarningMsg(null);
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync_cloudflare' }),
+      });
+      const data = await res.json();
+      if (data.cloudflare_sync) {
+        setCfSync(data.cloudflare_sync);
+      }
+      if (!res.ok) {
+        setWarningMsg(data.error || data.cloudflare_sync?.detail || 'Gagal menyinkronkan ke Cloudflare Access.');
+        return;
+      }
+      if (data.cloudflare_sync?.synced) {
+        showSuccess(data.cloudflare_sync.detail || 'Cloudflare Access berhasil disinkronkan.');
+      } else {
+        setWarningMsg(data.cloudflare_sync?.detail || 'Sinkronisasi Cloudflare Access belum dikonfigurasi.');
+      }
+    } catch (err) {
+      setError(`Gagal sinkronisasi Cloudflare: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSyncingCf(false);
+    }
   };
 
   const resetForm = () => {
@@ -166,7 +222,10 @@ export function UserManagementView() {
         setIsSubmitting(false);
         return;
       }
-      showSuccess(`Pengguna '${formUsername}' dengan role '${formRole}' berhasil ditambahkan.`);
+      applySyncFeedback(
+        `Pengguna '${formUsername}' dengan role '${formRole}' berhasil ditambahkan.`,
+        data.cloudflare_sync,
+      );
       setIsCreateOpen(false);
       resetForm();
       fetchUsers();
@@ -205,7 +264,7 @@ export function UserManagementView() {
         setIsSubmitting(false);
         return;
       }
-      showSuccess(`Pengguna '${selectedUser.username}' berhasil diperbarui.`);
+      applySyncFeedback(`Pengguna '${selectedUser.username}' berhasil diperbarui.`, data.cloudflare_sync);
       setIsEditOpen(false);
       resetForm();
       fetchUsers();
@@ -236,7 +295,7 @@ export function UserManagementView() {
         setIsDeleting(false);
         return;
       }
-      showSuccess(`Pengguna '${deleteTarget.username}' berhasil dihapus.`);
+      applySyncFeedback(`Pengguna '${deleteTarget.username}' berhasil dihapus.`, data.cloudflare_sync);
       setDeleteTarget(null);
       fetchUsers();
     } catch (err) {
@@ -271,143 +330,168 @@ export function UserManagementView() {
   const viewerCount = users.filter((u) => u.role === 'viewer').length;
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner / Heading */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-5 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-xl font-bold text-[#1A1C21]">
-                User Management &amp; Access Control
-              </h2>
-            </div>
-            <p className="text-[13px] text-[#5A626F] mt-1 max-w-3xl leading-relaxed">
-              Manajemen akun personel SOC dan otorisasi berjenjang (RBAC). Sesi login otomatis dipetakan dari header email Cloudflare Access.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+    <div className="space-y-4">
+      <WuiPageHeader
+        title="User Management &amp; RBAC"
+        description="Manajemen akun personel SOC dan otorisasi berjenjang (Admin, Analyst, Viewer). Sesi login dipetakan dari header email Cloudflare Access."
+        actions={
+          <>
             <button
+              type="button"
+              onClick={handleSyncCloudflare}
+              disabled={isSyncingCf}
+              className="h-8 px-3 border border-[#D3DAE6] bg-white hover:bg-[#FAFBFD] text-[#1A1C21] rounded-[4px] text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              title="Sinkronkan daftar email aktif ke Cloudflare Zero Trust Access Policy"
+            >
+              <WuiIcon type="bolt" size="s" className="text-[#006BB4]" />
+              <span>{isSyncingCf ? 'Menyinkronkan...' : 'Sync Cloudflare'}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => fetchUsers()}
-              className="h-8 px-3 border border-[#D3DAE6] hover:bg-[#F5F7FA] text-[#1A1C21] rounded text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="h-8 px-3 border border-[#D3DAE6] bg-white hover:bg-[#FAFBFD] text-[#1A1C21] rounded-[4px] text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Refresh Data"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <WuiIcon type="refresh" size="s" className={loading ? 'animate-spin' : ''} />
               <span>Refresh</span>
             </button>
             <button
+              type="button"
               onClick={() => {
                 resetForm();
                 setIsCreateOpen(true);
               }}
-              className="h-8 px-3.5 bg-[#006BB4] hover:bg-[#005593] text-white rounded text-[12px] font-medium flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              className="h-8 px-3.5 bg-[#006BB4] hover:bg-[#00538C] text-white rounded-[4px] text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <WuiIcon type="user" size="s" />
               <span>Tambah Pengguna</span>
             </button>
+          </>
+        }
+      />
+
+      {error && <WuiCallOut tone="danger">{error}</WuiCallOut>}
+      {warningMsg && <WuiCallOut tone="warning">{warningMsg}</WuiCallOut>}
+      {successMsg && <WuiCallOut tone="success">{successMsg}</WuiCallOut>}
+
+      {cfSync && (
+        <div className="bg-white border border-[#D3DAE6] rounded-[4px] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[12px]">
+          <div className="flex flex-wrap items-center gap-2">
+            <WuiHealth
+              tone={
+                !cfSync.configured
+                  ? 'warning'
+                  : (cfSync.status || cfSync.last_status) === 'error'
+                  ? 'danger'
+                  : (cfSync.status || cfSync.last_status) === 'synced' || cfSync.synced
+                  ? 'success'
+                  : 'primary'
+              }
+            >
+              Cloudflare Access Auto-Sync
+            </WuiHealth>
+            <span className="text-[#535966]">
+              {!cfSync.configured
+                ? 'Belum aktif: set CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, dan CLOUDFLARE_ACCESS_POLICY_ID di .env server.'
+                : cfSync.detail ||
+                  cfSync.last_detail ||
+                  `Siap menyinkronkan ${cfSync.active_emails_count ?? cfSync.emails_count ?? 0} email aktif ke policy ${cfSync.policy_id || ''}.`}
+            </span>
           </div>
+          {(cfSync.synced_at || cfSync.last_synced_at) && (
+            <span className="text-[11px] font-mono text-[#69707D]">
+              Sync terakhir: {formatWazuhTime(cfSync.synced_at || cfSync.last_synced_at || '')}
+            </span>
+          )}
         </div>
+      )}
 
-        {/* Notifications */}
-        {error && (
-          <div className="mt-3 p-2.5 bg-[#FDF3F2] border border-[#F5C2C0] rounded flex items-center gap-2 text-[12px] text-[#BD271E]">
-            <XCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-        {successMsg && (
-          <div className="mt-3 p-2.5 bg-[#E6F6F4] border border-[#A3E5DD] rounded flex items-center gap-2 text-[12px] text-[#00A389]">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Summary Metrics Bar */}
-      <div className="bg-white border border-[#D3DAE6] rounded divide-y md:divide-y-0 md:divide-x divide-[#EBEFF5] grid grid-cols-2 md:grid-cols-4 shadow-xs">
-        <div className="p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
+      {/* WUI Unified Summary Bar */}
+      <div className="bg-white border border-[#D3DAE6] rounded-[4px] divide-y md:divide-y-0 md:divide-x divide-[#E9EDF3] grid grid-cols-2 md:grid-cols-4">
+        <div className="px-4 py-3">
+          <div className="text-[12px] font-medium text-[#535966]">
             Total Pengguna
           </div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-[#1A1C21] mt-1">{users.length}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">Akun personel terdaftar</div>
+          <div className="text-[22px] font-semibold font-mono tabular-nums text-[#1A1C21] mt-0.5">{users.length}</div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">Akun personel terdaftar</div>
         </div>
 
-        <div className="p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
+        <div className="px-4 py-3">
+          <div className="text-[12px] font-medium text-[#535966]">
             Administrators
           </div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-[#1A1C21] mt-1">{adminCount}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">Akses penuh &amp; API keys</div>
+          <div className="text-[22px] font-semibold font-mono tabular-nums text-[#006BB4] mt-0.5">{adminCount}</div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">Akses penuh &amp; API keys</div>
         </div>
 
-        <div className="p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
+        <div className="px-4 py-3">
+          <div className="text-[12px] font-medium text-[#535966]">
             Security Analysts
           </div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-[#1A1C21] mt-1">{analystCount}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">Mitigasi &amp; respons ancaman</div>
+          <div className="text-[22px] font-semibold font-mono tabular-nums text-[#007871] mt-0.5">{analystCount}</div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">Mitigasi &amp; respons ancaman</div>
         </div>
 
-        <div className="p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
+        <div className="px-4 py-3">
+          <div className="text-[12px] font-medium text-[#535966]">
             Auditors &amp; Viewers
           </div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-[#1A1C21] mt-1">{viewerCount}</div>
-          <div className="text-[11px] text-[#8A94A6] mt-0.5">Monitoring read-only</div>
+          <div className="text-[22px] font-semibold font-mono tabular-nums text-[#535966] mt-0.5">{viewerCount}</div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">Monitoring read-only</div>
         </div>
       </div>
 
       {/* Role Permission Matrix (Collapsible) */}
-      <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden">
+      <div className="bg-white border border-[#D3DAE6] rounded-[4px] overflow-hidden">
         <button
           type="button"
           onClick={() => setShowMatrix(!showMatrix)}
-          className="w-full bg-[#FAFBFD] px-4 py-2.5 flex items-center justify-between text-left hover:bg-[#F0F4F8] transition-colors border-b border-[#EBEFF5]"
+          className="w-full bg-[#FAFBFD] px-4 py-2.5 flex items-center justify-between text-left hover:bg-[#F0F4F8] transition-colors border-b border-[#E9EDF3] cursor-pointer"
         >
           <div className="flex items-center gap-2">
-            <span className="text-[13px] font-bold text-[#1A1C21]">Matriks Hak Akses Role (RBAC)</span>
-            <span className="text-[11px] text-[#5A626F] font-normal">(6 kapabilitas operasional)</span>
+            <span className="text-[13px] font-semibold text-[#1A1C21]">Matriks Hak Akses Role (RBAC)</span>
+            <span className="text-[11px] text-[#535966] font-normal">(6 kapabilitas operasional)</span>
           </div>
           <div className="flex items-center gap-1.5 text-[12px] text-[#006BB4] font-medium">
             <span>{showMatrix ? 'Sembunyikan' : 'Lihat Detail'}</span>
-            {showMatrix ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            <WuiIcon type={showMatrix ? 'arrowUp' : 'arrowDown'} size="m" />
           </div>
         </button>
 
         {showMatrix && (
-          <div className="p-4 overflow-x-auto">
+          <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-[12px]">
               <thead>
-                <tr className="bg-[#F8FAFC] border-b border-[#D3DAE6] text-[#5A626F]">
-                  <th className="py-2 px-3 font-semibold">Kapabilitas &amp; Hak Operasi</th>
-                  <th className="py-2 px-3 font-semibold text-center w-28">Admin</th>
-                  <th className="py-2 px-3 font-semibold text-center w-28">Analyst</th>
-                  <th className="py-2 px-3 font-semibold text-center w-28">Viewer</th>
+                <tr className="border-b border-[#D3DAE6] text-[#535966] text-[12px]">
+                  <th className="py-2.5 px-4 font-semibold">Kapabilitas &amp; Hak Operasi</th>
+                  <th className="py-2.5 px-4 font-semibold text-center w-28">Admin</th>
+                  <th className="py-2.5 px-4 font-semibold text-center w-28">Analyst</th>
+                  <th className="py-2.5 px-4 font-semibold text-center w-28">Viewer</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#EBEFF5]">
+              <tbody className="divide-y divide-[#E9EDF3]">
                 {PERMISSIONS.map((p, idx) => (
-                  <tr key={idx} className="hover:bg-[#F8FAFC] transition-colors">
-                    <td className="py-2 px-3 text-[#1A1C21] font-medium">{p.action}</td>
-                    <td className="py-2 px-3 text-center">
+                  <tr key={idx} className="hover:bg-[#FAFBFD] transition-colors">
+                    <td className="py-2 px-4 text-[#1A1C21] font-medium">{p.action}</td>
+                    <td className="py-2 px-4 text-center">
                       {p.admin ? (
-                        <Check className="w-4 h-4 text-[#00A389] mx-auto" />
+                        <WuiIcon type="check" size="m" className="text-[#017D73] mx-auto" />
                       ) : (
-                        <Minus className="w-3.5 h-3.5 text-[#8A94A6] mx-auto" />
+                        <WuiIcon type="minus" size="s" className="text-[#69707D] mx-auto" />
                       )}
                     </td>
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-2 px-4 text-center">
                       {p.analyst ? (
-                        <Check className="w-4 h-4 text-[#00A389] mx-auto" />
+                        <WuiIcon type="check" size="m" className="text-[#017D73] mx-auto" />
                       ) : (
-                        <Minus className="w-3.5 h-3.5 text-[#8A94A6] mx-auto" />
+                        <WuiIcon type="minus" size="s" className="text-[#69707D] mx-auto" />
                       )}
                     </td>
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-2 px-4 text-center">
                       {p.viewer ? (
-                        <Check className="w-4 h-4 text-[#00A389] mx-auto" />
+                        <WuiIcon type="check" size="m" className="text-[#017D73] mx-auto" />
                       ) : (
-                        <Minus className="w-3.5 h-3.5 text-[#8A94A6] mx-auto" />
+                        <WuiIcon type="minus" size="s" className="text-[#69707D] mx-auto" />
                       )}
                     </td>
                   </tr>
@@ -419,38 +503,37 @@ export function UserManagementView() {
       </div>
 
       {/* Users Table Card */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-5">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4">
+      <WuiPanel
+        accentColor="#006BB4"
+        title={
           <div className="flex items-center gap-2">
-            <h3 className="text-[14px] font-bold text-[#1A1C21]">Daftar Pengguna</h3>
-            <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-[#F0F4F8] text-[#5A626F] border border-[#D3DAE6]">
-              {filteredUsers.length}
-            </span>
+            <span className="text-[13px] font-semibold text-[#1A1C21]">Daftar Pengguna</span>
+            <WuiBadge>{filteredUsers.length}</WuiBadge>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {/* Search Input */}
-            <div className="relative flex-1 md:w-64">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#8A94A6]" />
+        }
+        right={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative w-56">
+              <WuiIcon type="search" size="s" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#69707D]" />
               <input
                 type="text"
                 placeholder="Cari username, nama, email..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 text-[12px] border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
+                className="w-full h-8 pl-8 pr-3 text-[12px] bg-white border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4]"
               />
             </div>
 
-            {/* Role Filter Tabs */}
-            <div className="flex items-center gap-0.5 bg-[#F0F4F8] p-0.5 rounded border border-[#D3DAE6] text-[11px]">
+            <div className="inline-flex rounded-[4px] border border-[#D3DAE6] bg-[#F5F7FA] p-0.5 text-[11px]">
               {(['all', 'admin', 'analyst', 'viewer'] as const).map((r) => (
                 <button
                   key={r}
+                  type="button"
                   onClick={() => setRoleFilter(r)}
-                  className={`px-2.5 py-1 rounded capitalize font-medium transition-colors ${
+                  className={`px-2.5 py-1 rounded-[2px] capitalize font-medium transition-colors cursor-pointer ${
                     roleFilter === r
-                      ? 'bg-white text-[#1A1C21] shadow-xs font-semibold'
-                      : 'text-[#5A626F] hover:text-[#1A1C21]'
+                      ? 'bg-white text-[#006BB4] font-semibold border border-[#D3DAE6]'
+                      : 'text-[#535966] hover:text-[#1A1C21]'
                   }`}
                 >
                   {r === 'all' ? 'Semua' : r}
@@ -458,74 +541,76 @@ export function UserManagementView() {
               ))}
             </div>
           </div>
-        </div>
-
-        {/* Table */}
-        <div className="overflow-x-auto border border-[#EBEFF5] rounded">
+        }
+        bodyClassName="p-0"
+      >
+        <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-[12px]">
             <thead>
-              <tr className="bg-[#FAFBFD] border-b border-[#D3DAE6] text-[#5A626F] font-semibold text-[11px] uppercase tracking-wider">
-                <th className="py-2.5 px-3">Username</th>
-                <th className="py-2.5 px-3">Nama Lengkap</th>
-                <th className="py-2.5 px-3">Email (Cloudflare Access)</th>
-                <th className="py-2.5 px-3">Role</th>
-                <th className="py-2.5 px-3">Status</th>
-                <th className="py-2.5 px-3">Terakhir Login</th>
-                <th className="py-2.5 px-3">Dibuat Pada</th>
-                <th className="py-2.5 px-3 text-right">Aksi</th>
+              <tr className="border-b border-[#D3DAE6] text-[#535966] font-semibold text-[12px]">
+                <th className="py-2.5 px-4">Username</th>
+                <th className="py-2.5 px-4">Nama Lengkap</th>
+                <th className="py-2.5 px-4">Email (Cloudflare Access)</th>
+                <th className="py-2.5 px-4">Role</th>
+                <th className="py-2.5 px-4">Status</th>
+                <th className="py-2.5 px-4">Terakhir Login</th>
+                <th className="py-2.5 px-4">Dibuat Pada</th>
+                <th className="py-2.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#EBEFF5]">
+            <tbody className="divide-y divide-[#E9EDF3]">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-[#5A626F]">
+                  <td colSpan={8} className="py-8 text-center text-[#535966]">
                     <div className="flex items-center justify-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-[#006BB4]" />
+                      <WuiIcon type="refresh" size="m" className="animate-spin text-[#006BB4]" />
                       <span>Memuat data pengguna...</span>
                     </div>
                   </td>
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-[#8A94A6]">
+                  <td colSpan={8} className="py-8 text-center text-[#69707D]">
                     Tidak ada pengguna yang cocok dengan kriteria pencarian.
                   </td>
                 </tr>
               ) : (
                 filteredUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-[#F8FAFC] transition-colors">
-                    <td className="py-2.5 px-3 font-mono font-semibold text-[#1A1C21]">
+                  <tr key={u.id} className="hover:bg-[#FAFBFD] transition-colors">
+                    <td className="py-2.5 px-4 font-mono font-semibold text-[#1A1C21]">
                       {u.username}
                     </td>
-                    <td className="py-2.5 px-3 text-[#1A1C21] font-medium">{u.name || '-'}</td>
-                    <td className="py-2.5 px-3 text-[#5A626F] font-mono text-[11px]">{u.email || '-'}</td>
-                    <td className="py-2.5 px-3 font-mono text-[11px] font-semibold text-[#1A1C21] uppercase">
+                    <td className="py-2.5 px-4 text-[#1A1C21] font-medium">{u.name || '-'}</td>
+                    <td className="py-2.5 px-4 text-[#535966] font-mono text-[11px]">{u.email || '-'}</td>
+                    <td className="py-2.5 px-4 font-mono text-[11px] font-semibold text-[#1A1C21] uppercase">
                       {u.role}
                     </td>
-                    <td className="py-2.5 px-3 text-[12px] font-medium text-[#1A1C21]">
+                    <td className="py-2.5 px-4 text-[12px] font-medium text-[#1A1C21]">
                       {u.active ? 'Aktif' : 'Nonaktif'}
                     </td>
-                    <td className="py-2.5 px-3 text-[#5A626F] font-mono tabular-nums text-[11px]">
+                    <td className="py-2.5 px-4 text-[#535966] font-mono tabular-nums text-[11px]">
                       {u.last_login_at ? formatWazuhTime(u.last_login_at) : 'Belum pernah'}
                     </td>
-                    <td className="py-2.5 px-3 text-[#5A626F] font-mono tabular-nums text-[11px]">
+                    <td className="py-2.5 px-4 text-[#535966] font-mono tabular-nums text-[11px]">
                       {formatWazuhTime(u.created_at)}
                     </td>
-                    <td className="py-2.5 px-3 text-right">
+                    <td className="py-2.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
+                          type="button"
                           onClick={() => openEditModal(u)}
-                          className="p-1.5 rounded text-[#5A626F] hover:text-[#006BB4] hover:bg-[#EBF5FB] transition-colors"
+                          className="p-1.5 rounded-[4px] text-[#535966] hover:text-[#006BB4] hover:bg-[#EBF5FB] transition-colors cursor-pointer"
                           title="Edit Pengguna"
                         >
-                          <Edit2 className="w-3.5 h-3.5" />
+                          <WuiIcon type="pencil" size="s" />
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleDelete(u)}
-                          className="p-1.5 rounded text-[#5A626F] hover:text-[#BD271E] hover:bg-[#FDF3F2] transition-colors"
+                          className="p-1.5 rounded-[4px] text-[#535966] hover:text-[#BD271E] hover:bg-[#FBECEB] transition-colors cursor-pointer"
                           title="Hapus Pengguna"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <WuiIcon type="trash" size="s" />
                         </button>
                       </div>
                     </td>
@@ -535,282 +620,266 @@ export function UserManagementView() {
             </tbody>
           </table>
         </div>
-      </div>
+      </WuiPanel>
 
       {/* Modal Tambah Pengguna */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded border border-[#D3DAE6] shadow-2xl max-w-md w-full p-6 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E1E6EB]">
-              <h3 className="text-base font-bold text-[#1A1C21] flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-[#006BB4]" />
-                <span>Tambah Pengguna Baru</span>
-              </h3>
+        <WuiModal
+          title={
+            <>
+              <WuiIcon type="user" size="m" className="text-[#006BB4]" />
+              <span>Tambah Pengguna Baru</span>
+            </>
+          }
+          onClose={() => setIsCreateOpen(false)}
+          footer={
+            <>
               <button
+                type="button"
                 onClick={() => setIsCreateOpen(false)}
-                className="p-1 rounded text-[#5A626F] hover:bg-[#F5F7FA]"
+                className="px-3 py-1.5 border border-[#D3DAE6] rounded-[4px] text-[12px] text-[#535966] hover:bg-[#FAFBFD] cursor-pointer"
               >
-                <XCircle className="w-4 h-4" />
+                Batal
               </button>
+              <button
+                type="submit"
+                form="create-user-form"
+                disabled={isSubmitting}
+                className="px-4 py-1.5 bg-[#006BB4] hover:bg-[#00538C] text-white rounded-[4px] text-[12px] font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <WuiIcon type="refresh" size="s" className="animate-spin" />
+                ) : (
+                  <WuiIcon type="check" size="s" />
+                )}
+                <span>Simpan Pengguna</span>
+              </button>
+            </>
+          }
+        >
+          <form id="create-user-form" onSubmit={handleCreateSubmit} className="space-y-3.5 text-[12.5px]">
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">
+                Email Cloudflare Access <span className="text-[#BD271E]">*</span>
+              </label>
+              <input
+                type="email"
+                required
+                placeholder="user@domain.com"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] text-[12px]"
+              />
+              <span className="text-[11px] text-[#69707D]">
+                Wajib sesuai dengan email yang digunakan login di Cloudflare Access SSO.
+              </span>
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="mt-4 space-y-4 text-[13px]">
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">
-                  Email Cloudflare Access <span className="text-[#BD271E]">*</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="user@domain.com"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
-                />
-                <span className="text-[11px] text-[#8A94A6]">
-                  Wajib sesuai dengan email yang digunakan login di Cloudflare Access SSO.
-                </span>
-              </div>
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">
+                Username <span className="text-[#BD271E]">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                pattern="^[a-zA-Z0-9_.-]{3,32}$"
+                placeholder="username"
+                value={formUsername}
+                onChange={(e) => setFormUsername(e.target.value)}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] text-[12px]"
+              />
+              <span className="text-[11px] text-[#69707D]">3-32 karakter alfanumerik.</span>
+            </div>
 
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">
-                  Username <span className="text-[#BD271E]">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  pattern="^[a-zA-Z0-9_.-]{3,32}$"
-                  placeholder="username"
-                  value={formUsername}
-                  onChange={(e) => setFormUsername(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
-                />
-                <span className="text-[11px] text-[#8A94A6]">3-32 karakter alfanumerik.</span>
-              </div>
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">Nama Lengkap</label>
+              <input
+                type="text"
+                placeholder="Nama Lengkap"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] text-[12px]"
+              />
+            </div>
 
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">Nama Lengkap</label>
-                <input
-                  type="text"
-                  placeholder="Nama Lengkap"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
-                />
-              </div>
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">
+                Password <span className="text-[#BD271E]">*</span>
+              </label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                placeholder="Minimal 8 karakter"
+                value={formPassword}
+                onChange={(e) => setFormPassword(e.target.value)}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] text-[12px]"
+              />
+            </div>
 
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">
-                  Password <span className="text-[#BD271E]">*</span>
-                </label>
-                <input
-                  type="password"
-                  required
-                  minLength={8}
-                  placeholder="Minimal 8 karakter"
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">
-                  Peran / Role Otorisasi <span className="text-[#BD271E]">*</span>
-                </label>
-                <select
-                  value={formRole}
-                  onChange={(e) => setFormRole(e.target.value as 'admin' | 'analyst' | 'viewer')}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] bg-white"
-                >
-                  <option value="viewer">Viewer (Pemantauan Read-Only &amp; Audit)</option>
-                  <option value="analyst">Analyst (Triage Insiden &amp; Active Response)</option>
-                  <option value="admin">Admin (Akses Penuh, User Management &amp; API Keys)</option>
-                </select>
-              </div>
-
-              <div className="pt-3 border-t border-[#E1E6EB] flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  className="px-3 py-1.5 border border-[#D3DAE6] rounded text-[#5A626F] hover:bg-[#F5F7FA]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-1.5 bg-[#006BB4] hover:bg-[#005593] text-white rounded font-medium flex items-center gap-1.5"
-                >
-                  {isSubmitting ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Check className="w-3.5 h-3.5" />
-                  )}
-                  <span>Simpan Pengguna</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">
+                Peran / Role Otorisasi <span className="text-[#BD271E]">*</span>
+              </label>
+              <select
+                value={formRole}
+                onChange={(e) => setFormRole(e.target.value as 'admin' | 'analyst' | 'viewer')}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] bg-white text-[12px]"
+              >
+                <option value="viewer">Viewer (Pemantauan Read-Only &amp; Audit)</option>
+                <option value="analyst">Analyst (Triage Insiden &amp; Active Response)</option>
+                <option value="admin">Admin (Akses Penuh, User Management &amp; API Keys)</option>
+              </select>
+            </div>
+          </form>
+        </WuiModal>
       )}
 
       {/* Modal Edit Pengguna */}
       {isEditOpen && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded border border-[#D3DAE6] shadow-2xl max-w-md w-full p-6 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-[#E1E6EB]">
-              <h3 className="text-base font-bold text-[#1A1C21] flex items-center gap-2">
-                <Edit2 className="w-4 h-4 text-[#006BB4]" />
-                <span>Edit Pengguna: {selectedUser.username}</span>
-              </h3>
+        <WuiModal
+          title={
+            <>
+              <WuiIcon type="pencil" size="m" className="text-[#006BB4]" />
+              <span>Edit Pengguna: {selectedUser.username}</span>
+            </>
+          }
+          onClose={() => setIsEditOpen(false)}
+          footer={
+            <>
               <button
+                type="button"
                 onClick={() => setIsEditOpen(false)}
-                className="p-1 rounded text-[#5A626F] hover:bg-[#F5F7FA]"
+                className="px-3 py-1.5 border border-[#D3DAE6] rounded-[4px] text-[12px] text-[#535966] hover:bg-[#FAFBFD] cursor-pointer"
               >
-                <XCircle className="w-4 h-4" />
+                Batal
               </button>
+              <button
+                type="submit"
+                form="edit-user-form"
+                disabled={isSubmitting}
+                className="px-4 py-1.5 bg-[#006BB4] hover:bg-[#00538C] text-white rounded-[4px] text-[12px] font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <WuiIcon type="refresh" size="s" className="animate-spin" />
+                ) : (
+                  <WuiIcon type="check" size="s" />
+                )}
+                <span>Simpan Perubahan</span>
+              </button>
+            </>
+          }
+        >
+          <form id="edit-user-form" onSubmit={handleEditSubmit} className="space-y-3.5 text-[12.5px]">
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">Nama Lengkap</label>
+              <input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] text-[12px]"
+              />
             </div>
 
-            <form onSubmit={handleEditSubmit} className="mt-4 space-y-4 text-[13px]">
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">Nama Lengkap</label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
-                />
-              </div>
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">Email Cloudflare Access</label>
+              <input
+                type="email"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] text-[12px]"
+              />
+              <span className="text-[11px] text-[#69707D]">
+                Email yang terasosiasi dengan otorisasi login Cloudflare Access SSO.
+              </span>
+            </div>
 
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">Email Cloudflare Access</label>
-                <input
-                  type="email"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
-                />
-                <span className="text-[11px] text-[#8A94A6]">
-                  Email yang terasosiasi dengan otorisasi login Cloudflare Access SSO.
-                </span>
-              </div>
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">Peran / Role Otorisasi</label>
+              <select
+                value={formRole}
+                onChange={(e) => setFormRole(e.target.value as 'admin' | 'analyst' | 'viewer')}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] bg-white text-[12px]"
+              >
+                <option value="viewer">Viewer (Read-Only &amp; Audit)</option>
+                <option value="analyst">Analyst (Triage &amp; Active Response)</option>
+                <option value="admin">Admin (Akses Penuh)</option>
+              </select>
+            </div>
 
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">Peran / Role Otorisasi</label>
-                <select
-                  value={formRole}
-                  onChange={(e) => setFormRole(e.target.value as 'admin' | 'analyst' | 'viewer')}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] bg-white"
-                >
-                  <option value="viewer">Viewer (Read-Only &amp; Audit)</option>
-                  <option value="analyst">Analyst (Triage &amp; Active Response)</option>
-                  <option value="admin">Admin (Akses Penuh)</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-[#1A1C21] font-medium mb-1">
+                Ganti Password (Kosongkan jika tidak ingin diubah)
+              </label>
+              <input
+                type="password"
+                minLength={8}
+                placeholder="Password baru (opsional)"
+                value={formPassword}
+                onChange={(e) => setFormPassword(e.target.value)}
+                className="w-full h-8 px-3 border border-[#D3DAE6] rounded-[4px] outline-none focus:border-[#006BB4] text-[12px]"
+              />
+            </div>
 
-              <div>
-                <label className="block text-[#1A1C21] font-medium mb-1">
-                  Ganti Password (Kosongkan jika tidak ingin diubah)
-                </label>
-                <input
-                  type="password"
-                  minLength={8}
-                  placeholder="Password baru (opsional)"
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="activeCheck"
-                  checked={formActive}
-                  onChange={(e) => setFormActive(e.target.checked)}
-                  className="rounded text-[#006BB4] focus:ring-0"
-                />
-                <label htmlFor="activeCheck" className="text-[#1A1C21] font-medium cursor-pointer">
-                  Status Akun Aktif (Dapat Login)
-                </label>
-              </div>
-
-              <div className="pt-3 border-t border-[#E1E6EB] flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditOpen(false)}
-                  className="px-3 py-1.5 border border-[#D3DAE6] rounded text-[#5A626F] hover:bg-[#F5F7FA]"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-1.5 bg-[#006BB4] hover:bg-[#005593] text-white rounded font-medium flex items-center gap-1.5"
-                >
-                  {isSubmitting ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Check className="w-3.5 h-3.5" />
-                  )}
-                  <span>Simpan Perubahan</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="checkbox"
+                id="activeCheck"
+                checked={formActive}
+                onChange={(e) => setFormActive(e.target.checked)}
+                className="rounded-[2px] text-[#006BB4] focus:ring-0"
+              />
+              <label htmlFor="activeCheck" className="text-[#1A1C21] font-medium cursor-pointer">
+                Status Akun Aktif (Dapat Login)
+              </label>
+            </div>
+          </form>
+        </WuiModal>
       )}
 
       {/* Delete User Confirmation Modal */}
       {deleteTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          role="dialog"
-          aria-modal="true"
+        <WuiModal
+          title={
+            <>
+              <WuiIcon type="trash" size="m" className="text-[#BD271E]" />
+              <span>Hapus Pengguna SOC</span>
+            </>
+          }
+          onClose={() => setDeleteTarget(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                className="px-3 py-1.5 border border-[#D3DAE6] rounded-[4px] text-[12px] font-medium text-[#535966] hover:bg-[#FAFBFD] transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeDelete}
+                disabled={isDeleting}
+                className="px-3 py-1.5 rounded-[4px] text-[12px] font-semibold text-white bg-[#BD271E] hover:bg-[#9E1F18] transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? <WuiIcon type="refresh" size="s" className="animate-spin" /> : null}
+                <span>Hapus Pengguna</span>
+              </button>
+            </>
+          }
         >
-          <div className="bg-white border border-[#D3DAE6] rounded w-full max-w-md p-5 shadow-xl">
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-full bg-[#FDF3F2] text-[#BD271E] shrink-0">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[14px] font-bold text-[#1A1C21]">
-                  Hapus Pengguna SOC
-                </h3>
-                <p className="text-[12px] text-[#5A626F] mt-1 leading-relaxed">
-                  Apakah Anda yakin ingin menghapus akun pengguna{' '}
-                  <strong className="text-[#1A1C21]">{deleteTarget.username}</strong> ({deleteTarget.name})? Tindakan ini tidak dapat dibatalkan.
-                </p>
-
-                <div className="mt-3 p-2.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] font-mono space-y-1">
-                  <div><span className="text-[#8A94A6]">Peran (Role):</span> {deleteTarget.role}</div>
-                  <div><span className="text-[#8A94A6]">Email:</span> {deleteTarget.email || '-'}</div>
-                  <div><span className="text-[#8A94A6]">User ID:</span> {deleteTarget.id}</div>
-                </div>
-
-                <div className="flex items-center justify-end gap-2.5 mt-5">
-                  <button
-                    type="button"
-                    onClick={() => setDeleteTarget(null)}
-                    className="px-3 py-1.5 border border-[#D3DAE6] rounded text-[12px] font-medium text-[#5A626F] hover:bg-[#F5F7FA] transition"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={executeDelete}
-                    disabled={isDeleting}
-                    className="px-3 py-1.5 rounded text-[12px] font-semibold text-white bg-[#BD271E] hover:bg-[#9E1F18] transition flex items-center gap-1.5"
-                  >
-                    {isDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                    <span>Hapus Pengguna</span>
-                  </button>
-                </div>
-              </div>
+          <div className="space-y-3">
+            <p className="text-[12px] text-[#535966] leading-relaxed">
+              Apakah Anda yakin ingin menghapus akun pengguna{' '}
+              <strong className="text-[#1A1C21]">{deleteTarget.username}</strong> ({deleteTarget.name})? Tindakan ini tidak dapat dibatalkan.
+            </p>
+            <div className="p-2.5 rounded-[4px] bg-[#FAFBFD] border border-[#D3DAE6] text-[11px] font-mono space-y-1">
+              <div><span className="text-[#69707D]">Peran (Role):</span> {deleteTarget.role}</div>
+              <div><span className="text-[#69707D]">Email:</span> {deleteTarget.email || '-'}</div>
+              <div><span className="text-[#69707D]">User ID:</span> {deleteTarget.id}</div>
             </div>
           </div>
-        </div>
+        </WuiModal>
       )}
     </div>
   );

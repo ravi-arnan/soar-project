@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { RefreshCw, Plus } from 'lucide-react';
+import { WuiIcon } from '../wui/WuiIcon';
 
 interface WazuhFilterBarProps {
   onSearch?: (query: string, filters: string[]) => void;
@@ -78,7 +78,7 @@ export function WazuhFilterBar({
       {/* Top Search & Controls Row */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Search input group */}
-        <div className="flex-1 min-w-[280px] flex items-center bg-white border border-[#D3DAE6] rounded h-9 focus-within:border-[#006BB4] focus-within:ring-1 focus-within:ring-[#006BB4] transition-all">
+        <div className="flex-1 min-w-[280px] flex items-center bg-white border border-[#D3DAE6] rounded-[4px] h-9 focus-within:border-[#006BB4] focus-within:ring-1 focus-within:ring-[#006BB4] transition-colors">
           <div className="relative flex-1 flex items-center">
             <input
               type="text"
@@ -88,9 +88,9 @@ export function WazuhFilterBar({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') addFilter();
               }}
-              className="w-full pl-2.5 pr-12 text-[13px] bg-transparent text-[#1A1C21] outline-none placeholder-[#8A94A6]"
+              className="w-full pl-2.5 pr-12 text-[13px] bg-transparent text-[#1A1C21] outline-none placeholder-[#69707D]"
             />
-            <span className="absolute right-2 text-[10px] font-bold text-[#5A626F] bg-[#F5F7FA] px-1.5 py-0.5 rounded border border-[#D3DAE6]">
+            <span className="absolute right-2 text-[11px] font-semibold text-[#535966] bg-[#F5F7FA] px-1.5 py-0.5 rounded-[4px] border border-[#D3DAE6]">
               KQL
             </span>
           </div>
@@ -102,9 +102,9 @@ export function WazuhFilterBar({
         {/* Refresh button */}
         <button
           onClick={handleRefresh}
-          className="h-9 px-4 bg-[#006BB4] hover:bg-[#005593] text-white rounded font-medium text-[13px] flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
+          className="h-9 px-4 bg-[#006BB4] hover:bg-[#005593] text-white rounded-[4px] font-medium text-[13px] flex items-center gap-2 transition-colors cursor-pointer"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <WuiIcon type="refresh" size="s" className={isRefreshing ? 'animate-spin' : ''} />
           <span>Refresh</span>
         </button>
       </div>
@@ -112,8 +112,8 @@ export function WazuhFilterBar({
       {/* Filter chips row */}
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
         {agentFilter && (
-          <div className="flex items-center gap-1.5 bg-[#EBF5FB] border border-[#B2D7F0] px-2.5 py-1 rounded text-[#006BB4]">
-            <span className="text-[10px] uppercase font-bold text-[#5A626F]">agent</span>
+          <div className="flex items-center gap-1.5 bg-[#EBF5FB] border border-[#B2D7F0] px-2.5 py-1 rounded-[4px] text-[#006BB4]">
+            <span className="text-[11px] font-semibold text-[#535966]">Agent:</span>
             <span className="font-mono">{agentFilter}</span>
             {onClearAgentFilter && (
               <button
@@ -145,7 +145,7 @@ export function WazuhFilterBar({
           title="Jadikan teks search sebagai chip filter (atau Enter)"
           className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium px-2 py-1"
         >
-          <Plus className="w-3.5 h-3.5" />
+          <WuiIcon type="plus" size="s" />
           <span>Add filter</span>
         </button>
       </div>

@@ -262,7 +262,7 @@ export async function sendTelegramOtp(
   }
 
   const text = (
-    `🔐 *VERIFIKASI 2FA DASHBOARD SOAR*\n\n` +
+    `*VERIFIKASI 2FA DASHBOARD SOAR*\n\n` +
     `Kode verifikasi sesi Anda: \`${otpCode}\`\n\n` +
     `Masa berlaku: *5 menit*\n` +
     `IP Pemohon: \`${clientIp}\`\n\n` +

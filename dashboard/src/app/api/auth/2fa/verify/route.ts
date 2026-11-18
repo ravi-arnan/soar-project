@@ -1,6 +1,7 @@
 import {
   createSessionToken,
   sessionCookie,
+  touchUserLastLogin,
   validLoginToken,
 } from "../../../../../lib/session.ts";
 import { verifyStoredOtp } from "../../../../../lib/twoFactor.ts";
@@ -58,6 +59,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // OTP valid! Terbitkan cookie sesi resmi SOAR dengan role Admin
   const adminEmail = process.env.ADMIN_EMAIL ?? "raviarnankeren@gmail.com";
+  await touchUserLastLogin({ username: "admin", email: adminEmail });
   const token = createSessionToken(expectedToken, {
     username: "admin",
     role: "admin",

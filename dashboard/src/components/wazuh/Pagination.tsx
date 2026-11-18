@@ -23,9 +23,11 @@ export const Pagination = React.memo(function Pagination({
   onPageChange,
   onRowsChange,
 }: PaginationProps) {
-  const safePage = Math.min(page, Math.max(0, pageCount - 1));
-  const from = total === 0 ? 0 : safePage * rowsPerPage + 1;
-  const to = Math.min(safePage * rowsPerPage + rowsPerPage, total);
+  const isAll = rowsPerPage <= 0;
+  const effectivePageCount = isAll ? 1 : Math.max(1, pageCount);
+  const safePage = Math.min(page, Math.max(0, effectivePageCount - 1));
+  const from = total === 0 ? 0 : isAll ? 1 : safePage * rowsPerPage + 1;
+  const to = isAll ? total : Math.min(safePage * rowsPerPage + rowsPerPage, total);
 
   return (
     <div className="flex items-center justify-between mt-3 text-[12px] text-[#5A626F]">
@@ -41,7 +43,7 @@ export const Pagination = React.memo(function Pagination({
         >
           {rowsOptions.map((n) => (
             <option key={n} value={n}>
-              {n}
+              {n <= 0 ? 'All' : n}
             </option>
           ))}
         </select>
@@ -52,20 +54,22 @@ export const Pagination = React.memo(function Pagination({
 
       <div className="flex items-center gap-1.5">
         <button
+          type="button"
           onClick={() => onPageChange(Math.max(0, safePage - 1))}
           disabled={safePage === 0}
-          className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent"
+          className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
           aria-label="Halaman sebelumnya"
         >
           ‹
         </button>
         <span className="font-semibold text-[#006BB4] px-1">
-          {safePage + 1} / {Math.max(1, pageCount)}
+          {safePage + 1} / {effectivePageCount}
         </span>
         <button
-          onClick={() => onPageChange(Math.min(pageCount - 1, safePage + 1))}
-          disabled={safePage >= pageCount - 1}
-          className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent"
+          type="button"
+          onClick={() => onPageChange(Math.min(effectivePageCount - 1, safePage + 1))}
+          disabled={safePage >= effectivePageCount - 1}
+          className="px-2 py-0.5 rounded hover:bg-[#F5F7FA] disabled:opacity-40 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
           aria-label="Halaman berikut"
         >
           ›

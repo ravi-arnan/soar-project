@@ -107,6 +107,14 @@ export function sessionFromRequest(request: Request): string | null {
 
 const emailRoleCache = new Map<string, { user: SessionUser; expires: number }>();
 
+/** Hapus cache role email Cloudflare Access (dipanggil saat logout). */
+export function clearCachedEmailSession(email?: string | null): void {
+  const normalized = email?.trim().toLowerCase();
+  if (normalized) {
+    emailRoleCache.delete(normalized);
+  }
+}
+
 function fleetBaseUrl(): string {
   const rawBase =
     process.env.FLEET_API_URL ||
@@ -114,6 +122,34 @@ function fleetBaseUrl(): string {
       ? "http://host.docker.internal:8080"
       : "http://127.0.0.1:8080");
   return rawBase.split("?")[0].replace(/\/$/, "");
+}
+
+/** Catat timestamp login terakhir di backend fleet-monitor (best-effort, non-fatal). */
+export async function touchUserLastLogin(identity: {
+  username?: string;
+  email?: string;
+}): Promise<void> {
+  const commandToken = process.env.FLEET_COMMAND_TOKEN;
+  if (!commandToken || (!identity.username && !identity.email)) return;
+  try {
+    await fetch(`${fleetBaseUrl()}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${commandToken}`,
+      },
+      body: JSON.stringify({
+        action: "touch_login",
+        username: identity.username || "",
+        email: identity.email || "",
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(1500),
+    });
+  } catch {
+    // Jangan pernah gagalkan sesi UI jika backend mencatat last_login terlambat/offline
+  }
 }
 
 export async function resolveAuthorizedSession(
@@ -124,20 +160,23 @@ export async function resolveAuthorizedSession(
   // 1. Cloudflare Access Zero Trust (Email-based authentication via tunnel)
   const cfEmail = request.headers.get("cf-access-authenticated-user-email")?.trim().toLowerCase();
   if (cfEmail) {
+    // Cek cache in-memory dulu (60s) supaya tidak menulis SQLite di setiap poll/request
+    const cached = emailRoleCache.get(cfEmail);
+    if (cached && cached.expires > now) {
+      return cached.user;
+    }
+
     const adminEmail = (process.env.ADMIN_EMAIL ?? "raviarnankeren@gmail.com").trim().toLowerCase();
     if (cfEmail === adminEmail) {
-      return {
+      const adminUser: SessionUser = {
         username: "admin",
         role: "admin",
         email: cfEmail,
         name: "Ravi Arnan (SOC Lead)",
       };
-    }
-
-    // Cek cache in-memory untuk performa 0ms
-    const cached = emailRoleCache.get(cfEmail);
-    if (cached && cached.expires > now) {
-      return cached.user;
+      await touchUserLastLogin({ username: "admin", email: cfEmail });
+      emailRoleCache.set(cfEmail, { user: adminUser, expires: now + 60_000 });
+      return adminUser;
     }
 
     // Lookup user role dari database fleet-monitor
@@ -158,6 +197,7 @@ export async function resolveAuthorizedSession(
             email: data.user.email || cfEmail,
             name: data.user.name || data.user.username,
           };
+          await touchUserLastLogin({ username: user.username, email: cfEmail });
           emailRoleCache.set(cfEmail, { user, expires: now + 60_000 });
           return user;
         }

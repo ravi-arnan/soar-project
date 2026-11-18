@@ -1,65 +1,274 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { WuiIcon } from '../wui/WuiIcon';
 import {
-  Sparkles,
-  Shield,
-  Sliders,
-  CheckCircle2,
-  XCircle,
-  RefreshCw,
-  Eye,
-  EyeOff,
-  Play,
-  Save,
-  Zap,
-  Globe,
-  Database,
-  Cpu,
-} from 'lucide-react';
-
-interface AiConfig {
-  enabled: boolean;
-  provider: string;
-  model: string;
-  temperature: number;
-  max_tokens: number;
-  system_instruction: string;
-  api_key?: string;
-  has_api_key?: boolean;
-  fallback_provider: string;
-  fallback_model: string;
-  custom_base_url?: string;
-}
-
-interface ThreatIntelSource {
-  enabled: boolean;
-  api_key?: string;
-  has_api_key?: boolean;
-  min_engines_high?: number;
-  min_engines_critical?: number;
-  auto_escalate?: boolean;
-  min_pulses?: number;
-  sync_osint?: boolean;
-}
-
-interface ThreatIntelConfig {
-  consensus_mode: string;
-  sources: {
-    virustotal: ThreatIntelSource;
-    malwarebazaar: ThreatIntelSource;
-    alienvault_otx: ThreatIntelSource;
-    misp: ThreatIntelSource;
-  };
-  cache_ttl: {
-    malicious_days: number;
-    clean_hours: number;
-    unknown_hours: number;
-  };
-}
+  AI_PROVIDERS,
+  DEFAULT_AI_CONFIG,
+  DEFAULT_THREAT_INTEL_CONFIG,
+  getProviderMeta,
+  type AiConfig,
+  type DiscoveredAiModel,
+  type SavedAiKey,
+  type ThreatIntelConfig,
+} from '@/lib/aiConfig';
+import { WuiCallOut, WuiPageHeader, WuiPanel } from '../wui/WuiPrimitives';
 
 interface DynamicSettingsViewProps {
   userRole?: string;
+}
+
+function cleanSecretInput(val?: string): string | undefined {
+  return val && !val.includes('•') ? val : undefined;
+}
+
+function applySavedKeyToSlot(
+  prev: AiConfig,
+  slot: 'primary' | 'fallback',
+  saved: SavedAiKey
+): AiConfig {
+  const meta = getProviderMeta(saved.provider);
+  const nextModel = saved.model || meta.defaultModel;
+  if (slot === 'primary') {
+    return {
+      ...prev,
+      provider: saved.provider,
+      model: nextModel,
+      custom_base_url: saved.base_url || '',
+      api_key: saved.api_key || '',
+      has_api_key: Boolean(saved.has_api_key || (saved.api_key && saved.api_key.trim())),
+      clear_api_key: false,
+      primary_saved_key_id: saved.id,
+    };
+  }
+  return {
+    ...prev,
+    fallback_enabled: true,
+    fallback_provider: saved.provider,
+    fallback_model: nextModel,
+    fallback_base_url: saved.base_url || '',
+    fallback_api_key: saved.api_key || '',
+    has_fallback_api_key: Boolean(saved.has_api_key || (saved.api_key && saved.api_key.trim())),
+    clear_fallback_api_key: false,
+    fallback_saved_key_id: saved.id,
+  };
+}
+
+interface ProviderFieldsProps {
+  title: string;
+  subtitle: string;
+  provider: string;
+  model: string;
+  apiKey?: string;
+  hasApiKey?: boolean;
+  baseUrl?: string;
+  showKey: boolean;
+  savedKeys: SavedAiKey[];
+  selectedSavedKeyId?: string;
+  availableModels: DiscoveredAiModel[];
+  loadingModels?: boolean;
+  modelsStatus?: string | null;
+  onToggleShowKey: () => void;
+  onProviderChange: (nextProvider: string, defaultModel: string) => void;
+  onModelChange: (nextModel: string) => void;
+  onApiKeyChange: (nextKey: string) => void;
+  onClearApiKey: () => void;
+  onBaseUrlChange: (nextUrl: string) => void;
+  onSelectSavedKey: (savedKeyId: string) => void;
+  onFetchModels: () => void;
+  onSaveCurrentToSavedKeys: () => void;
+}
+
+function ProviderConfigFields({
+  title,
+  subtitle,
+  provider,
+  model,
+  apiKey,
+  hasApiKey,
+  baseUrl,
+  showKey,
+  savedKeys,
+  selectedSavedKeyId,
+  availableModels,
+  loadingModels,
+  modelsStatus,
+  onToggleShowKey,
+  onProviderChange,
+  onModelChange,
+  onApiKeyChange,
+  onClearApiKey,
+  onBaseUrlChange,
+  onSelectSavedKey,
+  onFetchModels,
+  onSaveCurrentToSavedKeys,
+}: ProviderFieldsProps) {
+  const meta = getProviderMeta(provider);
+  const canSaveProfile = Boolean((apiKey && apiKey.trim()) || hasApiKey);
+
+  return (
+    <div className="p-4 bg-[#FAFBFD] border border-[#E1E6EB] rounded space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-[13px] font-semibold text-[#1A1C21]">{title}</div>
+          <div className="text-[11px] text-[#5A626F]">{subtitle}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {savedKeys.length > 0 && (
+            <select
+              value={selectedSavedKeyId || ''}
+              onChange={(e) => {
+                if (e.target.value) onSelectSavedKey(e.target.value);
+              }}
+              aria-label={`Switch Saved API Key untuk ${title}`}
+              className="h-7 px-2 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white text-[#1A1C21] max-w-[240px]"
+            >
+              <option value="">Switch Saved Key...</option>
+              {savedKeys.map((sk) => (
+                <option key={sk.id} value={sk.id}>
+                  {sk.name} ({getProviderMeta(sk.provider).shortLabel})
+                </option>
+              ))}
+            </select>
+          )}
+          {canSaveProfile && (
+            <button
+              type="button"
+              onClick={onSaveCurrentToSavedKeys}
+              className="h-7 px-2.5 bg-white hover:bg-[#F5F7FA] text-[#006BB4] border border-[#D3DAE6] rounded-[4px] text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+            >
+              <WuiIcon type="listAdd" size="xs" />
+              <span>Simpan ke Saved Keys</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[13px]">
+        <div>
+          <label className="block text-[#1A1C21] font-medium mb-1">Provider Platform</label>
+          <select
+            value={provider}
+            onChange={(e) => {
+              const nextMeta = getProviderMeta(e.target.value);
+              onProviderChange(e.target.value, nextMeta.defaultModel);
+            }}
+            className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] bg-white"
+          >
+            {AI_PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[#1A1C21] font-medium">Model ID</label>
+            <button
+              type="button"
+              onClick={onFetchModels}
+              disabled={loadingModels}
+              className="text-[11px] text-[#006BB4] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              <WuiIcon type="refresh" size="xs" className={loadingModels ? 'animate-spin' : ''} />
+              <span>{loadingModels ? 'Memuat...' : 'Cek Model'}</span>
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => onModelChange(e.target.value)}
+              placeholder={meta.defaultModel}
+              className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] font-mono text-[12px] bg-white"
+            />
+            <select
+              onChange={(e) => {
+                if (e.target.value) onModelChange(e.target.value);
+              }}
+              className="px-2 py-1.5 border border-[#D3DAE6] rounded text-[11px] bg-white max-w-[165px]"
+              value=""
+            >
+              <option value="" disabled>
+                {availableModels.length > 0 ? `Model (${availableModels.length})...` : 'Preset...'}
+              </option>
+              {availableModels.length > 0 && (
+                <optgroup label={`Tersedia di Key (${availableModels.length})`}>
+                  {availableModels.map((m) => (
+                    <option key={`live-${m.id}`} value={m.id} disabled={m.chat_supported === false}>
+                      {m.label || m.id}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Preset Bawaan">
+                {meta.presets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+          {modelsStatus && (
+            <div className="text-[11px] text-[#535966] mt-1 font-mono">{modelsStatus}</div>
+          )}
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[#1A1C21] font-medium">
+              API Key ({meta.keyLabel})
+            </label>
+            {hasApiKey && (
+              <button
+                type="button"
+                onClick={onClearApiKey}
+                className="text-[11px] text-[#BD271E] hover:underline cursor-pointer"
+              >
+                Hapus Key
+              </button>
+            )}
+          </div>
+          <div className="relative">
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={apiKey || ''}
+              onChange={(e) => onApiKeyChange(e.target.value)}
+              placeholder={
+                hasApiKey ? 'Tersimpan di server (biarkan jika tak diubah)' : `Masukkan ${meta.keyLabel}`
+              }
+              className="w-full pl-3 pr-8 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] font-mono text-[12px] bg-white"
+            />
+            <button
+              type="button"
+              onClick={onToggleShowKey}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8A94A6] hover:text-[#1A1C21]"
+            >
+              {showKey ? <WuiIcon type="eyeClosed" size="s" /> : <WuiIcon type="eye" size="s" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {meta.supportsBaseUrl && (
+        <div className="text-[12px]">
+          <label className="block text-[#1A1C21] font-medium mb-1">
+            Base URL Endpoint ({provider === 'custom' ? 'Wajib untuk Custom HTTP' : 'Opsional / Proxy'})
+          </label>
+          <input
+            type="text"
+            value={baseUrl || ''}
+            onChange={(e) => onBaseUrlChange(e.target.value)}
+            placeholder={meta.baseUrlPlaceholder}
+            className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] font-mono text-[12px] bg-white"
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewProps) {
@@ -69,40 +278,52 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Form states
-  const [aiConfig, setAiConfig] = useState<AiConfig>({
-    enabled: true,
-    provider: 'google',
-    model: 'gemini-2.5-flash',
-    temperature: 0.3,
-    max_tokens: 1500,
-    system_instruction: 'You are a senior SOC analyst. Respond in formal Bahasa Indonesia. Write 2-3 concise sentences. Focus on containment and severity.',
-    fallback_provider: 'pollinations',
-    fallback_model: 'deepseek/deepseek-v4-flash',
-  });
-
-  const [tiConfig, setTiConfig] = useState<ThreatIntelConfig>({
-    consensus_mode: 'ensemble',
-    sources: {
-      virustotal: { enabled: true, min_engines_high: 5, min_engines_critical: 20 },
-      malwarebazaar: { enabled: true, auto_escalate: true },
-      alienvault_otx: { enabled: true, min_pulses: 1 },
-      misp: { enabled: true, sync_osint: true },
-    },
-    cache_ttl: {
-      malicious_days: 7,
-      clean_hours: 24,
-      unknown_hours: 6,
-    },
-  });
+  const [aiConfig, setAiConfig] = useState<AiConfig>(DEFAULT_AI_CONFIG);
+  const [tiConfig, setTiConfig] = useState<ThreatIntelConfig>(DEFAULT_THREAT_INTEL_CONFIG);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Password visibility toggles
   const [showAiKey, setShowAiKey] = useState(false);
+  const [showFallbackKey, setShowFallbackKey] = useState(false);
+  const [showNewSavedKey, setShowNewSavedKey] = useState(false);
   const [showVtKey, setShowVtKey] = useState(false);
   const [showMbKey, setShowMbKey] = useState(false);
   const [showOtxKey, setShowOtxKey] = useState(false);
 
+  // Dynamic model discovery state per slot & saved profile
+  const [slotModels, setSlotModels] = useState<{ primary: DiscoveredAiModel[]; fallback: DiscoveredAiModel[] }>({
+    primary: [],
+    fallback: [],
+  });
+  const [loadingModelsKey, setLoadingModelsKey] = useState<string | null>(null);
+  const [slotModelsStatus, setSlotModelsStatus] = useState<{ primary: string | null; fallback: string | null }>({
+    primary: null,
+    fallback: null,
+  });
+
+  // Saved API Keys inline add form
+  const [showAddSavedKey, setShowAddSavedKey] = useState(false);
+  const [newSavedKey, setNewSavedKey] = useState<{
+    name: string;
+    provider: string;
+    model: string;
+    api_key: string;
+    base_url: string;
+    models: DiscoveredAiModel[];
+  }>({
+    name: '',
+    provider: 'experiential',
+    model: 'gpt-6-luna:free',
+    api_key: '',
+    base_url: '',
+    models: [],
+  });
+  const [newSavedModelsStatus, setNewSavedModelsStatus] = useState<string | null>(null);
+
   // Live AI Test State
-  const [testPrompt, setTestPrompt] = useState('Analisis file mencurigakan ransom_payload.exe yang mendeteksi ekstensi terenkripsi di folder workstation.');
+  const [testPrompt, setTestPrompt] = useState(
+    'Analisis file mencurigakan ransom_payload.exe yang mendeteksi ekstensi terenkripsi di folder workstation.'
+  );
   const [isTestingAi, setIsTestingAi] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
@@ -111,6 +332,8 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
     latency_ms?: number;
     response?: string;
     error?: string;
+    used_fallback?: boolean;
+    primary_error?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -132,7 +355,7 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
         if (!res.ok) {
           setError(data.error || 'Gagal memuat konfigurasi.');
         } else {
-          if (data.ai_config) setAiConfig(data.ai_config);
+          if (data.ai_config) setAiConfig({ ...DEFAULT_AI_CONFIG, ...data.ai_config });
           if (data.threat_intel_config) setTiConfig(data.threat_intel_config);
         }
       } catch (err) {
@@ -150,6 +373,203 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
       ignore = true;
     };
   }, []);
+
+  const updateAi = (updater: (prev: AiConfig) => AiConfig) => {
+    setAiConfig((prev) => updater(prev));
+    setHasUnsavedChanges(true);
+  };
+
+  const savedKeys = aiConfig.saved_api_keys || [];
+
+  const resolveAvailableModels = (slot: 'primary' | 'fallback'): DiscoveredAiModel[] => {
+    const live = slotModels[slot];
+    if (live.length > 0) return live;
+    const savedId = slot === 'primary' ? aiConfig.primary_saved_key_id : aiConfig.fallback_saved_key_id;
+    const matched = savedKeys.find((k) => k.id === savedId);
+    if (matched?.models && matched.models.length > 0) return matched.models;
+    const prov = slot === 'primary' ? aiConfig.provider : aiConfig.fallback_provider;
+    const sameProv = savedKeys.find((k) => k.provider === prov && k.models && k.models.length > 0);
+    return sameProv?.models || [];
+  };
+
+  const fetchModelsFromServer = async (params: {
+    keyTag: string;
+    provider: string;
+    api_key?: string;
+    base_url?: string;
+    saved_key_id?: string;
+    slot?: 'primary' | 'fallback';
+  }): Promise<{ ok: boolean; models: DiscoveredAiModel[]; statusText: string }> => {
+    setLoadingModelsKey(params.keyTag);
+    try {
+      const res = await fetch('/api/settings/ai/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: params.provider,
+          api_key: cleanSecretInput(params.api_key),
+          base_url: params.base_url,
+          saved_key_id: params.saved_key_id,
+          slot: params.slot,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { ok: false, models: [], statusText: data.error || 'Gagal memuat daftar model' };
+      }
+      const list: DiscoveredAiModel[] = Array.isArray(data.models) ? data.models : [];
+      const freeCount = typeof data.free_count === 'number' ? data.free_count : list.filter((m) => m.free).length;
+      const summary =
+        freeCount > 0
+          ? `${list.length} model tersedia (${freeCount} free)`
+          : `${list.length} model tersedia`;
+      return { ok: true, models: list, statusText: summary };
+    } catch (err) {
+      return {
+        ok: false,
+        models: [],
+        statusText: `Error: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    } finally {
+      setLoadingModelsKey(null);
+    }
+  };
+
+  const handleFetchSlotModels = async (slot: 'primary' | 'fallback') => {
+    const isPrimary = slot === 'primary';
+    const provider = isPrimary ? aiConfig.provider : aiConfig.fallback_provider;
+    const apiKey = isPrimary ? aiConfig.api_key : aiConfig.fallback_api_key;
+    const baseUrl = isPrimary ? aiConfig.custom_base_url : aiConfig.fallback_base_url;
+    const savedId = isPrimary ? aiConfig.primary_saved_key_id : aiConfig.fallback_saved_key_id;
+
+    const result = await fetchModelsFromServer({
+      keyTag: slot,
+      provider,
+      api_key: apiKey,
+      base_url: baseUrl,
+      saved_key_id: savedId,
+      slot,
+    });
+    setSlotModelsStatus((prev) => ({ ...prev, [slot]: result.statusText }));
+    if (result.ok) {
+      setSlotModels((prev) => ({ ...prev, [slot]: result.models }));
+      if (savedId) {
+        const nowIso = new Date().toISOString();
+        updateAi((prev) => ({
+          ...prev,
+          saved_api_keys: (prev.saved_api_keys || []).map((sk) =>
+            sk.id === savedId ? { ...sk, models: result.models, models_updated_at: nowIso } : sk
+          ),
+        }));
+      }
+    }
+  };
+
+  const handleFetchSavedKeyModels = async (saved: SavedAiKey) => {
+    const result = await fetchModelsFromServer({
+      keyTag: `saved:${saved.id}`,
+      provider: saved.provider,
+      api_key: saved.api_key,
+      base_url: saved.base_url,
+      saved_key_id: saved.id,
+    });
+    if (!result.ok) {
+      setError(result.statusText);
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    updateAi((prev) => ({
+      ...prev,
+      saved_api_keys: (prev.saved_api_keys || []).map((sk) =>
+        sk.id === saved.id ? { ...sk, models: result.models, models_updated_at: nowIso } : sk
+      ),
+    }));
+    setSuccessMsg(`Berhasil memuat ${result.statusText} untuk profil '${saved.name}'. Klik Simpan Perubahan untuk menyimpan.`);
+    setTimeout(() => setSuccessMsg(null), 5000);
+  };
+
+  const handleSaveSlotToSavedKeys = (slot: 'primary' | 'fallback') => {
+    const isPrimary = slot === 'primary';
+    const provider = isPrimary ? aiConfig.provider : aiConfig.fallback_provider;
+    const model = isPrimary ? aiConfig.model : aiConfig.fallback_model;
+    const apiKey = isPrimary ? aiConfig.api_key : aiConfig.fallback_api_key;
+    const hasKey = isPrimary ? aiConfig.has_api_key : aiConfig.has_fallback_api_key;
+    const baseUrl = isPrimary ? aiConfig.custom_base_url : aiConfig.fallback_base_url;
+    const meta = getProviderMeta(provider);
+    const id = `key_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const models = resolveAvailableModels(slot);
+    const entry: SavedAiKey = {
+      id,
+      name: `${meta.shortLabel} (${model || meta.defaultModel})`,
+      provider,
+      model: model || meta.defaultModel,
+      base_url: baseUrl || '',
+      api_key: apiKey || '',
+      has_api_key: Boolean(hasKey || (apiKey && apiKey.trim())),
+      models,
+      models_updated_at: models.length > 0 ? new Date().toISOString() : '',
+    };
+    updateAi((prev) => ({
+      ...prev,
+      ...(isPrimary ? { primary_saved_key_id: id } : { fallback_saved_key_id: id }),
+      saved_api_keys: [...(prev.saved_api_keys || []), entry],
+    }));
+  };
+
+  const handleAddNewSavedKey = () => {
+    const meta = getProviderMeta(newSavedKey.provider);
+    if (!newSavedKey.api_key.trim() && newSavedKey.provider !== 'custom') {
+      setError('Masukkan API Key sebelum menyimpan profil baru.');
+      return;
+    }
+    const id = `key_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const entry: SavedAiKey = {
+      id,
+      name: newSavedKey.name.trim() || `${meta.shortLabel} (${newSavedKey.model || meta.defaultModel})`,
+      provider: newSavedKey.provider,
+      model: newSavedKey.model.trim() || meta.defaultModel,
+      base_url: newSavedKey.base_url.trim(),
+      api_key: newSavedKey.api_key.trim(),
+      has_api_key: Boolean(newSavedKey.api_key.trim()),
+      models: newSavedKey.models,
+      models_updated_at: newSavedKey.models.length > 0 ? new Date().toISOString() : '',
+    };
+    setError(null);
+    updateAi((prev) => ({
+      ...prev,
+      saved_api_keys: [...(prev.saved_api_keys || []), entry],
+    }));
+    setNewSavedKey({
+      name: '',
+      provider: 'experiential',
+      model: 'gpt-6-luna:free',
+      api_key: '',
+      base_url: '',
+      models: [],
+    });
+    setNewSavedModelsStatus(null);
+    setShowAddSavedKey(false);
+  };
+
+  const handleSwitchToSavedKey = (slot: 'primary' | 'fallback', savedId: string) => {
+    const found = savedKeys.find((k) => k.id === savedId);
+    if (!found) return;
+    updateAi((prev) => applySavedKeyToSlot(prev, slot, found));
+    if (found.models && found.models.length > 0) {
+      setSlotModels((prev) => ({ ...prev, [slot]: found.models || [] }));
+      const freeCount = found.models.filter((m) => m.free).length;
+      setSlotModelsStatus((prev) => ({
+        ...prev,
+        [slot]:
+          freeCount > 0
+            ? `${found.models?.length} model tersedia (${freeCount} free)`
+            : `${found.models?.length} model tersedia`,
+      }));
+    } else {
+      setSlotModels((prev) => ({ ...prev, [slot]: [] }));
+      setSlotModelsStatus((prev) => ({ ...prev, [slot]: null }));
+    }
+  };
 
   const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,8 +595,9 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
         return;
       }
       setSuccessMsg('Konfigurasi dinamis AI Engine & Multi-Source Threat Intel berhasil diperbarui.');
+      setHasUnsavedChanges(false);
       setTimeout(() => setSuccessMsg(null), 5000);
-      if (data.settings?.ai_config) setAiConfig(data.settings.ai_config);
+      if (data.settings?.ai_config) setAiConfig({ ...DEFAULT_AI_CONFIG, ...data.settings.ai_config });
       if (data.settings?.threat_intel_config) setTiConfig(data.settings.threat_intel_config);
     } catch (err) {
       setError(`Gagal menyimpan: ${err instanceof Error ? err.message : String(err)}`);
@@ -185,7 +606,7 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
     }
   };
 
-  const handleRunAiTest = async () => {
+  const handleRunAiTest = async (target: 'primary' | 'fallback' | 'auto' = 'primary') => {
     setIsTestingAi(true);
     setTestResult(null);
     try {
@@ -193,10 +614,24 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          target,
           provider: aiConfig.provider,
           model: aiConfig.model,
           prompt: testPrompt,
-          api_key: aiConfig.api_key && !aiConfig.api_key.includes('•') ? aiConfig.api_key : undefined,
+          api_key: cleanSecretInput(aiConfig.api_key),
+          base_url: aiConfig.custom_base_url,
+          saved_key_id: aiConfig.primary_saved_key_id,
+          temperature: aiConfig.temperature,
+          max_tokens: aiConfig.max_tokens,
+          system_instruction: aiConfig.system_instruction,
+          fallback: {
+            enabled: aiConfig.fallback_enabled,
+            provider: aiConfig.fallback_provider,
+            model: aiConfig.fallback_model,
+            api_key: cleanSecretInput(aiConfig.fallback_api_key),
+            base_url: aiConfig.fallback_base_url,
+            saved_key_id: aiConfig.fallback_saved_key_id,
+          },
         }),
       });
       const data = await res.json();
@@ -213,142 +648,467 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
 
   if (loading) {
     return (
-      <div className="bg-white border border-[#D3DAE6] rounded p-8 text-center text-[#5A626F]">
-        <div className="flex items-center justify-center gap-2">
-          <RefreshCw className="w-5 h-5 animate-spin text-[#006BB4]" />
+      <WuiPanel>
+        <div className="py-6 flex items-center justify-center gap-2 text-[#535966]">
+          <WuiIcon type="refresh" size="m" className="animate-spin text-[#006BB4]" />
           <span>Memuat konfigurasi dinamis SOAR...</span>
         </div>
-      </div>
+      </WuiPanel>
     );
   }
 
   return (
-    <form onSubmit={handleSaveAll} className="space-y-6">
-      {/* Notifications */}
-      {error && (
-        <div className="p-3 bg-[#FDF3F2] border border-[#F5C2C0] rounded flex items-center gap-2.5 text-[12px] text-[#BD271E]">
-          <XCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-      {successMsg && (
-        <div className="p-3 bg-[#E6F6F4] border border-[#A3E5DD] rounded flex items-center gap-2.5 text-[12px] text-[#00A389]">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>{successMsg}</span>
-        </div>
+    <form onSubmit={handleSaveAll} className="space-y-4">
+      {error && <WuiCallOut tone="danger">{error}</WuiCallOut>}
+      {successMsg && <WuiCallOut tone="success">{successMsg}</WuiCallOut>}
+      {hasUnsavedChanges && (
+        <WuiCallOut tone="warning">
+          Ada perubahan konfigurasi atau Saved API Keys yang belum disimpan. Klik tombol Simpan Perubahan di kanan atas untuk menerapkan ke server dan pipeline n8n.
+        </WuiCallOut>
       )}
 
-      {/* Action Header */}
-      <div className="flex items-center justify-between bg-white border border-[#D3DAE6] p-4 rounded shadow-xs">
-        <div>
-          <h2 className="text-base font-bold text-[#1A1C21] flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-[#006BB4]" />
-            <span>Konfigurasi Dinamis AI Engine &amp; Threat Intelligence Multi-Source</span>
-          </h2>
-          <p className="text-[12px] text-[#5A626F] mt-0.5">
-            Ubah model kecerdasan buatan, ambang batas mitigasi, dan koroborasi intelijen tanpa perlu mengubah kode sumber atau me-restart server.
-          </p>
-        </div>
-        {userRole === 'admin' && (
-          <button
-            type="submit"
-            disabled={saving}
-            className="h-9 px-4 bg-[#006BB4] hover:bg-[#005593] text-white rounded text-[13px] font-medium flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
-          >
-            {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-            <span>Simpan Perubahan</span>
-          </button>
-        )}
-      </div>
+      <WuiPageHeader
+        title="Konfigurasi Dinamis AI Engine &amp; Threat Intelligence"
+        description="Atur provider LLM utama dan fallback, API key, serta bobot koroborasi multi-intelijen secara runtime tanpa restart server."
+        actions={
+          userRole === 'admin' && (
+            <button
+              type="submit"
+              disabled={saving}
+              className="h-8 px-3.5 bg-[#006BB4] hover:bg-[#00538C] text-white rounded-[4px] text-[12px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {saving ? <WuiIcon type="refresh" size="s" className="animate-spin" /> : <WuiIcon type="save" size="s" />}
+              <span>Simpan Perubahan</span>
+            </button>
+          )
+        }
+      />
 
       {/* SECTION 1: AI Engine Configuration */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-5 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between pb-3 border-b border-[#E1E6EB]">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-[#E8F3FA] rounded text-[#006BB4]">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-[14px] font-bold text-[#1A1C21]">AI Reasoning Engine (Large Language Model)</h3>
-              <p className="text-[11px] text-[#5A626F]">Pengayaan narasi insiden, rekomendasi mitigasi, dan analisis triase otomatis.</p>
-            </div>
-          </div>
+      <WuiPanel
+        title="AI Reasoning Engine (Large Language Model)"
+        subtitle="Pengayaan narasi insiden, rekomendasi mitigasi, dan analisis triase otomatis."
+        accentColor="#006BB4"
+        right={
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={aiConfig.enabled}
-              onChange={(e) => setAiConfig({ ...aiConfig, enabled: e.target.checked })}
-              className="rounded text-[#006BB4] focus:ring-0"
+              onChange={(e) => updateAi((prev) => ({ ...prev, enabled: e.target.checked }))}
+              className="rounded-[2px] text-[#006BB4] focus:ring-0"
             />
             <span className="text-[12px] font-semibold text-[#1A1C21]">Enrichment Aktif</span>
           </label>
+        }
+        bodyClassName="p-4 space-y-4"
+      >
+
+        <ProviderConfigFields
+          title="Engine Penalaran Utama (Primary LLM)"
+          subtitle="Dipanggil pertama kali saat insiden membutuhkan analisis naratif dan rekomendasi mitigasi."
+          provider={aiConfig.provider}
+          model={aiConfig.model}
+          apiKey={aiConfig.api_key}
+          hasApiKey={aiConfig.has_api_key}
+          baseUrl={aiConfig.custom_base_url}
+          showKey={showAiKey}
+          savedKeys={savedKeys}
+          selectedSavedKeyId={aiConfig.primary_saved_key_id}
+          availableModels={resolveAvailableModels('primary')}
+          loadingModels={loadingModelsKey === 'primary'}
+          modelsStatus={slotModelsStatus.primary}
+          onToggleShowKey={() => setShowAiKey(!showAiKey)}
+          onProviderChange={(nextProvider, defaultModel) => {
+            setSlotModels((prev) => ({ ...prev, primary: [] }));
+            setSlotModelsStatus((prev) => ({ ...prev, primary: null }));
+            updateAi((prev) => ({
+              ...prev,
+              provider: nextProvider,
+              model: defaultModel,
+              primary_saved_key_id: '',
+              clear_api_key: false,
+            }));
+          }}
+          onModelChange={(nextModel) => updateAi((prev) => ({ ...prev, model: nextModel }))}
+          onApiKeyChange={(nextKey) =>
+            updateAi((prev) => ({ ...prev, api_key: nextKey, primary_saved_key_id: '', clear_api_key: false }))
+          }
+          onClearApiKey={() =>
+            updateAi((prev) => ({
+              ...prev,
+              api_key: '',
+              has_api_key: false,
+              primary_saved_key_id: '',
+              clear_api_key: true,
+            }))
+          }
+          onBaseUrlChange={(nextUrl) => updateAi((prev) => ({ ...prev, custom_base_url: nextUrl }))}
+          onSelectSavedKey={(savedId) => handleSwitchToSavedKey('primary', savedId)}
+          onFetchModels={() => handleFetchSlotModels('primary')}
+          onSaveCurrentToSavedKeys={() => handleSaveSlotToSavedKeys('primary')}
+        />
+
+        {/* Fallback AI Engine */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[12px] font-semibold text-[#1A1C21]">
+              <WuiIcon type="bolt" size="s" className="text-[#006BB4]" />
+              <span>Fallback Engine Otomatis (Fail-Safe jika Primary gagal / timeout / rate-limit)</span>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer text-[12px]">
+              <input
+                type="checkbox"
+                checked={aiConfig.fallback_enabled}
+                onChange={(e) => updateAi((prev) => ({ ...prev, fallback_enabled: e.target.checked }))}
+                className="rounded text-[#006BB4] focus:ring-0"
+              />
+              <span className="font-medium text-[#1A1C21]">Aktifkan Fallback</span>
+            </label>
+          </div>
+
+          {aiConfig.fallback_enabled && (
+            <ProviderConfigFields
+              title="Engine Cadangan (Fallback LLM)"
+              subtitle="Otomatis mengambil alih inferensi apabila provider utama mengalami gangguan."
+              provider={aiConfig.fallback_provider}
+              model={aiConfig.fallback_model}
+              apiKey={aiConfig.fallback_api_key}
+              hasApiKey={aiConfig.has_fallback_api_key}
+              baseUrl={aiConfig.fallback_base_url}
+              showKey={showFallbackKey}
+              savedKeys={savedKeys}
+              selectedSavedKeyId={aiConfig.fallback_saved_key_id}
+              availableModels={resolveAvailableModels('fallback')}
+              loadingModels={loadingModelsKey === 'fallback'}
+              modelsStatus={slotModelsStatus.fallback}
+              onToggleShowKey={() => setShowFallbackKey(!showFallbackKey)}
+              onProviderChange={(nextProvider, defaultModel) => {
+                setSlotModels((prev) => ({ ...prev, fallback: [] }));
+                setSlotModelsStatus((prev) => ({ ...prev, fallback: null }));
+                updateAi((prev) => ({
+                  ...prev,
+                  fallback_provider: nextProvider,
+                  fallback_model: defaultModel,
+                  fallback_saved_key_id: '',
+                  clear_fallback_api_key: false,
+                }));
+              }}
+              onModelChange={(nextModel) => updateAi((prev) => ({ ...prev, fallback_model: nextModel }))}
+              onApiKeyChange={(nextKey) =>
+                updateAi((prev) => ({
+                  ...prev,
+                  fallback_api_key: nextKey,
+                  fallback_saved_key_id: '',
+                  clear_fallback_api_key: false,
+                }))
+              }
+              onClearApiKey={() =>
+                updateAi((prev) => ({
+                  ...prev,
+                  fallback_api_key: '',
+                  has_fallback_api_key: false,
+                  fallback_saved_key_id: '',
+                  clear_fallback_api_key: true,
+                }))
+              }
+              onBaseUrlChange={(nextUrl) => updateAi((prev) => ({ ...prev, fallback_base_url: nextUrl }))}
+              onSelectSavedKey={(savedId) => handleSwitchToSavedKey('fallback', savedId)}
+              onFetchModels={() => handleFetchSlotModels('fallback')}
+              onSaveCurrentToSavedKeys={() => handleSaveSlotToSavedKeys('fallback')}
+            />
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[13px]">
-          <div>
-            <label className="block text-[#1A1C21] font-medium mb-1">Provider Utama (AI Platform)</label>
-            <select
-              value={aiConfig.provider}
-              onChange={(e) => setAiConfig({ ...aiConfig, provider: e.target.value })}
-              className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] bg-white"
+        {/* Saved API Keys & Available Models Manager */}
+        <div className="p-4 bg-[#FAFBFD] border border-[#E1E6EB] rounded space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-[13px] font-semibold text-[#1A1C21] flex items-center gap-1.5">
+                <WuiIcon type="lock" size="s" className="text-[#006BB4]" />
+                <span>Saved API Keys ({savedKeys.length})</span>
+              </div>
+              <div className="text-[11px] text-[#5A626F]">
+                Simpan beberapa API key beserta daftar model yang tersedia di masing-masing key untuk switch cepat ke Primary atau Fallback.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddSavedKey(!showAddSavedKey)}
+              className="h-7 px-2.5 bg-white hover:bg-[#F5F7FA] text-[#006BB4] border border-[#D3DAE6] rounded-[4px] text-[11px] font-medium flex items-center gap-1 cursor-pointer"
             >
-              <option value="google">Google Gemini (Official REST API)</option>
-              <option value="pollinations">Pollinations API (DeepSeek V4)</option>
-              <option value="openai">OpenAI Compatible (Ollama / Local / Proxy)</option>
-              <option value="custom">Custom Engine</option>
-            </select>
+              <WuiIcon type={showAddSavedKey ? 'cross' : 'plus'} size="xs" />
+              <span>{showAddSavedKey ? 'Tutup Form' : 'Tambah API Key'}</span>
+            </button>
           </div>
 
-          <div>
-            <label className="block text-[#1A1C21] font-medium mb-1">Pilihan Model AI (Model ID)</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={aiConfig.model}
-                onChange={(e) => setAiConfig({ ...aiConfig, model: e.target.value })}
-                placeholder="misal: gemini-2.5-flash"
-                className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] font-mono text-[12px]"
-              />
-              <select
-                onChange={(e) => {
-                  if (e.target.value) setAiConfig({ ...aiConfig, model: e.target.value });
-                }}
-                className="px-2 py-1.5 border border-[#D3DAE6] rounded text-[11px] bg-[#F8FAFC]"
-                defaultValue=""
-              >
-                <option value="" disabled>Pilih Preset...</option>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Rekomendasi Cepat)</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning)</option>
-                <option value="deepseek/deepseek-v4-flash">DeepSeek V4 Flash (Pollinations)</option>
-                <option value="deepseek-chat">DeepSeek Chat</option>
-                <option value="gpt-4o-mini">GPT-4o Mini</option>
-              </select>
+          {showAddSavedKey && (
+            <div className="p-3 bg-white border border-[#D3DAE6] rounded-[4px] space-y-3 text-[12px]">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[#1A1C21] font-medium mb-1">Nama Profil</label>
+                  <input
+                    type="text"
+                    value={newSavedKey.name}
+                    onChange={(e) => setNewSavedKey({ ...newSavedKey, name: e.target.value })}
+                    placeholder="Experiential Labs Free"
+                    className="w-full px-2.5 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[#1A1C21] font-medium mb-1">Provider Platform</label>
+                  <select
+                    value={newSavedKey.provider}
+                    onChange={(e) => {
+                      const nextMeta = getProviderMeta(e.target.value);
+                      setNewSavedKey({
+                        ...newSavedKey,
+                        provider: e.target.value,
+                        model: nextMeta.defaultModel,
+                        models: [],
+                      });
+                      setNewSavedModelsStatus(null);
+                    }}
+                    className="w-full px-2.5 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] bg-white"
+                  >
+                    {AI_PROVIDERS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[#1A1C21] font-medium mb-1">API Key</label>
+                  <div className="relative">
+                    <input
+                      type={showNewSavedKey ? 'text' : 'password'}
+                      value={newSavedKey.api_key}
+                      onChange={(e) => setNewSavedKey({ ...newSavedKey, api_key: e.target.value })}
+                      placeholder={getProviderMeta(newSavedKey.provider).keyLabel}
+                      className="w-full pl-2.5 pr-8 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] font-mono text-[12px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewSavedKey(!showNewSavedKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8A94A6] hover:text-[#1A1C21]"
+                    >
+                      {showNewSavedKey ? <WuiIcon type="eyeClosed" size="s" /> : <WuiIcon type="eye" size="s" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[#1A1C21] font-medium">Model Default</label>
+                    <button
+                      type="button"
+                      disabled={loadingModelsKey === 'new_saved'}
+                      onClick={async () => {
+                        const res = await fetchModelsFromServer({
+                          keyTag: 'new_saved',
+                          provider: newSavedKey.provider,
+                          api_key: newSavedKey.api_key,
+                          base_url: newSavedKey.base_url,
+                        });
+                        setNewSavedModelsStatus(res.statusText);
+                        if (res.ok) {
+                          const firstChat = res.models.find((m) => m.chat_supported !== false);
+                          setNewSavedKey((prev) => ({
+                            ...prev,
+                            models: res.models,
+                            model: prev.model || firstChat?.id || '',
+                          }));
+                        }
+                      }}
+                      className="text-[11px] text-[#006BB4] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <WuiIcon type="refresh" size="xs" className={loadingModelsKey === 'new_saved' ? 'animate-spin' : ''} />
+                      <span>Cek Model</span>
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={newSavedKey.model}
+                      onChange={(e) => setNewSavedKey({ ...newSavedKey, model: e.target.value })}
+                      className="w-full px-2.5 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] font-mono text-[12px]"
+                    />
+                    {newSavedKey.models.length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) setNewSavedKey({ ...newSavedKey, model: e.target.value });
+                        }}
+                        className="px-2 py-1.5 border border-[#D3DAE6] rounded text-[11px] bg-white max-w-[140px]"
+                      >
+                        <option value="" disabled>
+                          Pilih ({newSavedKey.models.length})
+                        </option>
+                        {newSavedKey.models.map((m) => (
+                          <option key={m.id} value={m.id} disabled={m.chat_supported === false}>
+                            {m.label || m.id}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  {newSavedModelsStatus && (
+                    <div className="text-[11px] text-[#535966] mt-1 font-mono">{newSavedModelsStatus}</div>
+                  )}
+                </div>
+              </div>
+              {getProviderMeta(newSavedKey.provider).supportsBaseUrl && (
+                <div>
+                  <label className="block text-[#1A1C21] font-medium mb-1">Base URL Endpoint (Opsional)</label>
+                  <input
+                    type="text"
+                    value={newSavedKey.base_url}
+                    onChange={(e) => setNewSavedKey({ ...newSavedKey, base_url: e.target.value })}
+                    placeholder={getProviderMeta(newSavedKey.provider).baseUrlPlaceholder}
+                    className="w-full px-2.5 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] font-mono text-[12px]"
+                  />
+                </div>
+              )}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleAddNewSavedKey}
+                  className="h-7 px-3 bg-[#006BB4] hover:bg-[#00538C] text-white rounded-[4px] text-[11px] font-medium cursor-pointer"
+                >
+                  Simpan ke Daftar
+                </button>
+              </div>
             </div>
-            <span className="text-[11px] text-[#8A94A6]">Model dapat disetel bebas sesuai kebutuhan evaluasi penelitian.</span>
-          </div>
+          )}
 
-          <div>
-            <label className="block text-[#1A1C21] font-medium mb-1">
-              API Key ({aiConfig.provider === 'google' ? 'GEMINI_API_KEY' : 'Provider Key'})
-            </label>
-            <div className="relative">
-              <input
-                type={showAiKey ? 'text' : 'password'}
-                value={aiConfig.api_key || ''}
-                onChange={(e) => setAiConfig({ ...aiConfig, api_key: e.target.value })}
-                placeholder={aiConfig.has_api_key ? 'Tersimpan di server (biarkan jika tak diubah)' : 'Masukkan API Key baru'}
-                className="w-full pl-3 pr-8 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] font-mono text-[12px]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowAiKey(!showAiKey)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8A94A6] hover:text-[#1A1C21]"
-              >
-                {showAiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
+          {savedKeys.length === 0 ? (
+            <div className="text-[12px] text-[#69707D] py-2">
+              Belum ada Saved API Key. Klik &quot;Tambah API Key&quot; atau &quot;Simpan ke Saved Keys&quot; pada panel Primary/Fallback di atas.
             </div>
-          </div>
+          ) : (
+            <div className="overflow-x-auto border border-[#E1E6EB] rounded-[4px] bg-white">
+              <table className="w-full text-left border-collapse text-[12px]">
+                <thead>
+                  <tr className="border-b border-[#E1E6EB] bg-[#FAFBFD] text-[#535966] text-[11px]">
+                    <th className="py-2 px-3 font-semibold">Profil</th>
+                    <th className="py-2 px-3 font-semibold">Provider</th>
+                    <th className="py-2 px-3 font-semibold">API Key</th>
+                    <th className="py-2 px-3 font-semibold">Model Aktif &amp; Daftar Model Key</th>
+                    <th className="py-2 px-3 font-semibold text-right">Switch / Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {savedKeys.map((sk) => {
+                    const isPrimaryActive = aiConfig.primary_saved_key_id === sk.id;
+                    const isFallbackActive = aiConfig.fallback_saved_key_id === sk.id;
+                    const models = sk.models || [];
+                    const freeCount = models.filter((m) => m.free).length;
+                    const loadingThis = loadingModelsKey === `saved:${sk.id}`;
+                    return (
+                      <tr key={sk.id} className="border-b border-[#F0F2F5] last:border-b-0">
+                        <td className="py-2 px-3 font-medium text-[#1A1C21]">
+                          <div>{sk.name}</div>
+                          {(isPrimaryActive || isFallbackActive) && (
+                            <div className="text-[10px] font-mono text-[#017D73] mt-0.5">
+                              {isPrimaryActive && isFallbackActive
+                                ? 'AKTIF: PRIMARY + FALLBACK'
+                                : isPrimaryActive
+                                  ? 'AKTIF: PRIMARY'
+                                  : 'AKTIF: FALLBACK'}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-[#535966]">{getProviderMeta(sk.provider).shortLabel}</td>
+                        <td className="py-2 px-3 font-mono text-[11px] text-[#535966]">
+                          {sk.api_key_masked || (sk.api_key && !sk.api_key.includes('•') ? `${sk.api_key.slice(0, 4)}••••••••${sk.api_key.slice(-4)}` : sk.api_key) || '-'}
+                        </td>
+                        <td className="py-2 px-3">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-mono text-[11px] text-[#1A1C21]">{sk.model || '-'}</span>
+                            {models.length > 0 && (
+                              <select
+                                value={sk.model || ''}
+                                onChange={(e) => {
+                                  const nextModel = e.target.value;
+                                  updateAi((prev) => ({
+                                    ...prev,
+                                    ...(prev.primary_saved_key_id === sk.id ? { model: nextModel } : {}),
+                                    ...(prev.fallback_saved_key_id === sk.id ? { fallback_model: nextModel } : {}),
+                                    saved_api_keys: (prev.saved_api_keys || []).map((item) =>
+                                      item.id === sk.id ? { ...item, model: nextModel } : item
+                                    ),
+                                  }));
+                                }}
+                                aria-label={`Pilih model untuk ${sk.name}`}
+                                className="h-6 px-1.5 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white font-mono max-w-[230px]"
+                              >
+                                {!models.some((m) => m.id === sk.model) && sk.model && (
+                                  <option value={sk.model}>{sk.model}</option>
+                                )}
+                                {models.map((m) => (
+                                  <option key={m.id} value={m.id} disabled={m.chat_supported === false}>
+                                    {m.label || m.id}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-[#69707D] font-mono mt-0.5">
+                            {models.length > 0
+                              ? freeCount > 0
+                                ? `${models.length} model (${freeCount} free)`
+                                : `${models.length} model`
+                              : 'Belum dimuat'}
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchToSavedKey('primary', sk.id)}
+                              className="px-2 py-1 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white hover:bg-[#F5F7FA] text-[#006BB4] font-medium cursor-pointer"
+                            >
+                              Pakai Primary
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchToSavedKey('fallback', sk.id)}
+                              className="px-2 py-1 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white hover:bg-[#F5F7FA] text-[#1A1C21] font-medium cursor-pointer"
+                            >
+                              Pakai Fallback
+                            </button>
+                            <button
+                              type="button"
+                              disabled={loadingThis}
+                              onClick={() => handleFetchSavedKeyModels(sk)}
+                              className="px-2 py-1 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white hover:bg-[#F5F7FA] text-[#535966] cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
+                            >
+                              <WuiIcon type="refresh" size="xs" className={loadingThis ? 'animate-spin' : ''} />
+                              <span>Muat Model</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateAi((prev) => ({
+                                  ...prev,
+                                  primary_saved_key_id: prev.primary_saved_key_id === sk.id ? '' : prev.primary_saved_key_id,
+                                  fallback_saved_key_id: prev.fallback_saved_key_id === sk.id ? '' : prev.fallback_saved_key_id,
+                                  saved_api_keys: (prev.saved_api_keys || []).filter((item) => item.id !== sk.id),
+                                }))
+                              }
+                              className="px-2 py-1 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white hover:bg-[#FDECEB] text-[#BD271E] cursor-pointer"
+                              aria-label={`Hapus ${sk.name}`}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[13px] pt-1">
@@ -363,7 +1123,7 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
               max="1"
               step="0.05"
               value={aiConfig.temperature}
-              onChange={(e) => setAiConfig({ ...aiConfig, temperature: parseFloat(e.target.value) })}
+              onChange={(e) => updateAi((prev) => ({ ...prev, temperature: parseFloat(e.target.value) }))}
               className="w-full accent-[#006BB4]"
             />
           </div>
@@ -376,7 +1136,7 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
               max="4096"
               step="100"
               value={aiConfig.max_tokens}
-              onChange={(e) => setAiConfig({ ...aiConfig, max_tokens: parseInt(e.target.value, 10) || 1500 })}
+              onChange={(e) => updateAi((prev) => ({ ...prev, max_tokens: parseInt(e.target.value, 10) || 1500 }))}
               className="w-full px-3 py-1.5 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] text-[12px]"
             />
           </div>
@@ -387,84 +1147,109 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
           <textarea
             rows={2}
             value={aiConfig.system_instruction}
-            onChange={(e) => setAiConfig({ ...aiConfig, system_instruction: e.target.value })}
+            onChange={(e) => updateAi((prev) => ({ ...prev, system_instruction: e.target.value }))}
             className="w-full px-3 py-2 border border-[#D3DAE6] rounded outline-none focus:border-[#006BB4] text-[12px] font-sans"
             placeholder="Petunjuk gaya bahasa analisis AI untuk triage notifikasi..."
           />
         </div>
 
         {/* Live Test AI Inference Playground */}
-        <div className="p-3.5 bg-[#F8FAFC] border border-[#E1E6EB] rounded space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[12px] font-bold text-[#1A1C21] flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5 text-[#006BB4]" />
-              <span>Live AI Inference Benchmark (Uji Coba Respon Model Terpilih)</span>
+        <div className="p-3.5 bg-[#FAFBFD] border border-[#D3DAE6] rounded-[4px] space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[12px] font-semibold text-[#1A1C21] flex items-center gap-1.5">
+              <WuiIcon type="machineLearningApp" size="s" className="ouiIcon--mono text-[#006BB4]" />
+              <span>Live AI Inference Benchmark (Uji Primary, Fallback &amp; Failover)</span>
             </span>
-            <button
-              type="button"
-              onClick={handleRunAiTest}
-              disabled={isTestingAi}
-              className="px-3 py-1 bg-[#006BB4] hover:bg-[#005593] text-white rounded text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer"
-            >
-              {isTestingAi ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-              <span>{isTestingAi ? 'Menghubungi AI...' : 'Uji Inferensi Sekarang'}</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => handleRunAiTest('primary')}
+                disabled={isTestingAi}
+                className="px-2.5 py-1 bg-[#006BB4] hover:bg-[#00538C] text-white rounded-[4px] text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+              >
+                {isTestingAi ? <WuiIcon type="refresh" size="xs" className="animate-spin" /> : <WuiIcon type="play" size="xs" />}
+                <span>Uji Primary</span>
+              </button>
+              {aiConfig.fallback_enabled && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleRunAiTest('fallback')}
+                    disabled={isTestingAi}
+                    className="px-2.5 py-1 bg-white hover:bg-[#F5F7FA] text-[#1A1C21] border border-[#D3DAE6] rounded-[4px] text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <WuiIcon type="play" size="xs" className="text-[#006BB4]" />
+                    <span>Uji Fallback</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRunAiTest('auto')}
+                    disabled={isTestingAi}
+                    className="px-2.5 py-1 bg-white hover:bg-[#F5F7FA] text-[#1A1C21] border border-[#D3DAE6] rounded-[4px] text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <WuiIcon type="bolt" size="xs" className="text-[#017D73]" />
+                    <span>Uji Auto-Fallback</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           <input
             type="text"
             value={testPrompt}
             onChange={(e) => setTestPrompt(e.target.value)}
-            className="w-full px-3 py-1.5 bg-white border border-[#D3DAE6] rounded text-[12px] outline-none"
+            className="w-full h-8 px-3 bg-white border border-[#D3DAE6] rounded-[4px] text-[12px] outline-none focus:border-[#006BB4]"
             placeholder="Masukkan prompt uji analisis..."
           />
 
           {testResult && (
-            <div className={`p-3 rounded text-[12px] border ${testResult.success ? 'bg-[#F0FDF4] border-[#BBF7D0] text-[#166534]' : 'bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]'}`}>
-              <div className="flex items-center justify-between font-semibold mb-1">
-                <span>{testResult.success ? `Sukses (Model: ${testResult.model || aiConfig.model})` : 'Gagal Inferensi'}</span>
-                {testResult.latency_ms && <span className="font-mono text-[11px]">Latensi: {testResult.latency_ms} ms</span>}
-              </div>
-              <p className="leading-relaxed whitespace-pre-wrap">{testResult.response || testResult.error}</p>
-            </div>
+            <WuiCallOut
+              tone={testResult.success ? 'success' : 'danger'}
+              title={
+                testResult.success
+                  ? `Sukses (${getProviderMeta(testResult.provider).shortLabel}: ${testResult.model || aiConfig.model}${testResult.used_fallback ? ' [via Fallback]' : ''})${testResult.latency_ms !== undefined ? ` - ${testResult.latency_ms} ms` : ''}`
+                  : 'Gagal Inferensi'
+              }
+            >
+              {testResult.primary_error && (
+                <div className="text-[11px] text-[#8A5300] mb-1">
+                  Catatan Primary gagal: {testResult.primary_error}
+                </div>
+              )}
+              <p className="whitespace-pre-wrap">{testResult.response || testResult.error}</p>
+            </WuiCallOut>
           )}
         </div>
-      </div>
+      </WuiPanel>
 
       {/* SECTION 2: Multi-Source Threat Intelligence Synthesis */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-5 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between pb-3 border-b border-[#E1E6EB]">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-[#E8F3FA] rounded text-[#006BB4]">
-              <Shield className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-[14px] font-bold text-[#1A1C21]">Multi-Source Threat Intelligence Synthesis (Ensemble)</h3>
-              <p className="text-[11px] text-[#5A626F]">
-                Sintesis koroborasi multi-intelijen: VirusTotal, MalwareBazaar, AlienVault OTX, dan MISP OSINT.
-              </p>
-            </div>
-          </div>
+      <WuiPanel
+        title="Multi-Source Threat Intelligence Synthesis (Ensemble)"
+        subtitle="Sintesis koroborasi multi-intelijen: VirusTotal, MalwareBazaar, AlienVault OTX, dan MISP OSINT."
+        accentColor="#007871"
+        right={
           <div className="flex items-center gap-2 text-[12px]">
-            <span className="text-[#5A626F] font-medium">Mode Konsensus:</span>
+            <span className="text-[#535966] font-medium">Mode Konsensus:</span>
             <select
               value={tiConfig.consensus_mode}
               onChange={(e) => setTiConfig({ ...tiConfig, consensus_mode: e.target.value })}
-              className="px-2.5 py-1 border border-[#D3DAE6] rounded text-[12px] font-semibold bg-white"
+              className="h-8 px-2.5 border border-[#D3DAE6] rounded-[4px] text-[12px] font-semibold bg-white focus:outline-none focus:border-[#006BB4]"
             >
               <option value="ensemble">Ensemble (Zero False-Negative)</option>
               <option value="majority">Majority Vote (Minimal 2 Sumber)</option>
               <option value="vt_first">Primary VT with Fallback</option>
             </select>
           </div>
-        </div>
-
+        }
+        bodyClassName="p-4"
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Card VirusTotal */}
-          <div className="p-4 border border-[#D3DAE6] rounded bg-[#FAFBFC] space-y-3">
+          <div className="p-4 border border-[#D3DAE6] rounded-[4px] bg-[#FAFBFD] space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-[#006BB4]" />
-                <span className="font-bold text-[#1A1C21] text-[13px]">1. VirusTotal API (Reputasi Hash Global)</span>
+                <WuiIcon type="globe" size="m" className="text-[#006BB4]" />
+                <span className="font-semibold text-[#1A1C21] text-[13px]">1. VirusTotal API (Reputasi Hash Global)</span>
               </div>
               <input
                 type="checkbox"
@@ -478,12 +1263,12 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                     },
                   })
                 }
-                className="rounded text-[#006BB4] focus:ring-0"
+                className="rounded-[2px] text-[#006BB4] focus:ring-0"
               />
             </div>
             <div className="grid grid-cols-2 gap-2 text-[12px]">
               <div>
-                <label className="block text-[#5A626F] mb-1">Ambang Deteksi HIGH</label>
+                <label className="block text-[#535966] mb-1">Ambang Deteksi HIGH</label>
                 <input
                   type="number"
                   min="1"
@@ -501,12 +1286,12 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                       },
                     })
                   }
-                  className="w-full px-2.5 py-1 border border-[#D3DAE6] rounded bg-white text-[12px]"
+                  className="w-full h-8 px-2.5 border border-[#D3DAE6] rounded-[4px] bg-white text-[12px]"
                 />
-                <span className="text-[10px] text-[#8A94A6]">Minimal engine terdeteksi</span>
+                <span className="text-[10px] text-[#69707D]">Minimal engine terdeteksi</span>
               </div>
               <div>
-                <label className="block text-[#5A626F] mb-1">Ambang CRITICAL</label>
+                <label className="block text-[#535966] mb-1">Ambang CRITICAL</label>
                 <input
                   type="number"
                   min="5"
@@ -524,13 +1309,13 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                       },
                     })
                   }
-                  className="w-full px-2.5 py-1 border border-[#D3DAE6] rounded bg-white text-[12px]"
+                  className="w-full h-8 px-2.5 border border-[#D3DAE6] rounded-[4px] bg-white text-[12px]"
                 />
-                <span className="text-[10px] text-[#8A94A6]">Auto-quarantine</span>
+                <span className="text-[10px] text-[#69707D]">Auto-quarantine</span>
               </div>
             </div>
             <div>
-              <label className="block text-[#5A626F] text-[12px] mb-1">API Key VirusTotal</label>
+              <label className="block text-[#535966] text-[12px] mb-1">API Key VirusTotal</label>
               <div className="relative">
                 <input
                   type={showVtKey ? 'text' : 'password'}
@@ -545,25 +1330,25 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                     })
                   }
                   placeholder={tiConfig.sources.virustotal.has_api_key ? 'Tersimpan di server' : 'API Key VT'}
-                  className="w-full pl-2.5 pr-8 py-1 border border-[#D3DAE6] rounded bg-white text-[12px] font-mono"
+                  className="w-full h-8 pl-2.5 pr-8 border border-[#D3DAE6] rounded-[4px] bg-white text-[12px] font-mono"
                 />
                 <button
                   type="button"
                   onClick={() => setShowVtKey(!showVtKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8A94A6]"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#69707D]"
                 >
-                  {showVtKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  {showVtKey ? <WuiIcon type="eyeClosed" size="s" /> : <WuiIcon type="eye" size="s" />}
                 </button>
               </div>
             </div>
           </div>
 
           {/* Card MalwareBazaar */}
-          <div className="p-4 border border-[#D3DAE6] rounded bg-[#FAFBFC] space-y-3">
+          <div className="p-4 border border-[#D3DAE6] rounded-[4px] bg-[#FAFBFD] space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-[#006BB4]" />
-                <span className="font-bold text-[#1A1C21] text-[13px]">2. MalwareBazaar (Signature Database)</span>
+                <WuiIcon type="database" size="m" className="text-[#006BB4]" />
+                <span className="font-semibold text-[#1A1C21] text-[13px]">2. MalwareBazaar (Signature Database)</span>
               </div>
               <input
                 type="checkbox"
@@ -577,7 +1362,7 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                     },
                   })
                 }
-                className="rounded text-[#006BB4] focus:ring-0"
+                className="rounded-[2px] text-[#006BB4] focus:ring-0"
               />
             </div>
             <div className="text-[12px] space-y-1.5 pt-1">
@@ -594,16 +1379,16 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                       },
                     })
                   }
-                  className="rounded text-[#006BB4] focus:ring-0"
+                  className="rounded-[2px] text-[#006BB4] focus:ring-0"
                 />
                 <span className="text-[#1A1C21]">Eskalasi Otomatis ke HIGH jika signature terdaftar</span>
               </label>
-              <p className="text-[11px] text-[#8A94A6]">
+              <p className="text-[11px] text-[#69707D]">
                 Mencegah celah false-negative ketika hash sampel baru belum terindeks penuh di engine antivirus VT.
               </p>
             </div>
             <div>
-              <label className="block text-[#5A626F] text-[12px] mb-1">API Key MalwareBazaar (Auth-Key)</label>
+              <label className="block text-[#535966] text-[12px] mb-1">API Key MalwareBazaar (Auth-Key)</label>
               <div className="relative">
                 <input
                   type={showMbKey ? 'text' : 'password'}
@@ -618,25 +1403,25 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                     })
                   }
                   placeholder={tiConfig.sources.malwarebazaar.has_api_key ? 'Tersimpan di server' : 'API Key MB'}
-                  className="w-full pl-2.5 pr-8 py-1 border border-[#D3DAE6] rounded bg-white text-[12px] font-mono"
+                  className="w-full h-8 pl-2.5 pr-8 border border-[#D3DAE6] rounded-[4px] bg-white text-[12px] font-mono"
                 />
                 <button
                   type="button"
                   onClick={() => setShowMbKey(!showMbKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8A94A6]"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#69707D]"
                 >
-                  {showMbKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  {showMbKey ? <WuiIcon type="eyeClosed" size="s" /> : <WuiIcon type="eye" size="s" />}
                 </button>
               </div>
             </div>
           </div>
 
           {/* Card AlienVault OTX */}
-          <div className="p-4 border border-[#D3DAE6] rounded bg-[#FAFBFC] space-y-3">
+          <div className="p-4 border border-[#D3DAE6] rounded-[4px] bg-[#FAFBFD] space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-[#006BB4]" />
-                <span className="font-bold text-[#1A1C21] text-[13px]">3. AlienVault OTX (Open Threat Exchange)</span>
+                <WuiIcon type="memory" size="m" className="text-[#006BB4]" />
+                <span className="font-semibold text-[#1A1C21] text-[13px]">3. AlienVault OTX (Open Threat Exchange)</span>
               </div>
               <input
                 type="checkbox"
@@ -650,11 +1435,11 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                     },
                   })
                 }
-                className="rounded text-[#006BB4] focus:ring-0"
+                className="rounded-[2px] text-[#006BB4] focus:ring-0"
               />
             </div>
             <div className="text-[12px]">
-              <label className="block text-[#5A626F] mb-1">Ambang Batas Pulses (Threat Pulses)</label>
+              <label className="block text-[#535966] mb-1">Ambang Batas Pulses (Threat Pulses)</label>
               <input
                 type="number"
                 min="1"
@@ -672,12 +1457,12 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                     },
                   })
                 }
-                className="w-full px-2.5 py-1 border border-[#D3DAE6] rounded bg-white text-[12px]"
+                className="w-full h-8 px-2.5 border border-[#D3DAE6] rounded-[4px] bg-white text-[12px]"
               />
-              <span className="text-[10px] text-[#8A94A6]">Minimal pulse untuk mengindikasikan file berbahaya</span>
+              <span className="text-[10px] text-[#69707D]">Minimal pulse untuk mengindikasikan file berbahaya</span>
             </div>
             <div>
-              <label className="block text-[#5A626F] text-[12px] mb-1">API Key OTX</label>
+              <label className="block text-[#535966] text-[12px] mb-1">API Key OTX</label>
               <div className="relative">
                 <input
                   type={showOtxKey ? 'text' : 'password'}
@@ -692,25 +1477,25 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                     })
                   }
                   placeholder={tiConfig.sources.alienvault_otx.has_api_key ? 'Tersimpan di server' : 'API Key OTX'}
-                  className="w-full pl-2.5 pr-8 py-1 border border-[#D3DAE6] rounded bg-white text-[12px] font-mono"
+                  className="w-full h-8 pl-2.5 pr-8 border border-[#D3DAE6] rounded-[4px] bg-white text-[12px] font-mono"
                 />
                 <button
                   type="button"
                   onClick={() => setShowOtxKey(!showOtxKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8A94A6]"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#69707D]"
                 >
-                  {showOtxKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                  {showOtxKey ? <WuiIcon type="eyeClosed" size="s" /> : <WuiIcon type="eye" size="s" />}
                 </button>
               </div>
             </div>
           </div>
 
           {/* Card MISP OSINT & Cache TTL */}
-          <div className="p-4 border border-[#D3DAE6] rounded bg-[#FAFBFC] space-y-3">
+          <div className="p-4 border border-[#D3DAE6] rounded-[4px] bg-[#FAFBFD] space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-[#006BB4]" />
-                <span className="font-bold text-[#1A1C21] text-[13px]">4. Cache &amp; Quota Optimization</span>
+                <WuiIcon type="database" size="m" className="text-[#006BB4]" />
+                <span className="font-semibold text-[#1A1C21] text-[13px]">4. Cache &amp; Quota Optimization</span>
               </div>
               <input
                 type="checkbox"
@@ -724,12 +1509,12 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                     },
                   })
                 }
-                className="rounded text-[#006BB4] focus:ring-0"
+                className="rounded-[2px] text-[#006BB4] focus:ring-0"
               />
             </div>
             <div className="grid grid-cols-3 gap-2 text-[12px]">
               <div>
-                <label className="block text-[#5A626F] mb-1">TTL Malicious</label>
+                <label className="block text-[#535966] mb-1">TTL Malicious</label>
                 <input
                   type="number"
                   min="1"
@@ -741,12 +1526,12 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                       cache_ttl: { ...tiConfig.cache_ttl, malicious_days: parseInt(e.target.value, 10) || 7 },
                     })
                   }
-                  className="w-full px-2 py-1 border border-[#D3DAE6] rounded bg-white text-[11px]"
+                  className="w-full h-8 px-2 border border-[#D3DAE6] rounded-[4px] bg-white text-[11px]"
                 />
-                <span className="text-[10px] text-[#8A94A6]">Hari</span>
+                <span className="text-[10px] text-[#69707D]">Hari</span>
               </div>
               <div>
-                <label className="block text-[#5A626F] mb-1">TTL Clean</label>
+                <label className="block text-[#535966] mb-1">TTL Clean</label>
                 <input
                   type="number"
                   min="1"
@@ -758,12 +1543,12 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                       cache_ttl: { ...tiConfig.cache_ttl, clean_hours: parseInt(e.target.value, 10) || 24 },
                     })
                   }
-                  className="w-full px-2 py-1 border border-[#D3DAE6] rounded bg-white text-[11px]"
+                  className="w-full h-8 px-2 border border-[#D3DAE6] rounded-[4px] bg-white text-[11px]"
                 />
-                <span className="text-[10px] text-[#8A94A6]">Jam</span>
+                <span className="text-[10px] text-[#69707D]">Jam</span>
               </div>
               <div>
-                <label className="block text-[#5A626F] mb-1">TTL Unknown</label>
+                <label className="block text-[#535966] mb-1">TTL Unknown</label>
                 <input
                   type="number"
                   min="1"
@@ -775,17 +1560,17 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                       cache_ttl: { ...tiConfig.cache_ttl, unknown_hours: parseInt(e.target.value, 10) || 6 },
                     })
                   }
-                  className="w-full px-2 py-1 border border-[#D3DAE6] rounded bg-white text-[11px]"
+                  className="w-full h-8 px-2 border border-[#D3DAE6] rounded-[4px] bg-white text-[11px]"
                 />
-                <span className="text-[10px] text-[#8A94A6]">Jam</span>
+                <span className="text-[10px] text-[#69707D]">Jam</span>
               </div>
             </div>
-            <p className="text-[11px] text-[#8A94A6] pt-1 leading-relaxed">
+            <p className="text-[11px] text-[#69707D] pt-1 leading-relaxed">
               Diferensial TTL melindungi kuota gratis API eksternal (maksimal 4 request/menit pada VT) saat armada 100 endpoint mengalami lonjakan insiden serentak.
             </p>
           </div>
         </div>
-      </div>
+      </WuiPanel>
     </form>
   );
 }

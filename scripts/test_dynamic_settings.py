@@ -113,6 +113,235 @@ class TestDynamicSettings(unittest.TestCase):
         self.assertEqual(res["model"], "local-llama-3")
         self.assertIn("Simulasi respons inferensi berhasil", res["response"])
 
+    def test_06_fallback_config_and_mask_protection(self):
+        fm._update_system_settings(
+            {
+                "ai_config": {
+                    "provider": "openai",
+                    "model": "gpt-4o-mini",
+                    "api_key": "sk-primary-test-key-123456",
+                    "fallback_enabled": True,
+                    "fallback_provider": "anthropic",
+                    "fallback_model": "claude-3-5-sonnet-latest",
+                    "fallback_api_key": "sk-ant-fallback-secret-987654",
+                    "fallback_base_url": "",
+                }
+            },
+            updated_by="admin_test",
+        )
+        masked = fm._get_masked_settings()["ai_config"]
+        self.assertEqual(masked["provider"], "openai")
+        self.assertEqual(masked["fallback_provider"], "anthropic")
+        self.assertTrue(masked["fallback_enabled"])
+        self.assertTrue(masked["has_fallback_api_key"])
+        self.assertIn("••••••••", masked["fallback_api_key"])
+
+        # Simpan ulang dengan nilai masked seperti dari form UI
+        fm._update_system_settings(
+            {
+                "ai_config": {
+                    "api_key": masked["api_key"],
+                    "fallback_api_key": masked["fallback_api_key"],
+                    "fallback_model": "claude-3-5-haiku-latest",
+                }
+            },
+            updated_by="admin_test",
+        )
+        raw_ai = fm._get_system_setting("ai_config")
+        self.assertEqual(raw_ai["api_key"], "sk-primary-test-key-123456")
+        self.assertEqual(raw_ai["fallback_api_key"], "sk-ant-fallback-secret-987654")
+        self.assertEqual(raw_ai["fallback_model"], "claude-3-5-haiku-latest")
+
+    def test_07_auto_fallback_on_primary_failure(self):
+        # Primary openai tanpa key yang valid -> fallback ke custom simulasi
+        res = fm._test_ai_inference(
+            "openai",
+            "gpt-4o-mini",
+            "Tes auto fallback",
+            api_key="",
+            fallback_config={
+                "enabled": True,
+                "provider": "custom",
+                "model": "fallback-local-llm",
+                "api_key": "",
+                "base_url": "",
+            },
+            target="auto",
+        )
+        self.assertTrue(res["success"])
+        self.assertTrue(res.get("used_fallback"))
+        self.assertEqual(res["provider"], "custom")
+        self.assertEqual(res["model"], "fallback-local-llm")
+        self.assertIn("Simulasi respons inferensi berhasil", res["response"])
+
+    def test_08_openai_and_anthropic_real_http_dispatch(self):
+        import io
+        import json as _json
+        from unittest.mock import patch
+
+        class _FakeResp:
+            def __init__(self, payload):
+                self._data = _json.dumps(payload).encode("utf-8")
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        captured = []
+
+        def fake_urlopen(req, timeout=20):
+            captured.append((req.full_url, dict(req.header_items()), _json.loads(req.data.decode("utf-8"))))
+            if "anthropic" in req.full_url:
+                return _FakeResp({"content": [{"type": "text", "text": "Analisis Claude aman."}]})
+            return _FakeResp({"choices": [{"message": {"content": "Analisis GPT aman."}}]})
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            res_oai = fm._invoke_ai_provider(
+                "openai",
+                "gpt-4o",
+                "Cek hash",
+                api_key="sk-test-openai",
+                system_instruction="Instruksi SOC",
+            )
+            res_ant = fm._invoke_ai_provider(
+                "anthropic",
+                "claude-3-5-sonnet-latest",
+                "Cek hash",
+                api_key="sk-ant-test",
+                system_instruction="Instruksi SOC",
+            )
+
+        self.assertTrue(res_oai["success"])
+        self.assertEqual(res_oai["response"], "Analisis GPT aman.")
+        self.assertEqual(captured[0][0], "https://api.openai.com/v1/chat/completions")
+        self.assertEqual(captured[0][2]["messages"][0]["role"], "system")
+
+        self.assertTrue(res_ant["success"])
+        self.assertEqual(res_ant["response"], "Analisis Claude aman.")
+        self.assertEqual(captured[1][0], "https://api.anthropic.com/v1/messages")
+        self.assertEqual(captured[1][2]["system"], "Instruksi SOC")
+
+    def test_09_user_touch_login_updates_last_login_at(self):
+        # Pastikan user baru memiliki last_login_at None lalu terisi via _user_touch_login
+        created = fm._user_create(
+            username="sso_auditor",
+            password="StrongPassword!123",
+            role="viewer",
+            email="sso-auditor@example.com",
+            name="SSO Auditor",
+        )
+        self.assertIsNone(created["last_login_at"])
+
+        ok_email = fm._user_touch_login(email="SSO-AUDITOR@EXAMPLE.COM")
+        self.assertTrue(ok_email)
+        users = {u["username"]: u for u in fm._user_list()}
+        self.assertIsNotNone(users["sso_auditor"]["last_login_at"])
+
+        # Fallback match via username bila email tidak cocok/kosong
+        ok_admin = fm._user_touch_login(username="admin")
+        self.assertTrue(ok_admin)
+        users_after = {u["username"]: u for u in fm._user_list()}
+        self.assertIsNotNone(users_after["admin"]["last_login_at"])
+
+        # User tidak dikenal mengembalikan False
+        self.assertFalse(fm._user_touch_login(username="nobody_xyz", email="none@invalid.local"))
+
+    def test_10_saved_api_keys_masking_and_switch(self):
+        saved_res = fm._update_system_settings(
+            {
+                "ai_config": {
+                    "provider": "experiential",
+                    "model": "gpt-6-luna:free",
+                    "primary_saved_key_id": "key_xpl_1",
+                    "saved_api_keys": [
+                        {
+                            "id": "key_xpl_1",
+                            "name": "Experiential Free",
+                            "provider": "experiential",
+                            "model": "gpt-6-luna:free",
+                            "base_url": "",
+                            "api_key": "xpl_secret_test_key_998877",
+                            "models": [
+                                {"id": "gpt-6-luna:free", "label": "gpt-6-luna:free [FREE]", "free": True, "chat_supported": True},
+                            ],
+                        }
+                    ],
+                }
+            },
+            updated_by="admin_test",
+        )
+        ai_safe = saved_res["ai_config"]
+        self.assertEqual(ai_safe["primary_saved_key_id"], "key_xpl_1")
+        self.assertEqual(len(ai_safe["saved_api_keys"]), 1)
+        self.assertIn("••••••••", ai_safe["saved_api_keys"][0]["api_key"])
+        self.assertTrue(ai_safe["saved_api_keys"][0]["has_api_key"])
+
+        # Re-save dengan nilai masked (seperti dari UI) tidak boleh menimpa secret asli
+        fm._update_system_settings(
+            {"ai_config": {"saved_api_keys": ai_safe["saved_api_keys"], "primary_saved_key_id": "key_xpl_1"}},
+            updated_by="admin_test",
+        )
+        raw_ai = fm._get_system_setting("ai_config")
+        self.assertEqual(raw_ai["saved_api_keys"][0]["api_key"], "xpl_secret_test_key_998877")
+        self.assertEqual(raw_ai["api_key"], "xpl_secret_test_key_998877")
+
+    def test_11_experiential_fetch_models_and_invoke(self):
+        import json as _json
+        from unittest.mock import patch
+
+        class _FakeResp:
+            def __init__(self, payload):
+                self._data = _json.dumps(payload).encode("utf-8")
+
+            def read(self):
+                return self._data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        captured = []
+
+        def fake_urlopen(req, timeout=20):
+            captured.append((req.full_url, dict(req.header_items())))
+            if req.full_url.endswith("/models"):
+                return _FakeResp(
+                    {
+                        "data": [
+                            {"id": "aion-2.0", "pricing": {"input_nano_usd_per_million_tokens": 800, "output_nano_usd_per_million_tokens": 1600}},
+                            {"id": "clef:free", "pricing": {"input_nano_usd_per_million_tokens": 0, "output_nano_usd_per_million_tokens": 0}},
+                            {"id": "gpt-6-luna:free", "context_window_tokens": 1050000, "pricing": {"input_nano_usd_per_million_tokens": 0, "output_nano_usd_per_million_tokens": 0}},
+                        ]
+                    }
+                )
+            return _FakeResp({"choices": [{"message": {"content": "Isolasi workstation segera."}}]})
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            res_models = fm._fetch_provider_models("experiential", saved_key_id="key_xpl_1")
+            res_test = fm._test_ai_inference("experiential", "gpt-6-luna:free", "Cek alert", saved_key_id="key_xpl_1")
+
+        self.assertTrue(res_models["success"])
+        self.assertEqual(res_models["free_count"], 2)
+        # Chat :free harus diurutkan paling atas sebelum non-chat :free dan berbayar
+        self.assertEqual(res_models["models"][0]["id"], "gpt-6-luna:free")
+        self.assertTrue(res_models["models"][0]["chat_supported"])
+        self.assertEqual(res_models["models"][1]["id"], "clef:free")
+        self.assertFalse(res_models["models"][1]["chat_supported"])
+        self.assertEqual(res_models["models"][2]["id"], "aion-2.0")
+        self.assertFalse(res_models["models"][2]["free"])
+
+        self.assertTrue(res_test["success"])
+        self.assertEqual(res_test["response"], "Isolasi workstation segera.")
+        self.assertEqual(captured[0][0], "https://api.experientiallabs.ai/v1/models")
+        self.assertEqual(captured[1][0], "https://api.experientiallabs.ai/v1/chat/completions")
+
 
 if __name__ == "__main__":
     unittest.main()

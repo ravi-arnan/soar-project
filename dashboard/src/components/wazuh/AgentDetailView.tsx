@@ -6,6 +6,7 @@ import { agentStatus, formatWazuhTime, formatClock, severityLevel } from '@/lib/
 import { postCommand } from '@/lib/commands';
 import { ExpandableCard } from './ExpandableCard';
 import { PeriodFilter } from './PeriodFilter';
+import { WuiHealth } from '../wui/WuiPrimitives';
 import { useEventHistory, periodToWindow } from '@/lib/fleet';
 import type { FleetAgent, FleetEvent, FleetScanResult, PeriodValue } from '@/lib/fleet';
 
@@ -17,12 +18,6 @@ interface AgentDetailViewProps {
 }
 
 const DEFAULT_PERIOD: PeriodValue = { preset: '7d', since: null, until: null };
-
-const STATUS_DOT: Record<string, string> = {
-  active: '#00A389',
-  disconnected: '#BD271E',
-  never_connected: '#98A2B3',
-};
 
 interface MetricPoint {
   ts: string;
@@ -89,8 +84,8 @@ function ResourceChart({ agentId }: { agentId: string }) {
               <stop offset="100%" stopColor="#006BB4" stopOpacity="0.0" />
             </linearGradient>
             <linearGradient id="ramGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#00A389" stopOpacity="0.20" />
-              <stop offset="100%" stopColor="#00A389" stopOpacity="0.0" />
+              <stop offset="0%" stopColor="#007871" stopOpacity="0.20" />
+              <stop offset="100%" stopColor="#007871" stopOpacity="0.0" />
             </linearGradient>
           </defs>
 
@@ -139,7 +134,7 @@ function ResourceChart({ agentId }: { agentId: string }) {
 
           {/* Metric polyline paths */}
           <polyline points={cpuPoints} fill="none" stroke="#006BB4" strokeWidth="1.75" strokeLinecap="round" />
-          <polyline points={ramPoints} fill="none" stroke="#00A389" strokeWidth="1.75" strokeLinecap="round" />
+          <polyline points={ramPoints} fill="none" stroke="#007871" strokeWidth="1.75" strokeLinecap="round" />
 
           {/* Latest data point markers */}
           <circle
@@ -154,7 +149,7 @@ function ResourceChart({ agentId }: { agentId: string }) {
             cx={x(n - 1)}
             cy={yRam(last)}
             r="3"
-            fill="#00A389"
+            fill="#007871"
             stroke="#FFFFFF"
             strokeWidth="1.5"
           />
@@ -168,7 +163,7 @@ function ResourceChart({ agentId }: { agentId: string }) {
             <span className="font-sans text-[#1A1C21] font-semibold">CPU</span> {last.cpu_pct.toFixed(1)}%
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#00A389]" />
+            <span className="w-2.5 h-2.5 rounded-full bg-[#007871]" />
             <span className="font-sans text-[#1A1C21] font-semibold">RAM</span> {last.ram_used.toFixed(2)}/{last.ram_total.toFixed(2)} GB (
             {last.ram_total > 0 ? ((last.ram_used / last.ram_total) * 100).toFixed(0) : 0}%)
           </span>
@@ -197,7 +192,7 @@ function QuarantinePanel({ agentId, canQuarantine, events }: { agentId: string; 
       const j = await r.json();
       setState(
         r.ok && j.status === 'queued'
-          ? 'diantrekan ✓ — menunggu agent poll (≤60 dtk)'
+          ? 'diantrekan, menunggu agent poll (<=60 dtk)'
           : `gagal: ${j.error || r.status}`
       );
     } catch {
@@ -275,7 +270,7 @@ function ScanPanel({ agentId, canScan, watchPaths }: { agentId: string; canScan:
       const j = await r.json();
       setState(
         r.ok && j.status === 'queued'
-          ? 'diantrekan ✓ — menunggu agent poll (≤60 dtk)'
+          ? 'diantrekan, menunggu agent poll (<=60 dtk)'
           : `gagal: ${j.error || r.status}`
       );
     } catch {
@@ -320,7 +315,7 @@ function ScanPanel({ agentId, canScan, watchPaths }: { agentId: string; canScan:
         </button>
         <button
           onClick={load}
-          className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[11px] text-[#5A626F] hover:bg-[#F8FAFC]"
+          className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[11px] text-[#5A626F] hover:bg-[#FAFBFD]"
         >
           Muat ulang
         </button>
@@ -440,7 +435,7 @@ export function AgentDetailView({
     { label: 'CRITICAL', count: 0, color: '#BD271E' },
     { label: 'HIGH', count: 0, color: '#D97706' },
     { label: 'MEDIUM', count: 0, color: '#F5A623' },
-    { label: 'UNVERIFIED', count: 0, color: '#64748B' },
+    { label: 'UNVERIFIED', count: 0, color: '#535966' },
     { label: 'INFO', count: 0, color: '#006BB4' },
   ];
   allAgentEvents.forEach((e) => {
@@ -512,13 +507,20 @@ export function AgentDetailView({
         </div>
 
         <div>
-          <div className="text-[#8A94A6] text-[11px]">Status</div>
-          <div
-            className="flex items-center gap-1.5 font-medium mt-0.5"
-            style={{ color: STATUS_DOT[status] }}
-          >
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_DOT[status] }}></span>
-            <span>{status.replace('_', ' ')}</span>
+          <div className="text-[#69707D] text-[11px]">Status</div>
+          <div className="mt-0.5">
+            <WuiHealth
+              tone={
+                status === 'active'
+                  ? 'success'
+                  : status === 'disconnected'
+                  ? 'danger'
+                  : 'default'
+              }
+              className="capitalize"
+            >
+              {status.replace('_', ' ')}
+            </WuiHealth>
           </div>
         </div>
 
@@ -671,7 +673,7 @@ export function AgentDetailView({
                 <div key={d.label} className="flex-1 flex flex-col justify-end items-center h-full" title={`${d.label}: ${d.count} event`}>
                   <div
                     style={{ height: `${Math.round((d.count / agentDailyMax) * 100)}%`, minHeight: d.count > 0 ? 4 : 0 }}
-                    className="bg-[#00A389] w-full"
+                    className="bg-[#007871] w-full"
                   ></div>
                 </div>
               ))}

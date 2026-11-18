@@ -16,6 +16,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _TEST_DIR = tempfile.TemporaryDirectory()
 os.environ["FLEET_EVENTS_DB"] = os.path.join(_TEST_DIR.name, "test-users.db")
@@ -146,6 +147,60 @@ class TestUserManagement(unittest.TestCase):
 
         none_user = fm._user_by_email("unknown@notfound.com")
         self.assertIsNone(none_user)
+
+    def test_09_cloudflare_sync_unconfigured(self):
+        with mock.patch.dict(os.environ, {
+            "CLOUDFLARE_API_TOKEN": "",
+            "CLOUDFLARE_ACCOUNT_ID": "",
+            "CLOUDFLARE_ACCESS_POLICY_ID": "",
+        }, clear=False):
+            res = fm._sync_cloudflare_access_policy()
+            self.assertFalse(res["configured"])
+            self.assertFalse(res["synced"])
+            self.assertEqual(res["status"], "unconfigured")
+
+    def test_10_cloudflare_sync_app_policy_preserves_non_email_rules(self):
+        captured = {}
+
+        def fake_cf_req(url, token, method="GET", payload=None, timeout=12):
+            captured.setdefault("calls", []).append((method, url, payload))
+            if method == "GET":
+                return {
+                    "success": True,
+                    "result": {
+                        "id": "pol-123",
+                        "name": "Admin only",
+                        "decision": "allow",
+                        "precedence": 1,
+                        "include": [
+                            {"email": {"email": "stale@old.com"}},
+                            {"ip": {"ip": "10.0.0.0/8"}},
+                        ],
+                        "require": [],
+                        "exclude": [],
+                    },
+                }
+            return {"success": True, "result": {"id": "pol-123", "name": "Admin only"}}
+
+        with mock.patch.dict(os.environ, {
+            "CLOUDFLARE_API_TOKEN": "cf-test-token-secret",
+            "CLOUDFLARE_ACCOUNT_ID": "acc-123",
+            "CLOUDFLARE_ACCESS_APP_ID": "app-456",
+            "CLOUDFLARE_ACCESS_POLICY_ID": "pol-123",
+        }, clear=False), mock.patch.object(fm, "_cf_api_request", side_effect=fake_cf_req):
+            res = fm._sync_cloudflare_access_policy()
+            self.assertTrue(res["configured"])
+            self.assertTrue(res["synced"])
+            self.assertEqual(res["status"], "synced")
+            self.assertIn("raviarnankeren@gmail.com", res["emails"])
+            self.assertIn("ravinewgemini@gmail.com", res["emails"])
+            put_call = [c for c in captured["calls"] if c[0] == "PUT"][0]
+            self.assertIn("/accounts/acc-123/access/apps/app-456/policies/pol-123", put_call[1])
+            include_rules = put_call[2]["include"]
+            self.assertIn({"ip": {"ip": "10.0.0.0/8"}}, include_rules)
+            self.assertNotIn({"email": {"email": "stale@old.com"}}, include_rules)
+            self.assertIn({"email": {"email": "raviarnankeren@gmail.com"}}, include_rules)
+            self.assertIn({"email": {"email": "ravinewgemini@gmail.com"}}, include_rules)
 
 
 if __name__ == "__main__":

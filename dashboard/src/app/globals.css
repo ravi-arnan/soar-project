@@ -7,22 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -39,82 +26,85 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
 }
 
+/* OpenSearch UI (OUI) / Wazuh UI (WUI) Official Light Theme Tokens */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --oui-color-primary: #006BB4;
+  --oui-color-secondary: #017D73;
+  --oui-color-success: #017D73;
+  --oui-color-accent: #DD0A73;
+  --oui-color-warning: #F5A700;
+  --oui-color-warning-text: #935E00;
+  --oui-color-danger: #BD271E;
+  --oui-color-empty-shade: #FFFFFF;
+  --oui-color-lightest-shade: #F5F7FA;
+  --oui-color-light-shade: #D3DAE6;
+  --oui-color-medium-shade: #98A2B3;
+  --oui-color-dark-shade: #69707D;
+  --oui-color-darkest-shade: #343741;
+  --oui-page-background: #FAFBFD;
+  --oui-title-color: #1A1C21;
+
+  --wui-canvas: #FAFBFD;
+  --wui-surface: #FFFFFF;
+  --wui-surface-subdued: #F5F7FA;
+  --wui-border: #D3DAE6;
+  --wui-border-light: #E9EDF3;
+  --wui-ink: #1A1C21;
+  --wui-ink-body: #343741;
+  --wui-ink-subdued: #535966;
+  --wui-ink-muted: #69707D;
+  --wui-primary: #006BB4;
+  --wui-primary-hover: #00538C;
+  --wui-success: #017D73;
+  --wui-danger: #BD271E;
+  --wui-warning: #F5A700;
+
+  --background: #FAFBFD;
+  --foreground: #1A1C21;
+  --card: #FFFFFF;
+  --card-foreground: #1A1C21;
+  --popover: #FFFFFF;
+  --popover-foreground: #1A1C21;
+  --primary: #006BB4;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F5F7FA;
+  --secondary-foreground: #1A1C21;
+  --muted: #F5F7FA;
+  --muted-foreground: #535966;
+  --accent: #EBF5FB;
+  --accent-foreground: #006BB4;
+  --destructive: #BD271E;
+  --border: #D3DAE6;
+  --input: #D3DAE6;
+  --ring: #006BB4;
+  --radius: 4px;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+/* Official OpenSearch UI (.ouiIcon) two-tone module & single-tone glyph rules */
+.ouiIcon {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+  fill: currentColor;
+}
+
+.ouiIcon--app {
+  fill: #343741;
+}
+
+.ouiIcon--app .ouiIcon__fillSecondary {
+  fill: #017D73;
+}
+
+.ouiIcon--app.ouiIcon--mono,
+.ouiIcon--app.ouiIcon--mono .ouiIcon__fillSecondary {
+  fill: currentColor;
 }
 
 @layer base {
@@ -122,9 +112,14 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--wui-canvas);
+    color: var(--wui-ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
   }
   html {
-    @apply font-sans;
+    font-family: var(--font-sans);
   }
 }

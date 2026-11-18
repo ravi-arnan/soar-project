@@ -1,16 +1,14 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
-import { Viewport } from "next";
-
 export const metadata: Metadata = {
-  title: "Wazuh — Fleet Monitor",
+  title: "Wazuh - SOAR Fleet Monitor",
   description:
-    "Dashboard fleet SOAR: status agent Wazuh + soar-agent ringan, security events, integrity monitoring.",
+    "Dashboard fleet SOAR berbasis Wazuh UI: status agent, security events, integrity monitoring, threat intelligence, dan orkestrasi n8n.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#011a2f",
+  themeColor: "#006BB4",
   width: "device-width",
   initialScale: 1,
 };

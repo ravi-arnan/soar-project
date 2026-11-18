@@ -10,7 +10,7 @@ import type { HistorySource, PeriodPreset } from '@/lib/fleet';
 
 function ViewSkeleton() {
   return (
-    <div className="p-8 text-center text-[#5A626F] text-sm animate-pulse bg-white border border-[#D3DAE6] rounded">
+    <div className="p-8 text-center text-[#535966] text-sm bg-white border border-[#D3DAE6] rounded-[4px]">
       Memuat modul...
     </div>
   );
@@ -70,6 +70,7 @@ export default function Home() {
   const [eventsActiveTab, setEventsActiveTab] = useState<'dashboard' | 'events' | undefined>(undefined);
   const [eventsPeriod, setEventsPeriod] = useState<PeriodPreset | undefined>(undefined);
   const [eventsSource, setEventsSource] = useState<HistorySource | undefined>(undefined);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'keys' | 'dynamic-config'>('general');
 
   const [refreshMs, setRefreshMs] = useState(() => {
     try {
@@ -199,6 +200,9 @@ export default function Home() {
       setEventsPeriod(options?.period);
       setEventsSource(options?.source);
     }
+    if (viewId === 'settings') {
+      setSettingsInitialTab('general');
+    }
     setCurrentView(viewId);
   };
 
@@ -211,6 +215,7 @@ export default function Home() {
         online={online}
         stats={stats}
         health={health}
+        activeView={currentView}
         onNavigate={handleNavigate}
         onRefresh={refresh}
       />
@@ -316,10 +321,17 @@ export default function Home() {
         {currentView === 'mitre' && <MitreAttackView />}
 
         {currentView === 'network-map' && (
-          <NetworkMapView agents={agents} onSelectAgent={handleSelectAgent} />
+          <NetworkMapView agents={agents} health={health} onSelectAgent={handleSelectAgent} />
         )}
 
-        {currentView === 'threat-intel' && <ThreatIntelView />}
+        {currentView === 'threat-intel' && (
+          <ThreatIntelView
+            onOpenAiSettings={() => {
+              setSettingsInitialTab('dynamic-config');
+              setCurrentView('settings');
+            }}
+          />
+        )}
 
         {currentView === 'users' && <UserManagementView />}
 
@@ -333,6 +345,7 @@ export default function Home() {
             online={online}
             refreshMs={refreshMs}
             onRefreshMsChange={updateRefreshMs}
+            initialTab={settingsInitialTab}
           />
         )}
       </main>

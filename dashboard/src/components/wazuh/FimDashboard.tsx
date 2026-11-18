@@ -1,25 +1,11 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import {
-  FileText,
-  Clock,
-  User,
-  Users,
-  HardDrive,
-  Key,
-  Shield,
-  ShieldCheck,
-  ShieldAlert,
-  ChevronDown,
-  X,
-  ExternalLink,
-  Copy,
-  Check,
-} from 'lucide-react';
+import { WuiIcon } from '../wui/WuiIcon';
 
 import { formatWazuhTime, severityLevel, useEventHistory, periodToWindow } from '@/lib/fleet';
 import { PeriodFilter } from './PeriodFilter';
+import { WuiHealth, WuiModal } from '../wui/WuiPrimitives';
 import type { PeriodValue, FleetEvent } from '@/lib/fleet';
 import { postCommand } from '@/lib/commands';
 
@@ -145,7 +131,7 @@ export function FimDashboard() {
       const j = await r.json();
       setArState((s) => ({
         ...s,
-        [target]: r.ok && j.status === 'queued' ? 'queued ✓' : `gagal: ${j.error || r.status}`,
+        [target]: r.ok && j.status === 'queued' ? 'queued' : `gagal: ${j.error || r.status}`,
       }));
     } catch {
       setArState((s) => ({ ...s, [target]: 'gagal: jaringan' }));
@@ -216,23 +202,23 @@ export function FimDashboard() {
 
       {activeSubtab === 'dashboard' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 bg-white border border-[#D3DAE6] rounded p-4 text-center">
-            <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">File termonitor</div>
-              <div className="text-[32px] font-semibold text-[#006BB4] leading-tight mt-1">{files.length}</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 bg-white border border-[#D3DAE6] rounded-[4px] divide-y sm:divide-y-0 sm:divide-x divide-[#E9EDF3] text-center">
+            <div className="py-3 px-4">
+              <div className="text-[12px] text-[#535966] font-medium">File termonitor</div>
+              <div className="text-[24px] font-semibold text-[#1A1C21] tabular-nums leading-tight mt-1">{files.length}</div>
             </div>
-            <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">Total hits</div>
-              <div className="text-[32px] font-semibold text-[#00A389] leading-tight mt-1">{totalHits}</div>
+            <div className="py-3 px-4">
+              <div className="text-[12px] text-[#535966] font-medium">Total hits</div>
+              <div className="text-[24px] font-semibold text-[#007871] tabular-nums leading-tight mt-1">{totalHits}</div>
             </div>
-            <div>
-              <div className="text-[12px] text-[#5A626F] font-medium">File dengan hits terbanyak</div>
+            <div className="py-3 px-4">
+              <div className="text-[12px] text-[#535966] font-medium">File dengan hits terbanyak</div>
               <div className="text-[13px] font-mono text-[#1A1C21] mt-2 truncate" title={topFiles[0]?.[0] || '-'}>
                 {topFiles[0]?.[0] || '-'}
               </div>
             </div>
           </div>
-          <div className="bg-white border border-[#D3DAE6] rounded p-4">
+          <div className="bg-white border border-[#D3DAE6] rounded-[4px] p-4">
             <h2 className="text-[14px] font-semibold mb-3">Top 5 file per hits</h2>
             {topFiles.length ? (
               <div className="space-y-2">
@@ -244,11 +230,11 @@ export function FimDashboard() {
                       setActiveSubtab('inventory');
                     }}
                     className="w-full text-left"
-                    title={`${path} — ${n} hits (klik untuk detail)`}
+                    title={`${path} (${n} hits, klik untuk detail)`}
                   >
                     <div className="flex items-center justify-between text-[12px] mb-1">
                       <span className="font-mono text-[#006BB4] hover:underline truncate max-w-[70%]">{path}</span>
-                      <span className="font-semibold text-[#5A626F]">{n}</span>
+                      <span className="font-semibold text-[#5A626F] tabular-nums">{n}</span>
                     </div>
                     <div className="h-2 bg-[#F0F4F8] rounded">
                       <div className="h-2 bg-[#006BB4] rounded" style={{ width: `${Math.round((n / topMax) * 100)}%` }} />
@@ -257,7 +243,7 @@ export function FimDashboard() {
                 ))}
               </div>
             ) : (
-              <div className="text-[13px] text-[#8A94A6]">belum ada event — drop EICAR di folder yang diawasi agent</div>
+              <div className="text-[13px] text-[#69707D]">Belum ada event. Drop EICAR di folder yang diawasi agent.</div>
             )}
           </div>
         </div>
@@ -269,7 +255,7 @@ export function FimDashboard() {
           <div className="overflow-x-auto text-[12px]">
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-[#D3DAE6] text-[#5A626F] font-semibold bg-[#F8FAFC]">
+                <tr className="border-b border-[#D3DAE6] text-[#5A626F] font-semibold bg-[#FAFBFD]">
                   <th className="py-2 px-3">Time ↓</th>
                   <th className="py-2 px-3">Path</th>
                   <th className="py-2 px-3">Action</th>
@@ -281,7 +267,7 @@ export function FimDashboard() {
                 {[...events].reverse().map((e, i) => {
                   const level = severityLevel(e.severity);
                   return (
-                    <tr key={`${e.ts}-${i}`} className="hover:bg-[#F8FAFC]">
+                    <tr key={`${e.ts}-${i}`} className="hover:bg-[#FAFBFD]">
                       <td className="py-2 px-3 text-[#5A626F] whitespace-nowrap">{formatWazuhTime(e.ts)}</td>
                       <td className="py-2 px-3 font-mono text-[#006BB4] truncate max-w-[280px]" title={e.path}>{e.path || '-'}</td>
                       <td className="py-2 px-3 font-medium text-[#1A1C21]">{e.status || '-'}</td>
@@ -323,7 +309,7 @@ export function FimDashboard() {
             />
           </div>
 
-          <div className="text-[10px] uppercase font-bold text-[#8A94A6]">File ↑</div>
+          <div className="text-[11px] font-semibold text-[#69707D]">File</div>
 
           <div className="space-y-0.5 overflow-y-auto max-h-[600px] text-[12px] font-mono">
             {filteredFiles.map((file) => (
@@ -333,7 +319,7 @@ export function FimDashboard() {
                 className={`w-full text-left px-2 py-1.5 rounded truncate transition-colors ${
                   currentPath === file.path
                     ? 'bg-[#EBF5FB] text-[#006BB4] font-semibold'
-                    : 'text-[#5A626F] hover:bg-[#F8FAFC]'
+                    : 'text-[#5A626F] hover:bg-[#FAFBFD]'
                 }`}
                 title={file.path}
               >
@@ -356,86 +342,86 @@ export function FimDashboard() {
           <div className="bg-white border border-[#D3DAE6] rounded p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-[#EBEFF5] pb-3">
               <div className="text-[16px] font-semibold text-[#1A1C21] font-mono">{currentPath}</div>
-              <button onClick={resetSelection} title="Reset pilihan file + pencarian" className="text-[#8A94A6] hover:text-[#1A1C21]">
-                <X className="w-4 h-4" />
+              <button onClick={resetSelection} title="Reset pilihan file + pencarian" className="text-[#69707D] hover:text-[#1A1C21]" aria-label="Reset">
+                <WuiIcon type="cross" size="m" />
               </button>
             </div>
 
             <div className="flex items-center gap-1.5 text-[13px] font-semibold text-[#1A1C21]">
-              <ChevronDown className="w-4 h-4" />
+              <WuiIcon type="arrowDown" size="m" />
               <span>Details</span>
             </div>
 
             {/* Metadata 3-Column Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-y-4 gap-x-6 text-[12px]">
               <div className="flex items-start gap-2.5">
-                <Clock className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="clock" size="m" className="text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">Last analysis</div>
+                  <div className="text-[#69707D]">Last analysis</div>
                   <div className="font-medium text-[#1A1C21]">{metadata.lastAnalysis}</div>
                 </div>
               </div>
 
               <div className="flex items-start gap-2.5">
-                <Clock className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="clock" size="m" className="text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">Last modified</div>
+                  <div className="text-[#69707D]">Last modified</div>
                   <div className="font-medium text-[#1A1C21]">{metadata.lastModified}</div>
                 </div>
               </div>
 
               <div className="flex items-start gap-2.5">
-                <User className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="user" size="m" className="text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">User</div>
+                  <div className="text-[#69707D]">User</div>
                   <div className="font-medium text-[#1A1C21]">{metadata.user}</div>
                 </div>
               </div>
 
               <div className="flex items-start gap-2.5">
-                <User className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="user" size="m" className="text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">User ID</div>
+                  <div className="text-[#69707D]">User ID</div>
                   <div className="font-medium text-[#1A1C21]">{metadata.userId}</div>
                 </div>
               </div>
 
               <div className="flex items-start gap-2.5">
-                <Users className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="usersRolesApp" size="m" className="ouiIcon--mono text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">Group</div>
+                  <div className="text-[#69707D]">Group</div>
                   <div className="font-medium text-[#1A1C21]">{metadata.group}</div>
                 </div>
               </div>
 
               <div className="flex items-start gap-2.5">
-                <Users className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="usersRolesApp" size="m" className="ouiIcon--mono text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">Group ID</div>
+                  <div className="text-[#69707D]">Group ID</div>
                   <div className="font-medium text-[#1A1C21]">{metadata.groupId}</div>
                 </div>
               </div>
 
               <div className="flex items-start gap-2.5">
-                <HardDrive className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="storage" size="m" className="text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">Size</div>
+                  <div className="text-[#69707D]">Size</div>
                   <div className="font-medium text-[#1A1C21]">{metadata.size}</div>
                 </div>
               </div>
 
               <div className="flex items-start gap-2.5">
-                <FileText className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="document" size="m" className="text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">Inode</div>
+                  <div className="text-[#69707D]">Inode</div>
                   <div className="font-medium text-[#1A1C21]">{metadata.inode}</div>
                 </div>
               </div>
 
               <div className="flex items-start gap-2.5">
-                <Key className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="lock" size="m" className="text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">MD5</div>
+                  <div className="text-[#69707D]">MD5</div>
                   <div className="font-mono text-[#1A1C21] text-[11px] truncate max-w-[180px]">
                     {metadata.md5}
                   </div>
@@ -443,9 +429,9 @@ export function FimDashboard() {
               </div>
 
               <div className="flex items-start gap-2.5">
-                <Key className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="lock" size="m" className="text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">SHA1</div>
+                  <div className="text-[#69707D]">SHA1</div>
                   <div className="font-mono text-[#1A1C21] text-[11px] truncate max-w-[180px]">
                     {metadata.sha1}
                   </div>
@@ -453,9 +439,9 @@ export function FimDashboard() {
               </div>
 
               <div className="flex items-start gap-2.5 md:col-span-2">
-                <Key className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="lock" size="m" className="text-[#006BB4] mt-0.5" />
                 <div className="min-w-0">
-                  <div className="text-[#8A94A6]">SHA256</div>
+                  <div className="text-[#69707D]">SHA256</div>
                   <div className="font-mono text-[#1A1C21] text-[11px] truncate" title={metadata.sha256}>
                     {metadata.sha256}
                   </div>
@@ -463,40 +449,40 @@ export function FimDashboard() {
               </div>
 
               <div className="flex items-start gap-2.5">
-                <Shield className="w-4 h-4 text-[#006BB4] mt-0.5 shrink-0" />
+                <WuiIcon type="securityApp" size="m" className="ouiIcon--mono text-[#006BB4] mt-0.5" />
                 <div>
-                  <div className="text-[#8A94A6]">Permissions</div>
+                  <div className="text-[#69707D]">Permissions</div>
                   <div className="font-mono text-[#1A1C21]">{metadata.permissions}</div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Threat Intelligence & Security Assessment Card (Taste Skill Anti-Slop / Wazuh EUI Native) */}
-          <div className="bg-white border border-[#D3DAE6] rounded p-5 space-y-4">
+          {/* Threat Intelligence & Security Assessment Card */}
+          <div className="bg-white border border-[#D3DAE6] rounded-[4px] p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EBEFF5] pb-3">
               <div className="flex items-center gap-2">
-                <ChevronDown className="w-4 h-4 text-[#5A626F]" />
+                <WuiIcon type="arrowDown" size="m" className="text-[#535966]" />
                 <span className="text-[13px] font-semibold text-[#1A1C21]">
                   Threat Intelligence &amp; Security Assessment
                 </span>
                 {latestEvent && (
                   <span
-                    className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
+                    className={`text-[12px] font-semibold ${
                       latestLevel >= 7
-                        ? 'bg-[#FDF3F2] text-[#BD271E] border border-[#F5C2C0]'
+                        ? 'text-[#BD271E]'
                         : latestLevel >= 4
-                        ? 'bg-[#FEF6E8] text-[#B25E09] border border-[#F5D9A8]'
-                        : 'bg-[#F0F4F8] text-[#5A626F] border border-[#D3DAE6]'
+                        ? 'text-[#935E00]'
+                        : 'text-[#535966]'
                     }`}
                   >
-                    Level {latestLevel} ({latestSeverity})
+                    · Level {latestLevel} ({latestSeverity})
                   </span>
                 )}
               </div>
 
-              {/* Action Toolbar for Active Response */}
-              {currentPath !== '-' && (
+              {/* Action Toolbar for Active Response (sembunyikan untuk kategori INFO) */}
+              {currentPath !== '-' && (latestSeverity !== 'INFO' || Boolean(latestEvent?.verdict)) && (
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-[#8A94A6] hidden sm:inline">Active Response:</span>
                   <button
@@ -531,32 +517,27 @@ export function FimDashboard() {
             </div>
 
             {/* Assessment Panel (Flat 1px border, no thick left bar / chrome slop) */}
-            <div className="p-3.5 rounded border border-[#E1E6EB] bg-[#F8FAFC] space-y-1.5">
+            <div className="p-3.5 rounded border border-[#E1E6EB] bg-[#FAFBFD] space-y-1.5">
               {latestEvent?.ai ? (
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#EBF5FB] text-[#006BB4] border border-[#B8D5E5]">
-                      SOAR Threat Intel
-                    </span>
-                    <span className="text-[12px] font-semibold text-[#1A1C21]">
-                      Analisis Korelasi Ancaman
-                    </span>
+                  <div className="text-[12px] font-semibold text-[#1A1C21]">
+                    Analisis korelasi ancaman (SOAR Threat Intel)
                   </div>
-                  <p className="text-[12px] text-[#1A1C21] leading-relaxed">
+                  <p className="text-[12px] text-[#343741] leading-relaxed">
                     {latestEvent.ai}
                   </p>
                 </div>
               ) : (
                 <div className="flex items-start gap-2.5">
                   {latestLevel >= 7 ? (
-                    <ShieldAlert className="w-4 h-4 text-[#BD271E] mt-0.5 shrink-0" />
+                    <WuiIcon type="crossInCircleFilled" size="m" className="text-[#BD271E] mt-0.5" />
                   ) : latestLevel >= 4 ? (
-                    <ShieldAlert className="w-4 h-4 text-[#B25E09] mt-0.5 shrink-0" />
+                    <WuiIcon type="alert" size="m" className="text-[#935E00] mt-0.5" />
                   ) : (
-                    <ShieldCheck className="w-4 h-4 text-[#00A389] mt-0.5 shrink-0" />
+                    <WuiIcon type="checkInCircleFilled" size="m" className="text-[#017D73] mt-0.5" />
                   )}
                   <div className="space-y-1">
-                    <div className="text-[12px] font-semibold text-[#1A1C21] flex items-center gap-2">
+                    <div className="text-[12px] font-semibold text-[#1A1C21] flex items-center gap-1.5">
                       <span>
                         {latestLevel >= 7
                           ? 'Indikasi Perubahan Kritis'
@@ -565,12 +546,12 @@ export function FimDashboard() {
                           : 'Integritas Berkas Terverifikasi'}
                       </span>
                       {latestEvent?.rule_id && (
-                        <span className="text-[10px] font-mono text-[#5A626F] bg-[#F0F4F8] px-1.5 py-0.5 rounded border border-[#E1E6EB]">
-                          Rule {latestEvent.rule_id}
+                        <span className="text-[11px] font-mono font-normal text-[#69707D]">
+                          (Rule {latestEvent.rule_id})
                         </span>
                       )}
                     </div>
-                    <p className="text-[12px] text-[#5A626F] leading-relaxed">
+                    <p className="text-[12px] text-[#535966] leading-relaxed">
                       {latestEvent?.rule_desc
                         ? latestEvent.rule_desc
                         : latestLevel >= 7
@@ -586,23 +567,17 @@ export function FimDashboard() {
 
             {/* Assessment Status & Detection Source Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[12px]">
-              <div className="bg-[#F8FAFC] border border-[#EBEFF5] rounded p-3 space-y-1">
-                <div className="text-[11px] font-medium text-[#8A94A6]">Status Asesmen &amp; Reputasi</div>
+              <div className="bg-[#FAFBFD] border border-[#EBEFF5] rounded-[4px] p-3 space-y-1">
+                <div className="text-[11px] font-medium text-[#69707D]">Status Asesmen &amp; Reputasi</div>
                 <div className="flex items-center gap-2 pt-0.5">
                   {latestEvent?.verdict ? (
                     <span className="font-semibold text-[#BD271E]">{latestEvent.verdict}</span>
                   ) : latestLevel >= 7 ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FDF3F2] text-[#BD271E] border border-[#F5C2C0]">
-                      High Risk Anomaly
-                    </span>
+                    <WuiHealth tone="danger">High Risk Anomaly</WuiHealth>
                   ) : latestLevel >= 4 ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FEF6E8] text-[#B25E09] border border-[#F5D9A8]">
-                      Suspicious / Changed
-                    </span>
+                    <WuiHealth tone="warning">Suspicious / Changed</WuiHealth>
                   ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-[#F0FAF7] text-[#00A389] border border-[#B2E6DC]">
-                      Clean / Normal Baseline
-                    </span>
+                    <WuiHealth tone="success">Clean / Normal Baseline</WuiHealth>
                   )}
                   {latestEvent?.status && latestEvent.status !== 'detected' && (
                     <span className="text-[#5A626F] text-[11px] font-mono">
@@ -612,7 +587,7 @@ export function FimDashboard() {
                 </div>
               </div>
 
-              <div className="bg-[#F8FAFC] border border-[#EBEFF5] rounded p-3 space-y-1">
+              <div className="bg-[#FAFBFD] border border-[#EBEFF5] rounded p-3 space-y-1">
                 <div className="text-[11px] font-medium text-[#8A94A6]">Sumber Deteksi &amp; ID Agen</div>
                 <div className="flex items-center gap-2 pt-0.5 text-[#1A1C21]">
                   <span className="font-mono font-medium">Agent {agentId}</span>
@@ -624,89 +599,91 @@ export function FimDashboard() {
               </div>
             </div>
 
-            {/* External Threat Intel OSINT Pivots */}
-            <div className="bg-[#F8FAFC] border border-[#D3DAE6] rounded p-3 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-[#5A626F]">
-                  External Threat Intel Pivot (OSINT)
+            {/* External Threat Intel OSINT Pivots (sembunyikan untuk kategori INFO) */}
+            {(latestSeverity !== 'INFO' || Boolean(latestEvent?.verdict)) && (
+              <div className="bg-[#FAFBFD] border border-[#D3DAE6] rounded p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[12px] font-semibold text-[#343741]">
+                    External Threat Intel Pivot (OSINT)
+                  </div>
+                  {fileHash && fileHash !== '-' && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyHash(fileHash)}
+                      className="inline-flex items-center gap-1 text-[11px] text-[#006BB4] hover:underline cursor-pointer"
+                      title="Salin hash ke clipboard"
+                    >
+                      {copiedHash ? (
+                        <>
+                          <WuiIcon type="check" size="xs" className="text-[#017D73]" />
+                          <span className="text-[#017D73] font-medium">Tersalin!</span>
+                        </>
+                      ) : (
+                        <>
+                          <WuiIcon type="copy" size="xs" className="text-[#535966]" />
+                          <span>Salin Hash</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
-                {fileHash && fileHash !== '-' && (
-                  <button
-                    type="button"
-                    onClick={() => handleCopyHash(fileHash)}
-                    className="inline-flex items-center gap-1 text-[11px] text-[#006BB4] hover:underline cursor-pointer"
-                    title="Salin hash ke clipboard"
-                  >
-                    {copiedHash ? (
-                      <>
-                        <Check className="w-3 h-3 text-[#00A389]" />
-                        <span className="text-[#00A389] font-medium">Tersalin!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3 text-[#5A626F]" />
-                        <span>Salin Hash</span>
-                      </>
-                    )}
-                  </button>
+
+                {fileHash && fileHash !== '-' ? (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <a
+                      href={`https://www.virustotal.com/gui/file/${fileHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
+                      title="Periksa reputasi berkas di VirusTotal"
+                    >
+                      <span className="font-medium">VirusTotal</span>
+                      <WuiIcon type="popout" size="xs" className="text-[#69707D]" />
+                    </a>
+
+                    <a
+                      href={`https://bazaar.abuse.ch/sample/${fileHash}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
+                      title="Cek sampel malware di MalwareBazaar (abuse.ch)"
+                    >
+                      <span className="font-medium">MalwareBazaar</span>
+                      <WuiIcon type="popout" size="xs" className="text-[#69707D]" />
+                    </a>
+
+                    <a
+                      href={`https://otx.alienvault.com/indicator/file/${fileHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
+                      title="Penyelidikan ancaman di AlienVault Open Threat Exchange"
+                    >
+                      <span className="font-medium">AlienVault OTX</span>
+                      <WuiIcon type="popout" size="xs" className="text-[#69707D]" />
+                    </a>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-[#69707D] italic">
+                    Hash berkas belum dikalkulasi oleh agent untuk penelusuran OSINT eksternal.
+                  </div>
                 )}
               </div>
-
-              {fileHash && fileHash !== '-' ? (
-                <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                  <a
-                    href={`https://www.virustotal.com/gui/file/${fileHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
-                    title="Periksa reputasi berkas di VirusTotal"
-                  >
-                    <span className="font-medium">VirusTotal</span>
-                    <ExternalLink className="w-3 h-3 text-[#8A94A6]" />
-                  </a>
-
-                  <a
-                    href={`https://bazaar.abuse.ch/sample/${fileHash}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
-                    title="Cek sampel malware di MalwareBazaar (abuse.ch)"
-                  >
-                    <span className="font-medium">MalwareBazaar</span>
-                    <ExternalLink className="w-3 h-3 text-[#8A94A6]" />
-                  </a>
-
-                  <a
-                    href={`https://otx.alienvault.com/indicator/file/${fileHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#D3DAE6] bg-white text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition-colors"
-                    title="Penyelidikan ancaman di AlienVault Open Threat Exchange"
-                  >
-                    <span className="font-medium">AlienVault OTX</span>
-                    <ExternalLink className="w-3 h-3 text-[#8A94A6]" />
-                  </a>
-                </div>
-              ) : (
-                <div className="text-[11px] text-[#8A94A6] italic">
-                  Hash berkas belum dikalkulasi oleh agent untuk penelusuran OSINT eksternal.
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Recent Events Table */}
-          <div className="bg-white border border-[#D3DAE6] rounded p-4 space-y-3">
+          <div className="bg-white border border-[#D3DAE6] rounded-[4px] p-4 space-y-3">
             <div className="flex items-center justify-between border-b border-[#EBEFF5] pb-2">
               <div className="flex items-center gap-2 text-[13px] font-semibold text-[#1A1C21]">
-                <ChevronDown className="w-4 h-4" />
+                <WuiIcon type="arrowDown" size="m" />
                 <span>Recent events</span>
                 <button
                   onClick={() => setActiveSubtab('events')}
                   title="Lihat semua event di subtab Events"
                   className="text-[#006BB4] hover:text-[#005593]"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
+                  <WuiIcon type="popout" size="s" />
                 </button>
               </div>
               <div className="text-[12px] text-[#5A626F]">{fileEvents.length} hits</div>
@@ -715,7 +692,7 @@ export function FimDashboard() {
             <div className="overflow-x-auto text-[12px]">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="border-b border-[#D3DAE6] text-[#5A626F] font-semibold bg-[#F8FAFC]">
+                  <tr className="border-b border-[#D3DAE6] text-[#5A626F] font-semibold bg-[#FAFBFD]">
                     <th className="py-2 px-3">Time ↓</th>
                     <th className="py-2 px-3">Action</th>
                     <th className="py-2 px-3">Description</th>
@@ -761,67 +738,59 @@ export function FimDashboard() {
 
       {/* In-App Active Response Confirmation Modal */}
       {confirmAction && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="bg-white border border-[#D3DAE6] rounded w-full max-w-md p-5 shadow-xl">
-            <div className="flex items-start gap-3">
-              <div
-                className={`p-2 rounded-full shrink-0 ${
+        <WuiModal
+          title={
+            <>
+              <WuiIcon
+                type="alert"
+                size="m"
+                className={confirmAction.action === 'quarantine' ? 'text-[#BD271E]' : 'text-[#006BB4]'}
+              />
+              <span>Konfirmasi Active Response FIM</span>
+            </>
+          }
+          onClose={() => setConfirmAction(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                className="px-3 py-1.5 rounded-[4px] border border-[#D3DAE6] text-[12px] font-medium text-[#535966] hover:bg-[#FAFBFD] transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  executeQueuedAction(
+                    confirmAction.agentId,
+                    confirmAction.action,
+                    confirmAction.target
+                  )
+                }
+                className={`px-3 py-1.5 rounded-[4px] text-[12px] font-semibold text-white transition cursor-pointer ${
                   confirmAction.action === 'quarantine'
-                    ? 'bg-[#FDF3F2] text-[#BD271E]'
-                    : 'bg-[#F0F7FC] text-[#006BB4]'
+                    ? 'bg-[#BD271E] hover:bg-[#9E1F18]'
+                    : 'bg-[#006BB4] hover:bg-[#00538C]'
                 }`}
               >
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[14px] font-bold text-[#1A1C21]">
-                  Konfirmasi Active Response FIM
-                </h3>
-                <p className="text-[12px] text-[#5A626F] mt-1 leading-relaxed">
-                  Apakah Anda yakin ingin mengeksekusi{' '}
-                  <strong className="text-[#1A1C21] uppercase font-mono">{confirmAction.action}</strong> pada file berikut?
-                </p>
-
-                <div className="mt-3 p-2.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] font-mono space-y-1">
-                  <div><span className="text-[#8A94A6]">Agent ID:</span> {confirmAction.agentId}</div>
-                  <div><span className="text-[#8A94A6]">Action:</span> {confirmAction.action}</div>
-                  <div className="break-all"><span className="text-[#8A94A6]">Target:</span> {confirmAction.target}</div>
-                </div>
-
-                <div className="flex items-center justify-end gap-2.5 mt-5">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmAction(null)}
-                    className="px-3 py-1.5 rounded border border-[#D3DAE6] text-[12px] font-medium text-[#5A626F] hover:bg-[#F5F7FA] transition"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      executeQueuedAction(
-                        confirmAction.agentId,
-                        confirmAction.action,
-                        confirmAction.target
-                      )
-                    }
-                    className={`px-3 py-1.5 rounded text-[12px] font-semibold text-white transition ${
-                      confirmAction.action === 'quarantine'
-                        ? 'bg-[#BD271E] hover:bg-[#9E1F18]'
-                        : 'bg-[#006BB4] hover:bg-[#005593]'
-                    }`}
-                  >
-                    Eksekusi Perintah
-                  </button>
-                </div>
-              </div>
+                Eksekusi Perintah
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-[12px] text-[#535966] leading-relaxed">
+              Apakah Anda yakin ingin mengeksekusi{' '}
+              <strong className="text-[#1A1C21] uppercase font-mono">{confirmAction.action}</strong> pada file berikut?
+            </p>
+            <div className="p-2.5 rounded-[4px] bg-[#FAFBFD] border border-[#D3DAE6] text-[11px] font-mono space-y-1">
+              <div><span className="text-[#69707D]">Agent ID:</span> {confirmAction.agentId}</div>
+              <div><span className="text-[#69707D]">Action:</span> {confirmAction.action}</div>
+              <div className="break-all"><span className="text-[#69707D]">Target:</span> {confirmAction.target}</div>
             </div>
           </div>
-        </div>
+        </WuiModal>
       )}
     </div>
   );

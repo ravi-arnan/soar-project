@@ -1,26 +1,18 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import {
-  ShieldAlert,
-  ShieldCheck,
-  AlertTriangle,
-  Fingerprint,
-  Bot,
-  Cpu,
-  Search,
-  ExternalLink,
-  Copy,
-  CheckCircle2,
-  FileCode,
-  Folder,
-  Activity,
-  Terminal,
-  RefreshCw,
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { WuiIcon } from '../wui/WuiIcon';
 import { formatWazuhTime, useEventHistory, periodToWindow } from '@/lib/fleet';
 import { postCommand } from '@/lib/commands';
+import {
+  DEFAULT_AI_CONFIG,
+  DEFAULT_THREAT_INTEL_CONFIG,
+  getProviderMeta,
+  type AiConfig,
+  type ThreatIntelConfig,
+} from '@/lib/aiConfig';
 import { PeriodFilter } from './PeriodFilter';
+import { WuiBadge, WuiCallOut, WuiHealth, WuiPageHeader, WuiPanel, type WuiTone } from '../wui/WuiPrimitives';
 import type { FleetEvent, PeriodValue } from '@/lib/fleet';
 
 const DEFAULT_PERIOD: PeriodValue = { preset: '7d', since: null, until: null };
@@ -52,21 +44,26 @@ function extractFilename(path?: string, hash?: string): string {
  * Menggunakan teks asli pipeline bila ada di e.ai, atau menghasilkan
  * sintesis penalaran deterministik berbasis konteks artefak dan IoC.
  */
-function generateThreatAnalysis(event: FleetEvent): ThreatAnalysis {
+function generateThreatAnalysis(event: FleetEvent, activeAi: AiConfig): ThreatAnalysis {
   const filename = extractFilename(event.path, event.hash).toLowerCase();
   const severity = (event.severity || 'INFO').toUpperCase();
   const ruleDesc = (event.rule_desc || '').toLowerCase();
   const hash = event.hash || '';
 
   // 1. Tentukan Model / Mesin Analisis
-  let modelName = 'Gemini 2.5 Flash (SOC Threat Engine)';
+  let modelName = `${activeAi.model} (${getProviderMeta(activeAi.provider).shortLabel})`;
   const hasRealAi = Boolean(event.ai && event.ai.trim().length > 10);
 
   if (hasRealAi) {
-    if (event.ai?.toLowerCase().includes('deepseek')) {
-      modelName = 'DeepSeek-V4-Flash (Code/Script Logic)';
+    const aiText = (event.ai || '').toLowerCase();
+    if (aiText.includes('deepseek')) {
+      modelName = 'DeepSeek V4 Flash (SOC Triage)';
+    } else if (aiText.includes('claude')) {
+      modelName = 'Anthropic Claude (SOC Triage)';
+    } else if (aiText.includes('gpt')) {
+      modelName = 'OpenAI GPT (SOC Triage)';
     } else {
-      modelName = 'Gemini 2.5 Flash (Autonomous SOC Triage)';
+      modelName = `${activeAi.model} (${getProviderMeta(activeAi.provider).shortLabel})`;
     }
   } else {
     modelName = 'Wazuh Syscheck & Rule Heuristic';
@@ -107,7 +104,7 @@ function generateThreatAnalysis(event: FleetEvent): ThreatAnalysis {
 
   if (severity === 'CRITICAL' || isRansomwareRelated || isShadowCopyTarget) {
     verdict = 'MALICIOUS';
-    verdictLabel = 'Malicious (Critical Threat Impact)';
+    verdictLabel = 'Malicious (Critical Threat)';
     mitreTechnique = isShadowCopyTarget
       ? 'T1490 (Inhibit System Recovery)'
       : 'T1486 (Data Encrypted for Impact)';
@@ -115,7 +112,7 @@ function generateThreatAnalysis(event: FleetEvent): ThreatAnalysis {
       'Isolasi host segera dari jaringan lokal dan picu tindakan Karantina File otomatis via Active Response.';
   } else if (severity === 'HIGH' || isPersistence) {
     verdict = 'MALICIOUS';
-    verdictLabel = 'Malicious (High Risk Persistence / Execution)';
+    verdictLabel = 'Malicious (High Risk)';
     mitreTechnique = isPersistence
       ? 'T1547.001 (Registry Run Keys / Startup Folder)'
       : 'T1059.001 (Command and Scripting Interpreter)';
@@ -123,13 +120,13 @@ function generateThreatAnalysis(event: FleetEvent): ThreatAnalysis {
       'Pindahkan file ke direktori karantina terisolasi dan periksa histori proses induk (PPID).';
   } else if (severity === 'MEDIUM' || (isExecOrScript && severity !== 'INFO')) {
     verdict = 'SUSPICIOUS';
-    verdictLabel = 'Suspicious (Anomalous Activity / Review Needed)';
+    verdictLabel = 'Suspicious (Perlu Tinjauan)';
     mitreTechnique = 'T1036.007 (Double Extension / Masquerading)';
     actionRecommendation =
       'Lakukan peninjauan mendalam pada koneksi keluar dan verifikasi reputasi hash di sandbox.';
   } else {
     verdict = 'BENIGN';
-    verdictLabel = 'Benign / Clean (Normal Operating Artifact)';
+    verdictLabel = 'Benign / Clean';
     mitreTechnique = 'T1565.001 (Integrity Monitoring)';
     actionRecommendation =
       'File konsisten dengan pola operasi rutin sistem. Tidak diperlukan eskalasi isolasi.';
@@ -159,13 +156,39 @@ function generateThreatAnalysis(event: FleetEvent): ThreatAnalysis {
   };
 }
 
-export function ThreatIntelView() {
+interface ThreatIntelViewProps {
+  onOpenAiSettings?: () => void;
+}
+
+export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
   const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
   const [filterSeverity, setFilterSeverity] = useState<'ALL' | 'MALICIOUS' | 'SUSPICIOUS' | 'BENIGN'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [quarantineStatus, setQuarantineStatus] = useState<Record<string, string>>({});
   const [isQuarantining, setIsQuarantining] = useState<string | null>(null);
+  const [aiConfig, setAiConfig] = useState<AiConfig>(DEFAULT_AI_CONFIG);
+  const [tiConfig, setTiConfig] = useState<ThreatIntelConfig>(DEFAULT_THREAT_INTEL_CONFIG);
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/settings/threat-intel', { cache: 'no-store' });
+        if (!res.ok || ignore) return;
+        const data = await res.json();
+        if (ignore) return;
+        if (data.ai_config) setAiConfig({ ...DEFAULT_AI_CONFIG, ...data.ai_config });
+        if (data.threat_intel_config) setTiConfig(data.threat_intel_config);
+      } catch {
+        // Pertahankan default jika endpoint settings belum tersedia
+      }
+    }
+    loadSettings();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const timeWindow = useMemo(() => periodToWindow(period), [period]);
   const { events, loading, refresh } = useEventHistory(
@@ -182,7 +205,7 @@ export function ThreatIntelView() {
 
     const analyzedList = withHash.map((e) => ({
       event: e,
-      analysis: generateThreatAnalysis(e),
+      analysis: generateThreatAnalysis(e, aiConfig),
     }));
 
     return {
@@ -193,7 +216,7 @@ export function ThreatIntelView() {
       uniq,
       items: analyzedList,
     };
-  }, [events]);
+  }, [events, aiConfig]);
 
   const filteredItems = useMemo(() => {
     return intel.items.filter(({ event, analysis }) => {
@@ -279,162 +302,185 @@ export function ThreatIntelView() {
 
   return (
     <div className="space-y-4">
-      {/* Header Utama */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-semibold text-[#1A1C21] flex items-center gap-2">
-            <Bot className="w-5 h-5 text-[#006BB4]" />
-            Agentic Threat Intelligence
-          </h2>
-          <p className="text-[12px] text-[#5A626F] mt-0.5">
-            Analisis penalaran ancaman otonom berbasis AI Agent, memadukan reputasi multi-sumber (VirusTotal, MalwareBazaar, AlienVault OTX) dengan mitigasi terarah.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => refresh()}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-[#1A1C21] bg-white border border-[#D3DAE6] rounded hover:bg-[#F8F9FB] transition disabled:opacity-50"
-            title="Muat ulang riwayat intelijen"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <PeriodFilter value={period} onChange={setPeriod} />
-        </div>
-      </div>
+      <WuiPageHeader
+        title="Threat Intelligence"
+        description="Analisis penalaran ancaman berbasis AI Agent dan koroborasi reputasi multi-sumber (VirusTotal, MalwareBazaar, AlienVault OTX, MISP)."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => refresh()}
+              disabled={loading}
+              className="h-8 px-3 text-[12px] font-medium text-[#1A1C21] bg-white border border-[#D3DAE6] rounded-[4px] hover:bg-[#FAFBFD] flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
+              title="Muat ulang riwayat intelijen"
+            >
+              <WuiIcon type="refresh" size="s" className={loading ? 'animate-spin' : ''} />
+              <span>Refresh</span>
+            </button>
+            <PeriodFilter value={period} onChange={setPeriod} />
+          </>
+        }
+      />
 
-      {/* Panel Status Agent & Model AI */}
-      <div className="bg-[#F8FAFC] border border-[#D3DAE6] rounded p-3.5">
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] pb-2 mb-3">
-          <div className="flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-[#006BB4]" />
-            <span className="text-[13px] font-semibold text-[#1E293B]">
-              Status Sistem Orkestrasi AI Agent
-            </span>
+      {/* Panel Status Agent & Model AI (Dinamis dari /api/settings/threat-intel) */}
+      <WuiPanel
+        title="Status sistem orkestrasi AI agent"
+        right={
+          <div className="flex items-center gap-3">
+            {onOpenAiSettings && (
+              <button
+                type="button"
+                onClick={onOpenAiSettings}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[4px] text-[12px] font-medium bg-white border border-[#D3DAE6] text-[#1A1C21] hover:border-[#006BB4] hover:text-[#006BB4] transition cursor-pointer"
+              >
+                <WuiIcon type="controlsHorizontal" size="s" className="text-[#535966]" />
+                <span>Atur Model &amp; Fallback</span>
+              </button>
+            )}
+            <WuiHealth tone={aiConfig.enabled ? 'success' : 'default'}>
+              {aiConfig.enabled ? 'Engine online' : 'Enrichment nonaktif'}
+            </WuiHealth>
           </div>
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E6F4EA] text-[#137333]">
-            <CheckCircle2 className="w-3 h-3" />
-            Engine Online
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[12px]">
-          <div className="bg-white border border-[#E2E8F0] p-2.5 rounded">
-            <div className="text-[#64748B] text-[11px] font-medium uppercase tracking-wider">
-              Model Penalaran Utama
+        }
+        bodyClassName="p-0"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#E9EDF3] text-[12px]">
+          <div className="px-4 py-3">
+            <div className="text-[#535966] text-[11.5px] font-medium">
+              Model penalaran utama
             </div>
-            <div className="font-semibold text-[#0F172A] mt-0.5 flex items-center gap-1.5">
-              <span>Gemini 2.5 Flash</span>
-              <span className="text-[10px] bg-[#E0F2FE] text-[#0369A1] px-1.5 py-0.2 rounded font-normal">
-                Cloud Primary
+            <div className="font-semibold text-[#1A1C21] mt-1 flex flex-wrap items-baseline gap-1.5">
+              <span className="font-mono text-[12.5px]">{aiConfig.model || 'gemini-2.5-flash'}</span>
+              <span className="text-[11.5px] text-[#535966] font-normal">
+                ({getProviderMeta(aiConfig.provider).shortLabel})
               </span>
             </div>
-            <div className="text-[11px] text-[#64748B] mt-1">
-              Fallback Engine: DeepSeek-V4-Flash (Logic Analyzer)
+            <div className="text-[11.5px] text-[#69707D] mt-1">
+              {aiConfig.fallback_enabled
+                ? `Fallback: ${aiConfig.fallback_model} (${getProviderMeta(aiConfig.fallback_provider).shortLabel})`
+                : 'Fallback: Nonaktif'}
             </div>
           </div>
 
-          <div className="bg-white border border-[#E2E8F0] p-2.5 rounded">
-            <div className="text-[#64748B] text-[11px] font-medium uppercase tracking-wider">
-              Enrichment OSINT Feeds
+          <div className="px-4 py-3">
+            <div className="text-[#535966] text-[11.5px] font-medium">
+              Enrichment OSINT feeds
             </div>
-            <div className="font-semibold text-[#0F172A] mt-0.5">
-              Multi-Source Synthesis
+            <div className="font-semibold text-[#1A1C21] mt-1">
+              {tiConfig.consensus_mode === 'majority'
+                ? 'Majority Vote (Min. 2 Sumber)'
+                : tiConfig.consensus_mode === 'vt_first'
+                  ? 'Primary VT with Fallback'
+                  : 'Multi-Source Synthesis'}
             </div>
-            <div className="text-[11px] text-[#64748B] mt-1">
-              VirusTotal, MalwareBazaar, AlienVault OTX, Wazuh FIM
+            <div className="text-[11.5px] text-[#69707D] mt-1">
+              {[
+                tiConfig.sources?.virustotal?.enabled !== false ? 'VirusTotal' : null,
+                tiConfig.sources?.malwarebazaar?.enabled !== false ? 'MalwareBazaar' : null,
+                tiConfig.sources?.alienvault_otx?.enabled !== false ? 'AlienVault OTX' : null,
+                tiConfig.sources?.misp?.enabled !== false ? 'MISP OSINT' : null,
+                'Wazuh FIM',
+              ]
+                .filter(Boolean)
+                .join(', ')}
             </div>
           </div>
 
-          <div className="bg-white border border-[#E2E8F0] p-2.5 rounded">
-            <div className="text-[#64748B] text-[11px] font-medium uppercase tracking-wider">
-              Kebijakan Respons Mitigasi
+          <div className="px-4 py-3">
+            <div className="text-[#535966] text-[11.5px] font-medium">
+              Kebijakan respons mitigasi
             </div>
-            <div className="font-semibold text-[#0F172A] mt-0.5">
-              Autonomous AR & SLA 15 Menit
+            <div className="font-semibold text-[#1A1C21] mt-1">
+              Autonomous AR &amp; SLA 15 Menit
             </div>
-            <div className="text-[11px] text-[#64748B] mt-1">
-              Auto-Quarantine untuk Critical, HITL Review untuk Suspicious
+            <div className="text-[11.5px] text-[#69707D] mt-1 font-mono tabular-nums">
+              VT Critical &ge;{tiConfig.sources?.virustotal?.min_engines_critical ?? 20}, High &ge;
+              {tiConfig.sources?.virustotal?.min_engines_high ?? 5} · TTL{' '}
+              {tiConfig.cache_ttl?.malicious_days ?? 7}h/{tiConfig.cache_ttl?.clean_hours ?? 24}j/
+              {tiConfig.cache_ttl?.unknown_hours ?? 6}j
             </div>
           </div>
         </div>
-      </div>
+      </WuiPanel>
 
-      {/* Ringkasan Metrik Intelijen */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-white border border-[#D3DAE6] rounded p-4 text-center">
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Total Artefak Dianalisis</div>
-          <div className="text-[28px] font-semibold text-[#006BB4] font-mono tabular-nums leading-tight mt-1">{intel.total}</div>
-          <div className="text-[11px] text-[#8A94A6] font-mono tabular-nums mt-0.5">{intel.uniq} hash unik diverifikasi</div>
+      {/* Ringkasan Metrik Intelijen (WUI Unified Stat Bar) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 bg-white border border-[#D3DAE6] rounded-[4px] divide-y lg:divide-y-0 lg:divide-x divide-[#E9EDF3] text-center">
+        <div className="p-3.5">
+          <div className="text-[12px] text-[#535966] font-medium">Total Artefak Dianalisis</div>
+          <div className="text-[26px] font-semibold text-[#006BB4] font-mono tabular-nums leading-tight mt-1">{intel.total}</div>
+          <div className="text-[11px] text-[#69707D] font-mono tabular-nums mt-0.5">{intel.uniq} hash unik</div>
         </div>
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Malicious (Critical)</div>
-          <div className="text-[28px] font-semibold text-[#BD271E] font-mono tabular-nums leading-tight mt-1">{intel.crit}</div>
+        <div className="p-3.5">
+          <div className="text-[12px] text-[#535966] font-medium">Malicious (Critical)</div>
+          <div className="text-[26px] font-semibold text-[#BD271E] font-mono tabular-nums leading-tight mt-1">{intel.crit}</div>
           <div className="text-[11px] text-[#BD271E] mt-0.5">Perlu isolasi segera</div>
         </div>
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Malicious (High)</div>
-          <div className="text-[28px] font-semibold text-[#B25E09] font-mono tabular-nums leading-tight mt-1">{intel.high}</div>
-          <div className="text-[11px] text-[#B25E09] mt-0.5">Persistensi / Scripting</div>
+        <div className="p-3.5">
+          <div className="text-[12px] text-[#535966] font-medium">Malicious (High)</div>
+          <div className="text-[26px] font-semibold text-[#8A5300] font-mono tabular-nums leading-tight mt-1">{intel.high}</div>
+          <div className="text-[11px] text-[#8A5300] mt-0.5">Persistensi / Scripting</div>
         </div>
-        <div>
-          <div className="text-[12px] text-[#5A626F] font-medium">Suspicious / Review</div>
-          <div className="text-[28px] font-semibold text-[#6B7280] font-mono tabular-nums leading-tight mt-1">{intel.med}</div>
-          <div className="text-[11px] text-[#6B7280] mt-0.5">Tinjau aktivitas proses</div>
+        <div className="p-3.5">
+          <div className="text-[12px] text-[#535966] font-medium">Suspicious / Review</div>
+          <div className="text-[26px] font-semibold text-[#535966] font-mono tabular-nums leading-tight mt-1">{intel.med}</div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">Tinjau aktivitas proses</div>
         </div>
       </div>
 
       {/* Bar Pencarian & Filter Kategori */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-white border border-[#D3DAE6] rounded p-2.5">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-white border border-[#D3DAE6] rounded-[4px] p-2.5">
         <div className="relative flex-1">
-          <Search className="w-4 h-4 text-[#8A94A6] absolute left-3 top-1/2 -translate-y-1/2" />
+          <WuiIcon type="search" size="m" className="text-[#69707D] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Cari nama file, path, hash, agent, model AI, atau reasoning..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-[12px] bg-[#F8FAFC] border border-[#D3DAE6] rounded focus:outline-none focus:border-[#006BB4] transition"
+            className="w-full h-8 pl-9 pr-3 text-[12px] bg-white border border-[#D3DAE6] rounded-[4px] focus:outline-none focus:border-[#006BB4] transition"
           />
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto text-[11px]">
           <button
+            type="button"
             onClick={() => setFilterSeverity('ALL')}
-            className={`px-2.5 py-1.5 rounded font-medium transition whitespace-nowrap ${
+            className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
               filterSeverity === 'ALL'
                 ? 'bg-[#006BB4] text-white'
-                : 'bg-[#F0F4F8] text-[#5A626F] hover:bg-[#E2E8F0]'
+                : 'bg-[#FAFBFD] border border-[#D3DAE6] text-[#535966] hover:text-[#1A1C21]'
             }`}
           >
             Semua ({intel.items.length})
           </button>
           <button
+            type="button"
             onClick={() => setFilterSeverity('MALICIOUS')}
-            className={`px-2.5 py-1.5 rounded font-medium transition whitespace-nowrap ${
+            className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
               filterSeverity === 'MALICIOUS'
                 ? 'bg-[#BD271E] text-white'
-                : 'bg-[#FDECEA] text-[#BD271E] hover:bg-[#FCD8D4]'
+                : 'bg-[#FBECEB] border border-[#F3C5C3] text-[#BD271E]'
             }`}
           >
             Malicious ({intel.crit + intel.high})
           </button>
           <button
+            type="button"
             onClick={() => setFilterSeverity('SUSPICIOUS')}
-            className={`px-2.5 py-1.5 rounded font-medium transition whitespace-nowrap ${
+            className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
               filterSeverity === 'SUSPICIOUS'
-                ? 'bg-[#B25E09] text-white'
-                : 'bg-[#FEF3E8] text-[#B25E09] hover:bg-[#FDE5CC]'
+                ? 'bg-[#8A5300] text-white'
+                : 'bg-[#FFF8E5] border border-[#F6DF98] text-[#8A5300]'
             }`}
           >
             Suspicious ({intel.med})
           </button>
           <button
+            type="button"
             onClick={() => setFilterSeverity('BENIGN')}
-            className={`px-2.5 py-1.5 rounded font-medium transition whitespace-nowrap ${
+            className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
               filterSeverity === 'BENIGN'
-                ? 'bg-[#00A389] text-white'
-                : 'bg-[#E6F4EA] text-[#137333] hover:bg-[#C8E6C9]'
+                ? 'bg-[#017D73] text-white'
+                : 'bg-[#E6F4F3] border border-[#BBDEDB] text-[#017D73]'
             }`}
           >
             Benign ({Math.max(0, intel.items.length - (intel.crit + intel.high + intel.med))})
@@ -442,219 +488,193 @@ export function ThreatIntelView() {
         </div>
       </div>
 
-      {/* Konten Daftar Ancaman Berbasis Agentic Card */}
+      {/* Konten Daftar Ancaman */}
       <div className="space-y-3">
         {filteredItems.length === 0 ? (
-          <div className="bg-white border border-[#D3DAE6] rounded p-8 text-center">
-            <ShieldAlert className="w-8 h-8 text-[#8A94A6] mx-auto mb-2" />
-            <div className="text-[14px] font-semibold text-[#1A1C21]">
-              Tidak ada ancaman yang cocok
+          <WuiPanel>
+            <div className="py-6 text-center">
+              <WuiIcon type="securityAnalyticsApp" size={28} className="ouiIcon--mono text-[#69707D] mx-auto mb-2" />
+              <div className="text-[13px] font-semibold text-[#1A1C21]">
+                Tidak ada ancaman yang cocok
+              </div>
+              <p className="text-[12px] text-[#535966] mt-1 max-w-md mx-auto">
+                Tidak ditemukan data intelijen dengan filter atau kata kunci yang dipilih.
+              </p>
             </div>
-            <p className="text-[12px] text-[#5A626F] mt-1 max-w-md mx-auto">
-              Tidak ditemukan data intelijen dengan filter atau kata kunci yang dipilih. Pastikan rentang waktu mencakup event yang diinginkan.
-            </p>
-          </div>
+          </WuiPanel>
         ) : (
           filteredItems.map(({ event, analysis }, idx) => {
             const filename = extractFilename(event.path, event.hash);
             const actionKey = `${event.agent_id || '001'}-${event.path}`;
             const actionMessage = quarantineStatus[actionKey];
             const isBusy = isQuarantining === actionKey;
+            const severityLabel = (event.severity || 'INFO').toUpperCase();
+            const verdictTone: WuiTone =
+              analysis.verdict === 'MALICIOUS'
+                ? 'danger'
+                : analysis.verdict === 'SUSPICIOUS'
+                  ? 'warning'
+                  : 'success';
+            const severityTone: WuiTone =
+              severityLabel === 'CRITICAL' || severityLabel === 'HIGH'
+                ? 'danger'
+                : severityLabel === 'MEDIUM'
+                  ? 'warning'
+                  : 'default';
 
             return (
               <div
                 key={`${event.hash}-${event.ts}-${idx}`}
-                className="bg-white border border-[#D3DAE6] rounded-lg shadow-xs hover:border-[#B5C2D4] transition overflow-hidden"
+                className="bg-white border border-[#D3DAE6] rounded-[4px] overflow-hidden"
               >
-                {/* Header Kartu */}
-                <div className="p-3.5 bg-[#FAFBFD] border-b border-[#EDEEF2] flex flex-col md:flex-row md:items-center justify-between gap-2.5">
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`p-2 rounded mt-0.5 ${
-                        analysis.verdict === 'MALICIOUS'
-                          ? 'bg-[#FDECEA] text-[#BD271E]'
-                          : analysis.verdict === 'SUSPICIOUS'
-                            ? 'bg-[#FEF3E8] text-[#B25E09]'
-                            : 'bg-[#E6F4EA] text-[#00A389]'
-                      }`}
-                    >
-                      {analysis.verdict === 'MALICIOUS' ? (
-                        <ShieldAlert className="w-5 h-5" />
-                      ) : analysis.verdict === 'SUSPICIOUS' ? (
-                        <AlertTriangle className="w-5 h-5" />
-                      ) : (
-                        <ShieldCheck className="w-5 h-5" />
-                      )}
-                    </div>
-
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[14px] font-semibold text-[#1A1C21] font-mono">
-                          {filename}
-                        </span>
+                {/* Header Artefak (WUI Panel Header) */}
+                <div className="px-4 py-2.5 bg-[#FAFBFD] border-b border-[#E9EDF3] flex flex-col md:flex-row md:items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13px] font-semibold text-[#1A1C21] font-mono break-all">
+                        {filename}
+                      </span>
+                      {analysis.verdict === 'BENIGN' ? (
                         <span
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider ${
-                            analysis.verdict === 'MALICIOUS'
-                              ? 'bg-[#FDECEA] text-[#BD271E] border border-[#FCD8D4]'
-                              : analysis.verdict === 'SUSPICIOUS'
-                                ? 'bg-[#FEF3E8] text-[#B25E09] border border-[#FDE5CC]'
-                                : 'bg-[#E6F4EA] text-[#137333] border border-[#C8E6C9]'
-                          }`}
+                          title="Benign / Aman"
+                          aria-label="Benign / Aman"
+                          className="inline-flex items-center text-[#017D73]"
                         >
+                          <WuiIcon type="checkInCircleFilled" size="s" />
+                        </span>
+                      ) : (
+                        <WuiHealth tone={verdictTone} className="text-[11.5px]">
                           {analysis.verdictLabel}
-                        </span>
-                        <span className="text-[11px] text-[#5A626F] bg-white border border-[#D3DAE6] px-1.5 py-0.5 rounded">
-                          Agent: <strong className="text-[#1A1C21]">{event.agent || 'unknown'}</strong>
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 mt-1 text-[11px] text-[#5A626F]">
-                        <span className="flex items-center gap-1 font-mono text-[#475569]">
-                          <Folder className="w-3 h-3 text-[#8A94A6]" />
-                          {event.path && event.path !== '-' ? event.path : '(Path tidak terekam dalam alert)'}
-                        </span>
-                      </div>
+                        </WuiHealth>
+                      )}
+                      <span className="text-[#D3DAE6]" aria-hidden="true">|</span>
+                      <span className="text-[11.5px] text-[#535966]">
+                        Agent: <span className="font-medium text-[#1A1C21]">{event.agent || 'unknown'}</span>
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-[#69707D] font-mono break-all">
+                      {event.path && event.path !== '-' ? event.path : '(Path tidak terekam dalam alert)'}
                     </div>
                   </div>
 
-                  <div className="flex flex-row md:flex-col md:items-end justify-between items-center text-[11px] text-[#5A626F] pt-2 md:pt-0 border-t md:border-0 border-[#EDEEF2]">
-                    <span className="font-medium text-[#1A1C21]">{formatWazuhTime(event.ts)}</span>
-                    <span className="text-[10px] text-[#8A94A6] mt-0.5">
-                      Severity: <strong className="text-[#475569]">{event.severity || 'INFO'}</strong>
+                  <div className="flex items-center gap-2.5 shrink-0 pt-1.5 md:pt-0 border-t md:border-0 border-[#E9EDF3]">
+                    <WuiBadge tone={severityTone}>{severityLabel}</WuiBadge>
+                    <span className="text-[11px] font-mono tabular-nums text-[#535966]">
+                      {formatWazuhTime(event.ts)}
                     </span>
                   </div>
                 </div>
 
-                {/* Kotak Analisis & Penalaran AI Agent */}
-                <div className="p-3.5 space-y-3">
-                  <div className="bg-[#F0F7FD] border border-[#CCE3F5] rounded-lg p-3">
-                    <div className="flex items-center justify-between gap-2 border-b border-[#D6E8F7] pb-2 mb-2">
-                      <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#00558F]">
-                        <Bot className="w-4 h-4 text-[#006BB4]" />
-                        <span>Analisis Penalaran AI Agent</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-[#5A626F]">Dianalisis oleh:</span>
-                        <span className="text-[11px] font-semibold text-[#006BB4] bg-white border border-[#BBDCF6] px-2 py-0.5 rounded shadow-2xs flex items-center gap-1">
-                          <Cpu className="w-3 h-3 text-[#006BB4]" />
-                          {analysis.model}
-                        </span>
-                      </div>
+                {/* Body Analisis AI Agent */}
+                <div className="px-4 py-3 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <span className="font-semibold uppercase tracking-wide text-[#535966]">
+                      Analisis AI Agent
+                    </span>
+                    <span className="text-[#69707D] font-mono">
+                      Engine: {analysis.model}
+                    </span>
+                  </div>
+
+                  <p className="text-[12px] text-[#1A1C21] leading-relaxed">
+                    {analysis.reasoning}
+                  </p>
+
+                  <div className="pt-2 border-t border-[#F0F2F6] grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-[11.5px]">
+                    <div>
+                      <span className="text-[#535966]">MITRE ATT&amp;CK: </span>
+                      <span className="font-mono font-medium text-[#006BB4]">{analysis.mitreTechnique}</span>
                     </div>
-
-                    <p className="text-[12px] text-[#1E293B] leading-relaxed">
-                      {analysis.reasoning}
-                    </p>
-
-                    <div className="mt-2.5 pt-2.5 border-t border-[#D6E8F7] grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                      <div>
-                        <span className="text-[#64748B] font-medium">Korelasi MITRE ATT&CK: </span>
-                        <span className="font-semibold text-[#006BB4]">{analysis.mitreTechnique}</span>
-                      </div>
-                      <div>
-                        <span className="text-[#64748B] font-medium">Rekomendasi Tindakan: </span>
-                        <span className="font-semibold text-[#1E293B]">{analysis.actionRecommendation}</span>
-                      </div>
+                    <div>
+                      <span className="text-[#535966]">Rekomendasi: </span>
+                      <span className="font-medium text-[#1A1C21]">{analysis.actionRecommendation}</span>
                     </div>
                   </div>
 
-                  {/* Feedback Status Aksi Karantina jika ada */}
                   {actionMessage && (
-                    <div
-                      className={`text-[12px] px-3 py-2 rounded flex items-center gap-2 ${
-                        actionMessage.startsWith('Sukses')
-                          ? 'bg-[#E6F4EA] text-[#137333] border border-[#C8E6C9]'
-                          : 'bg-[#FDECEA] text-[#BD271E] border border-[#FCD8D4]'
-                      }`}
-                    >
-                      <Activity className="w-3.5 h-3.5" />
-                      <span>{actionMessage}</span>
-                    </div>
+                    <WuiCallOut tone={actionMessage.startsWith('Sukses') ? 'success' : 'danger'}>
+                      {actionMessage}
+                    </WuiCallOut>
                   )}
+                </div>
 
-                  {/* IoC Bar, External Links & Controls */}
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1 border-t border-[#EDEEF2] text-[12px]">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[11px] font-medium text-[#5A626F] flex items-center gap-1">
-                        <Fingerprint className="w-3.5 h-3.5 text-[#8A94A6]" />
-                        SHA-256:
-                      </span>
-                      <code
-                        className="bg-[#F8FAFC] border border-[#D3DAE6] px-2 py-0.5 rounded font-mono text-[11px] text-[#1E293B] select-all"
-                        title={event.hash}
+                {/* IoC Bar & Controls */}
+                <div className="px-4 py-2 bg-[#FAFBFD] border-t border-[#E9EDF3] flex flex-col lg:flex-row lg:items-center justify-between gap-2 text-[11.5px]">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-[#535966]">SHA-256:</span>
+                    <code
+                      className="bg-white border border-[#D3DAE6] px-1.5 py-0.5 rounded-[4px] font-mono text-[11px] text-[#1A1C21] select-all"
+                      title={event.hash}
+                    >
+                      {event.hash ? `${event.hash.slice(0, 20)}...${event.hash.slice(-8)}` : 'Tidak ada hash'}
+                    </code>
+                    {event.hash && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyHash(event.hash)}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-[#006BB4] hover:underline transition cursor-pointer"
+                        title="Salin hash lengkap ke clipboard"
                       >
-                        {event.hash ? `${event.hash.slice(0, 20)}...${event.hash.slice(-8)}` : 'Tidak ada hash'}
-                      </code>
-                      {event.hash && (
-                        <button
-                          onClick={() => handleCopyHash(event.hash)}
-                          className="flex items-center gap-1 text-[11px] text-[#006BB4] hover:text-[#004B80] hover:underline transition"
-                          title="Salin hash lengkap ke clipboard"
-                        >
-                          <Copy className="w-3 h-3" />
-                          <span>{copiedHash === event.hash ? 'Tersalin' : 'Salin'}</span>
-                        </button>
-                      )}
-                    </div>
+                        <WuiIcon type="copy" size="xs" />
+                        <span>{copiedHash === event.hash ? 'Tersalin' : 'Salin'}</span>
+                      </button>
+                    )}
+                  </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Link Verifikasi Eksternal */}
+                  {analysis.verdict !== 'BENIGN' && severityLabel !== 'INFO' && (
+                    <div className="flex items-center gap-2.5 flex-wrap">
                       {event.hash && (
-                        <div className="flex items-center gap-1.5 text-[11px] bg-[#F8FAFC] border border-[#D3DAE6] px-2 py-1 rounded">
-                          <span className="text-[#8A94A6] font-medium">OSINT:</span>
+                        <div className="flex items-center gap-1.5 text-[11px]">
+                          <span className="text-[#69707D] font-medium">OSINT:</span>
                           <a
                             href={`https://www.virustotal.com/gui/file/${event.hash}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[#006BB4] hover:underline flex items-center gap-0.5 font-medium"
-                            title="Buka di VirusTotal"
+                            className="text-[#006BB4] hover:underline inline-flex items-center gap-0.5 font-medium"
                           >
                             VT
-                            <ExternalLink className="w-2.5 h-2.5" />
+                            <WuiIcon type="popout" size="xs" />
                           </a>
                           <span className="text-[#D3DAE6]">|</span>
                           <a
                             href={`https://bazaar.abuse.ch/sample/${event.hash}/`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[#006BB4] hover:underline flex items-center gap-0.5 font-medium"
-                            title="Buka di MalwareBazaar"
+                            className="text-[#006BB4] hover:underline inline-flex items-center gap-0.5 font-medium"
                           >
                             MB
-                            <ExternalLink className="w-2.5 h-2.5" />
+                            <WuiIcon type="popout" size="xs" />
                           </a>
                           <span className="text-[#D3DAE6]">|</span>
                           <a
                             href={`https://otx.alienvault.com/indicator/file/${event.hash}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[#006BB4] hover:underline flex items-center gap-0.5 font-medium"
-                            title="Buka di AlienVault OTX"
+                            className="text-[#006BB4] hover:underline inline-flex items-center gap-0.5 font-medium"
                           >
                             OTX
-                            <ExternalLink className="w-2.5 h-2.5" />
+                            <WuiIcon type="popout" size="xs" />
                           </a>
                         </div>
                       )}
 
-                      {/* Tombol Karantina File jika ada path */}
                       {event.path && event.path !== '-' && (
                         <button
+                          type="button"
                           onClick={() => handleQuarantine(event)}
                           disabled={isBusy}
-                          className={`flex items-center gap-1.5 px-3 py-1 rounded font-medium text-[11px] transition shadow-2xs ${
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-[4px] font-medium text-[11px] transition cursor-pointer ${
                             analysis.verdict === 'MALICIOUS'
-                              ? 'bg-[#BD271E] hover:bg-[#A31F17] text-white'
-                              : 'bg-white border border-[#D3DAE6] text-[#1A1C21] hover:bg-[#F8F9FB]'
+                              ? 'bg-[#BD271E] hover:bg-[#9E1F18] text-white'
+                              : 'bg-white border border-[#D3DAE6] text-[#1A1C21] hover:bg-[#F5F7FA]'
                           } disabled:opacity-50`}
-                          title="Kirim instruksi karantina ke agen target"
                         >
-                          <Terminal className="w-3 h-3" />
+                          <WuiIcon type="console" size="xs" />
                           <span>{isBusy ? 'Memproses...' : 'Karantina File'}</span>
                         </button>
                       )}
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             );
@@ -663,15 +683,15 @@ export function ThreatIntelView() {
       </div>
 
       {/* Footer Penjelas */}
-      <div className="px-4 py-3 text-[12px] text-[#5A626F] bg-white border border-[#D3DAE6] rounded flex items-center justify-between gap-2">
+      <div className="px-4 py-2.5 text-[11.5px] text-[#535966] bg-white border border-[#D3DAE6] rounded-[4px] flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <FileCode className="w-4 h-4 text-[#006BB4]" />
+          <WuiIcon type="appCode" size="m" className="ouiIcon--mono text-[#006BB4]" />
           <span>
-            Pipeline deteksi aktif menghubungkan Wazuh Manager, orkestrasi n8n, model penalaran AI generatif, dan Active Response.
+            Pipeline deteksi aktif menghubungkan Wazuh Manager, orkestrasi n8n, AI Reasoning Engine dinamis, dan Active Response.
           </span>
         </div>
-        <span className="text-[11px] text-[#8A94A6] hidden sm:inline">
-          Format Waktu: WITA (UTC+8)
+        <span className="text-[11px] text-[#69707D] hidden sm:inline font-mono">
+          WITA (UTC+8)
         </span>
       </div>
     </div>

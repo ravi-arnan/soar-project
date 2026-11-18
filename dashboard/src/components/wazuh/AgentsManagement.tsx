@@ -1,14 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  PlusCircle,
-  Download,
-  Settings,
-  Eye,
-  RefreshCw,
-} from 'lucide-react';
 import { agentStatus, formatWazuhTime, osType } from '@/lib/fleet';
+import { WuiHealth } from '../wui/WuiPrimitives';
+import { WuiIcon } from '../wui/WuiIcon';
 import type { FleetAgent } from '@/lib/fleet';
 
 interface AgentsManagementProps {
@@ -127,15 +122,12 @@ export function AgentsManagement({
       {/* 3 Top Cards: Status, Details, OS Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Status Donut */}
-        <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between border-b border-[#EBEFF5] px-3.5 py-2 bg-[#FAFBFD]">
-            <div className="flex items-center gap-2">
-              <div className="w-1 h-3 bg-[#006BB4] rounded-xs" />
-              <span className="text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase">
-                STATUS
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-[#8A94A6]">{total} endpoints</span>
+        <div className="bg-white border border-[#D3DAE6] rounded-[4px] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#E9EDF3] px-4 py-2.5">
+            <span className="text-[13px] font-semibold text-[#1A1C21]">
+              Status
+            </span>
+            <span className="text-[11px] font-mono text-[#69707D]">{total} endpoints</span>
           </div>
 
           <div className="p-4 flex items-center justify-center gap-6 h-36">
@@ -146,7 +138,7 @@ export function AgentsManagement({
                   cy="50"
                   r="38"
                   fill="none"
-                  stroke="#00A389"
+                  stroke="#007871"
                   strokeWidth="16"
                   strokeDasharray={`${arcActive} ${DONUT_CIRCUMFERENCE - arcActive}`}
                   strokeDashoffset="0"
@@ -173,24 +165,24 @@ export function AgentsManagement({
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-[18px] font-bold font-mono tabular-nums text-[#1A1C21]">
+                <span className="text-[18px] font-bold tabular-nums text-[#1A1C21]">
                   {total}
                 </span>
-                <span className="text-[9px] uppercase tracking-wider text-[#8A94A6]">Total</span>
+                <span className="text-[11px] text-[#69707D]">Total</span>
               </div>
             </div>
 
-            <div className="text-[11px] space-y-1.5 text-[#5A626F]">
+            <div className="text-[12px] space-y-1.5 text-[#535966]">
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#00A389]"></span>
+                <span className="w-2.5 h-2.5 rounded-[2px] bg-[#007871]"></span>
                 <span>Active ({activeCount})</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#BD271E]"></span>
+                <span className="w-2.5 h-2.5 rounded-[2px] bg-[#BD271E]"></span>
                 <span>Disconnected ({disconnectedCount})</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#98A2B3]"></span>
+                <span className="w-2.5 h-2.5 rounded-[2px] bg-[#98A2B3]"></span>
                 <span>Never ({neverCount})</span>
               </div>
             </div>
@@ -198,15 +190,12 @@ export function AgentsManagement({
         </div>
 
         {/* Details Grid */}
-        <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between border-b border-[#EBEFF5] px-3.5 py-2 bg-[#FAFBFD]">
-            <div className="flex items-center gap-2">
-              <div className="w-1 h-3 bg-[#00A389] rounded-xs" />
-              <span className="text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase">
-                DETAILS
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-[#8A94A6]">Coverage {coverage}%</span>
+        <div className="bg-white border border-[#D3DAE6] rounded-[4px] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#E9EDF3] px-4 py-2.5">
+            <span className="text-[13px] font-semibold text-[#1A1C21]">
+              Details
+            </span>
+            <span className="text-[11px] font-mono text-[#69707D]">Coverage {coverage}%</span>
           </div>
 
           <div className="p-4 flex-1 flex flex-col justify-between">
@@ -261,20 +250,17 @@ export function AgentsManagement({
         </div>
 
         {/* OS Distribution */}
-        <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between border-b border-[#EBEFF5] px-3.5 py-2 bg-[#FAFBFD]">
-            <div className="flex items-center gap-2">
-              <div className="w-1 h-3 bg-[#6366F1] rounded-xs" />
-              <span className="text-[11px] font-bold tracking-wider text-[#1A1C21] uppercase">
-                OS DISTRIBUTION
-              </span>
-            </div>
-            <span className="text-[10px] font-mono text-[#8A94A6]">Platform Fleet</span>
+        <div className="bg-white border border-[#D3DAE6] rounded-[4px] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between border-b border-[#E9EDF3] px-4 py-2.5">
+            <span className="text-[13px] font-semibold text-[#1A1C21]">
+              OS distribution
+            </span>
+            <span className="text-[11px] font-mono text-[#69707D]">Platform fleet</span>
           </div>
 
           <div className="p-4 flex-1 flex flex-col justify-center gap-2.5">
             {[
-              { label: 'Linux', count: linuxCount, color: '#00A389' },
+              { label: 'Linux', count: linuxCount, color: '#007871' },
               { label: 'Windows', count: windowsCount, color: '#006BB4' },
               { label: 'macOS', count: macCount, color: '#9B51E0' },
             ].map((o) => (
@@ -285,7 +271,7 @@ export function AgentsManagement({
                 </div>
                 <div className="h-2 bg-[#F0F4F8] rounded overflow-hidden">
                   <div
-                    className="h-2 rounded transition-all duration-300"
+                    className="h-2 rounded transition-[width] duration-300"
                     style={{ width: `${Math.round((o.count / osMax) * 100)}%`, backgroundColor: o.color }}
                   />
                 </div>
@@ -308,15 +294,15 @@ export function AgentsManagement({
         </div>
         <button
           onClick={handleRefresh}
-          className="h-9 px-4 bg-[#006BB4] hover:bg-[#005593] text-white rounded font-medium text-[13px] flex items-center gap-2 transition-colors cursor-pointer"
+          className="h-9 px-4 bg-[#006BB4] hover:bg-[#005593] text-white rounded-[4px] font-medium text-[13px] flex items-center gap-2 transition-colors cursor-pointer"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <WuiIcon type="refresh" size="s" className={isRefreshing ? 'animate-spin' : ''} />
           <span>Refresh</span>
         </button>
       </div>
 
       {/* Agents Table Card */}
-      <div className="bg-white border border-[#D3DAE6] rounded p-4">
+      <div className="bg-white border border-[#D3DAE6] rounded-[4px] p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="text-[14px] font-semibold text-[#1A1C21]">Agents ({agents.length})</div>
           <div className="flex items-center gap-4 text-[12px]">
@@ -325,7 +311,7 @@ export function AgentsManagement({
                 onClick={onOpenDeployment}
                 className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium cursor-pointer"
               >
-                <PlusCircle className="w-3.5 h-3.5" />
+                <WuiIcon type="plusInCircle" size="s" />
                 <span>Deploy new agent (Installer UI)</span>
               </button>
             ) : (
@@ -335,7 +321,7 @@ export function AgentsManagement({
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium"
               >
-                <PlusCircle className="w-3.5 h-3.5" />
+                <WuiIcon type="plusInCircle" size="s" />
                 <span>Deploy new agent</span>
               </a>
             )}
@@ -343,12 +329,12 @@ export function AgentsManagement({
               onClick={exportCsv}
               className="flex items-center gap-1 text-[#006BB4] hover:underline font-medium"
             >
-              <Download className="w-3.5 h-3.5" />
+              <WuiIcon type="download" size="s" />
               <span>Export formatted</span>
             </button>
             {onOpenSettings && (
-              <button onClick={onOpenSettings} className="text-[#5A626F] hover:text-[#1A1C21]">
-                <Settings className="w-4 h-4" />
+              <button onClick={onOpenSettings} className="text-[#535966] hover:text-[#1A1C21]" aria-label="Agent settings">
+                <WuiIcon type="gear" size="m" />
               </button>
             )}
           </div>
@@ -357,7 +343,7 @@ export function AgentsManagement({
         <div className="overflow-x-auto border border-[#EBEFF5] rounded">
           <table className="w-full text-left border-collapse text-[12px]">
             <thead>
-              <tr className="bg-[#F8FAFC] border-b border-[#D3DAE6] text-[#5A626F] font-semibold">
+              <tr className="bg-[#FAFBFD] border-b border-[#D3DAE6] text-[#5A626F] font-semibold">
                 <th className="py-2.5 px-3">ID ↑</th>
                 <th className="py-2.5 px-3">Name</th>
                 <th className="py-2.5 px-3">IP</th>
@@ -374,7 +360,7 @@ export function AgentsManagement({
               {pagedAgents.map((agent) => (
                 <tr
                   key={agent.id}
-                  className="hover:bg-[#F8FAFC] transition-colors cursor-pointer"
+                  className="hover:bg-[#FAFBFD] transition-colors cursor-pointer"
                   onClick={() => onSelectAgent(agent.id)}
                 >
                   <td className="py-2 px-3 font-medium text-[#006BB4] hover:underline">{agent.id}</td>
@@ -385,30 +371,44 @@ export function AgentsManagement({
                       {agent.groups.map((grp) => (
                         <span
                           key={grp}
-                          className="bg-[#F0F4F8] border border-[#D3DAE6] text-[#5A626F] px-1.5 py-0.5 rounded text-[10px]"
+                          className="bg-[#F5F7FA] border border-[#D3DAE6] text-[#343741] px-1.5 py-0.5 rounded-[4px] text-[11px]"
                         >
                           {grp}
                         </span>
                       ))}
                     </div>
                   </td>
-                  <td className="py-2 px-3 text-[#1A1C21] whitespace-nowrap">{agent.os}</td>
+                  <td className="py-2 px-3 text-[#1A1C21] whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5">
+                      <WuiIcon
+                        type={
+                          osType(agent.os) === 'windows'
+                            ? 'osWindows'
+                            : osType(agent.os) === 'mac'
+                            ? 'osMac'
+                            : 'osLinux'
+                        }
+                        size="s"
+                      />
+                      <span>{agent.os}</span>
+                    </span>
+                  </td>
                   <td className="py-2 px-3 text-[#5A626F] font-mono">{agent.version}</td>
                   <td className="py-2 px-3 text-[#5A626F] whitespace-nowrap">{agent.regDate}</td>
                   <td className="py-2 px-3 text-[#5A626F] whitespace-nowrap">{agent.lastKeepAlive}</td>
                   <td className="py-2 px-3 whitespace-nowrap">
-                    <span className="flex items-center gap-1.5 font-medium text-[11px]">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          agent.status === 'active'
-                            ? 'bg-[#00A389]'
-                            : agent.status === 'disconnected'
-                            ? 'bg-[#BD271E]'
-                            : 'bg-[#98A2B3]'
-                        }`}
-                      ></span>
-                      <span className="capitalize">{agent.status.replace('_', ' ')}</span>
-                    </span>
+                    <WuiHealth
+                      tone={
+                        agent.status === 'active'
+                          ? 'success'
+                          : agent.status === 'disconnected'
+                          ? 'danger'
+                          : 'default'
+                      }
+                      className="capitalize"
+                    >
+                      {agent.status.replace('_', ' ')}
+                    </WuiHealth>
                   </td>
                   <td className="py-2 px-3 text-right">
                     <div className="flex items-center justify-end gap-2 text-[#006BB4]">
@@ -420,7 +420,7 @@ export function AgentsManagement({
                         title="View agent details"
                         className="hover:text-[#005593]"
                       >
-                        <Eye className="w-3.5 h-3.5" />
+                        <WuiIcon type="eye" size="s" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -439,14 +439,14 @@ export function AgentsManagement({
                         }
                         className={`transition-colors ${
                           copiedSshId === agent.id
-                            ? 'text-[#00A389] font-bold'
-                            : 'hover:text-[#00A389]'
+                            ? 'text-[#017D73]'
+                            : 'hover:text-[#017D73]'
                         }`}
                       >
                         {copiedSshId === agent.id ? (
-                          <span className="font-mono text-[9px] font-bold text-[#00A389]">✓</span>
+                          <WuiIcon type="check" size="s" className="text-[#017D73]" />
                         ) : (
-                          <span className="font-mono text-[10px] font-bold">&gt;_</span>
+                          <WuiIcon type="console" size="s" />
                         )}
                       </button>
                     </div>

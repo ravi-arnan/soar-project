@@ -1,23 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
-import {
-  CheckCircle2,
-  XCircle,
-  Server,
-  Database,
-  Sliders,
-  Key,
-  Cpu,
-  Layers,
-  Activity,
-  MemoryStick,
-  Sparkles,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { WuiIcon } from '../wui/WuiIcon';
 import type { FleetHealth, FleetStats } from '@/lib/fleet';
 import { formatWazuhTime } from '@/lib/fleet';
+import { DEFAULT_AI_CONFIG, getProviderMeta, type AiConfig } from '@/lib/aiConfig';
 import { ApiKeysView } from './ApiKeysView';
 import { DynamicSettingsView } from './DynamicSettingsView';
+import { WuiHealth, WuiPanel } from '../wui/WuiPrimitives';
 
 interface SettingsViewProps {
   health?: FleetHealth;
@@ -50,6 +40,28 @@ export function SettingsView({
   initialTab = 'general',
 }: SettingsViewProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'keys' | 'dynamic-config'>(initialTab);
+  const [prevInitialTab, setPrevInitialTab] = useState(initialTab);
+  const [activeAi, setActiveAi] = useState<AiConfig>(DEFAULT_AI_CONFIG);
+
+  if (initialTab !== prevInitialTab) {
+    setPrevInitialTab(initialTab);
+    setActiveTab(initialTab);
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    fetch('/api/settings/threat-intel', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!ignore && data?.ai_config) {
+          setActiveAi({ ...DEFAULT_AI_CONFIG, ...data.ai_config });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   // Data pemakaian resource riil kontainer Docker di server produksi (docker stats)
   const components: ComponentResource[] = [
@@ -134,14 +146,16 @@ export function SettingsView({
       port: ':8091',
     },
     {
-      name: 'AI Reasoning Engine (Gemini 2.5 Flash & DeepSeek-V4)',
+      name: `AI Reasoning Engine (${activeAi.model} / ${getProviderMeta(activeAi.provider).shortLabel})`,
       category: 'ai',
-      role: 'Triage kontekstual berbahasa Indonesia berbasis RAG playbook lokal anti-halusinasi',
+      role: activeAi.fallback_enabled
+        ? `Triage kontekstual dinamis (Fallback: ${activeAi.fallback_model})`
+        : 'Triage kontekstual dinamis (Fallback nonaktif)',
       memory: '0 MiB (Offloaded API)',
       memPercent: '0.0%',
-      status: 'Connected / Ready',
-      isOk: !!health?.gemini,
-      port: 'Cloud REST API',
+      status: activeAi.enabled ? 'Connected / Ready' : 'Disabled',
+      isOk: activeAi.enabled ? !!health?.gemini : false,
+      port: 'Cloud / Custom API',
     },
   ];
 
@@ -149,6 +163,7 @@ export function SettingsView({
     { method: 'GET', path: '/api/fleet', desc: 'Status agent + kesehatan stack' },
     { method: 'GET', path: '/api/events', desc: 'Threat events untuk dashboard' },
     { method: 'GET', path: '/api/keys', desc: 'Daftar API Key machine-to-machine' },
+    { method: 'GET', path: '/api/settings/threat-intel', desc: 'Konfigurasi AI & Threat Intel (masked)' },
     { method: 'POST', path: '/api/auth/2fa/request', desc: 'Kirim kode OTP 2FA ke email & Telegram' },
     { method: 'POST', path: '/api/auth/2fa/verify', desc: 'Verifikasi kode OTP & pasang cookie sesi' },
     { method: 'POST', path: '/api/commands', desc: 'Karantina, scan, dan mitigasi aktif' },
@@ -157,39 +172,42 @@ export function SettingsView({
 
   return (
     <div className="space-y-4">
-      {/* Tab Switcher */}
-      <div className="flex flex-wrap items-center gap-6 border-b border-[#D3DAE6] pb-2 text-[13px]">
+      {/* OUI Tabs */}
+      <div className="flex flex-wrap items-center gap-6 border-b border-[#D3DAE6] text-[13px]">
         <button
+          type="button"
           onClick={() => setActiveTab('general')}
-          className={`flex items-center gap-1.5 pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
             activeTab === 'general'
-              ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
-              : 'text-[#5A626F] hover:text-[#1A1C21]'
+              ? 'border-[#006BB4] text-[#006BB4] font-semibold'
+              : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
           }`}
         >
-          <Sliders className="w-3.5 h-3.5" />
+          <WuiIcon type="controlsHorizontal" size="s" />
           <span>General &amp; Diagnostics</span>
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('dynamic-config')}
-          className={`flex items-center gap-1.5 pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
             activeTab === 'dynamic-config'
-              ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
-              : 'text-[#5A626F] hover:text-[#1A1C21]'
+              ? 'border-[#006BB4] text-[#006BB4] font-semibold'
+              : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
           }`}
         >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>AI Engine &amp; Threat Intel (Dinamis)</span>
+          <WuiIcon type="machineLearningApp" size="s" className="ouiIcon--mono" />
+          <span>AI Engine &amp; Threat Intel</span>
         </button>
         <button
+          type="button"
           onClick={() => setActiveTab('keys')}
-          className={`flex items-center gap-1.5 pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
             activeTab === 'keys'
-              ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
-              : 'text-[#5A626F] hover:text-[#1A1C21]'
+              ? 'border-[#006BB4] text-[#006BB4] font-semibold'
+              : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
           }`}
         >
-          <Key className="w-3.5 h-3.5" />
+          <WuiIcon type="lock" size="s" />
           <span>API Keys &amp; Agent Access</span>
         </button>
       </div>
@@ -200,231 +218,197 @@ export function SettingsView({
         <ApiKeysView />
       ) : (
         <div className="space-y-4">
-          {/* Panel Komparasi Efisiensi Memori (Server vs Endpoint Kasir) */}
-          <div className="bg-white border border-[#D3DAE6] rounded-lg p-4 shadow-2xs">
-            <div className="flex items-center justify-between pb-3 border-b border-[#EDEEF2]">
-              <div className="flex items-center gap-2">
-                <MemoryStick className="w-4 h-4 text-[#006BB4]" />
-                <h2 className="text-[14px] font-semibold text-[#1A1C21]">
-                  Arsitektur Memori & Efisiensi Resource (Server SOAR vs Endpoint Kasir)
-                </h2>
+          {/* Resource Summary Strip */}
+          <div className="bg-white border border-[#D3DAE6] rounded-[4px] grid grid-cols-1 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[#E9EDF3]">
+            <div className="px-4 py-3">
+              <div className="text-[12px] font-medium text-[#535966]">
+                Server RAM Usage
               </div>
-              <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-[#EBF5FB] text-[#006BB4] border border-[#CCE3F5]">
-                Studi Kasus: CV Bali Handmade
-              </span>
+              <div className="text-[20px] font-semibold font-mono tabular-nums text-[#006BB4] mt-0.5">
+                ~3.05 GiB
+              </div>
+              <div className="text-[11px] text-[#69707D] mt-0.5">dari 7.65 GiB (~40% beban)</div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3.5">
-              {/* Kolom Server SOAR */}
-              <div className="p-3.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Server className="w-4 h-4 text-[#006BB4]" />
-                    <span className="text-[13px] font-semibold text-[#1A1C21]">
-                      Server Pusat SOAR
-                    </span>
-                  </div>
-                  <span className="text-[12px] font-mono font-bold text-[#006BB4] bg-white px-2 py-0.5 rounded border border-[#D3DAE6]">
-                    ~3,05 GiB RAM Terpakai
-                  </span>
-                </div>
-                <div className="mt-2.5 text-[12px] text-[#5A626F] space-y-1.5">
-                  <div className="flex justify-between">
-                    <span>Kapasitas RAM Server:</span>
-                    <span className="font-medium text-[#1A1C21]">7,65 GiB (Hanya ~40% Beban)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Komponen Terberat:</span>
-                    <span className="font-medium text-[#1A1C21]">Wazuh Indexer (~1,30 GiB)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Komparasi Platform:</span>
-                    <span className="font-medium text-[#00A389]">&gt;90% Lebih Hemat vs Shuffle (&gt;4,5 GB)</span>
-                  </div>
-                </div>
-                <p className="mt-3 text-[11px] text-[#64748b] leading-relaxed border-t border-[#E2E8F0] pt-2">
-                  Ditenagai n8n dan Wazuh single-node terpadu, seluruh modul keamanan berjalan stabil di satu server fisik dengan biaya lisensi Rp 0.
-                </p>
+            <div className="px-4 py-3">
+              <div className="text-[12px] font-medium text-[#535966]">
+                Rust Endpoint Agent
               </div>
-
-              {/* Kolom Endpoint Workstation */}
-              <div className="p-3.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Cpu className="w-4 h-4 text-[#15803D]" />
-                    <span className="text-[13px] font-semibold text-[#1A1C21]">
-                      Endpoint Klien (Kasir & Toko)
-                    </span>
-                  </div>
-                  <span className="text-[12px] font-mono font-bold text-[#15803D] bg-white px-2 py-0.5 rounded border border-[#D3DAE6]">
-                    ~7 - 10 MiB RAM per Host
-                  </span>
-                </div>
-                <div className="mt-2.5 text-[12px] text-[#5A626F] space-y-1.5">
-                  <div className="flex justify-between">
-                    <span>Agen Mandiri Rust (soar-agent):</span>
-                    <span className="font-medium text-[#15803D]">~7 MiB RAM &middot; 0% CPU Idle</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Agen Tradisional Wazuh:</span>
-                    <span className="font-medium text-[#1A1C21]">~50 - 80 MiB RAM</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Transmisi Jaringan:</span>
-                    <span className="font-medium text-[#00A389]">Hash-Only JSON (&lt;1 KB per alert)</span>
-                  </div>
-                </div>
-                <p className="mt-3 text-[11px] text-[#64748b] leading-relaxed border-t border-[#E2E8F0] pt-2">
-                  Komputer kasir berspesifikasi rendah tetap responsif karena pemantauan hanya menghitung sidik jari hash tanpa memuat berkas utuh ke server.
-                </p>
+              <div className="text-[20px] font-semibold font-mono tabular-nums text-[#007871] mt-0.5">
+                ~7 - 10 MiB
               </div>
+              <div className="text-[11px] text-[#69707D] mt-0.5">soar-agent vs ~50-80 MiB Wazuh</div>
+            </div>
+            <div className="px-4 py-3">
+              <div className="text-[12px] font-medium text-[#535966]">
+                Core Services
+              </div>
+              <div className="text-[20px] font-semibold font-mono tabular-nums text-[#1A1C21] mt-0.5">
+                {components.length}
+              </div>
+              <div className="text-[11px] text-[#69707D] mt-0.5">Layanan orkestrasi terkorelasi</div>
+            </div>
+            <div className="px-4 py-3">
+              <div className="text-[12px] font-medium text-[#535966]">
+                Transmission Mode
+              </div>
+              <div className="text-[14px] font-semibold text-[#1A1C21] mt-1.5">
+                Hash-Only JSON (&lt;1 KB)
+              </div>
+              <div className="text-[11px] text-[#69707D] mt-0.5">Tanpa kirim berkas utuh</div>
             </div>
           </div>
 
-          {/* Rincian Komponen Arsitektur Utama (Memory Breakdown) */}
-          <div className="bg-white border border-[#D3DAE6] rounded-lg p-4 shadow-2xs">
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#EDEEF2]">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-[#006BB4]" />
-                <h2 className="text-[14px] font-semibold text-[#1A1C21]">
-                  Rincian Komponen Arsitektur Utama (Status & Konsumsi Memori)
-                </h2>
-              </div>
-              <span className="text-[12px] text-[#5A626F]">
-                {components.length} Layanan Inti Terkorelasi
+          {/* Rincian Komponen Arsitektur Utama */}
+          <WuiPanel
+            title="Rincian Komponen Arsitektur Utama (Status &amp; Konsumsi Memori)"
+            accentColor="#006BB4"
+            right={
+              <span className="text-[11px] font-mono text-[#535966]">
+                {components.length} layanan
               </span>
-            </div>
-
-            <div className="divide-y divide-[#EDEEF2] overflow-x-auto">
+            }
+            bodyClassName="p-0"
+          >
+            <div className="overflow-x-auto">
               <table className="w-full text-left text-[12px]">
                 <thead>
-                  <tr className="text-[#5A626F] text-[11px] uppercase tracking-wider font-semibold border-b border-[#D3DAE6]">
-                    <th className="py-2.5 pr-4">Komponen & Peran</th>
+                  <tr className="text-[#535966] text-[12px] font-semibold border-b border-[#D3DAE6]">
+                    <th className="py-2.5 px-4">Komponen &amp; Peran</th>
                     <th className="py-2.5 px-3">Port / Jalur</th>
                     <th className="py-2.5 px-3">Beban Memori</th>
                     <th className="py-2.5 px-3">Rasio Limit</th>
-                    <th className="py-2.5 pl-3 text-right">Status Operasional</th>
+                    <th className="py-2.5 px-4 text-right">Status Operasional</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#F0F2F5]">
+                <tbody className="divide-y divide-[#E9EDF3]">
                   {components.map((comp) => (
-                    <tr key={comp.name} className="hover:bg-[#F8FAFC] transition">
-                      <td className="py-2.5 pr-4">
+                    <tr key={comp.name} className="hover:bg-[#FAFBFD] transition-colors">
+                      <td className="py-2.5 px-4">
                         <div className="font-medium text-[#1A1C21]">{comp.name}</div>
-                        <div className="text-[11px] text-[#64748b] mt-0.5">{comp.role}</div>
+                        <div className="text-[11px] text-[#535966] mt-0.5">{comp.role}</div>
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-[11px] text-[#5A626F] tabular-nums">
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-[#535966] tabular-nums">
                         {comp.port || '-'}
                       </td>
                       <td className="py-2.5 px-3 font-mono font-semibold text-[#006BB4] tabular-nums">
                         {comp.memory}
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-[#5A626F] tabular-nums">
+                      <td className="py-2.5 px-3 font-mono text-[#535966] tabular-nums">
                         {comp.memPercent}
                       </td>
-                      <td className="py-2.5 pl-3 text-right">
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-[#E6F6F4] text-[#00A389] border border-[#B3E7DF]">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
+                      <td className="py-2.5 px-4 text-right">
+                        <WuiHealth tone={comp.isOk ? 'success' : 'warning'} className="justify-end">
                           {comp.status}
-                        </span>
+                        </WuiHealth>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </WuiPanel>
 
           {/* Preferensi & Data Status Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Preferensi */}
-            <div className="bg-white border border-[#D3DAE6] rounded p-4">
-              <h2 className="text-[14px] font-semibold mb-3">Preferences</h2>
-              <div className="flex items-center justify-between py-2 border-b border-[#EDEEF2]">
+            <WuiPanel title="Preferences" accentColor="#006BB4">
+              <div className="flex items-center justify-between py-1">
                 <div>
-                  <div className="text-[13px] font-medium">Refresh interval</div>
-                  <div className="text-[12px] text-[#5A626F]">Seberapa sering dashboard menarik data fleet</div>
+                  <div className="text-[13px] font-medium text-[#1A1C21]">Refresh interval</div>
+                  <div className="text-[12px] text-[#535966]">
+                    Seberapa sering dashboard menarik data fleet
+                  </div>
                 </div>
                 <select
                   value={refreshMs}
                   onChange={(e) => onRefreshMsChange(Number(e.target.value))}
-                  className="px-2 py-1.5 rounded border border-[#D3DAE6] text-[12px] bg-white cursor-pointer"
+                  className="h-8 px-2.5 rounded-[4px] border border-[#D3DAE6] text-[12px] bg-white cursor-pointer focus:outline-none focus:border-[#006BB4]"
                 >
                   <option value={5000}>5 detik</option>
                   <option value={10000}>10 detik</option>
                   <option value={30000}>30 detik</option>
                 </select>
               </div>
-            </div>
+            </WuiPanel>
 
-            {/* Data status */}
-            <div className="bg-white border border-[#D3DAE6] rounded p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Database className="w-4 h-4 text-[#006BB4]" />
-                <h2 className="text-[14px] font-semibold">Data status</h2>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-[#EDEEF2]">
-                <div className="flex items-center gap-2">
-                  {online ? (
-                    <CheckCircle2 className="w-4 h-4 text-[#00A389]" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-[#BD271E]" />
-                  )}
-                  <span className="text-[13px] font-medium">Backend fleet</span>
-                </div>
-                <span className="text-[12px] text-[#5A626F]">
-                  {online ? 'Terjangkau (:8080)' : 'Tidak terjangkau'}
+            <WuiPanel
+              title={
+                <span className="flex items-center gap-2 text-[13px] font-semibold text-[#1A1C21]">
+                  <WuiIcon type="database" size="m" className="text-[#006BB4]" />
+                  <span>Data status</span>
                 </span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-[#EDEEF2]">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#00A389]" />
-                  <span className="text-[13px] font-medium">Agent aktif</span>
+              }
+              accentColor="#017D73"
+            >
+              <div className="divide-y divide-[#E9EDF3] text-[12px]">
+                <div className="flex items-center justify-between py-2">
+                  <div className="flex items-center gap-2">
+                    {online ? (
+                      <WuiIcon type="checkInCircleFilled" size="m" className="text-[#017D73]" />
+                    ) : (
+                      <WuiIcon type="crossInCircleFilled" size="m" className="text-[#BD271E]" />
+                    )}
+                    <span className="font-medium text-[#1A1C21]">Backend fleet</span>
+                  </div>
+                  <span className="text-[#535966] font-mono text-[11.5px]">
+                    {online ? 'Terjangkau (:8080)' : 'Tidak terjangkau'}
+                  </span>
                 </div>
-                <span className="text-[12px] text-[#5A626F]">
-                  {stats.active}/{stats.total} endpoint ({stats.rust} Rust agent)
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-[#EDEEF2]">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-[#00A389]" />
-                  <span className="text-[13px] font-medium">Event tercatat (24h)</span>
+                <div className="flex items-center justify-between py-2">
+                  <div className="flex items-center gap-2">
+                    <WuiIcon type="checkInCircleFilled" size="m" className="text-[#017D73]" />
+                    <span className="font-medium text-[#1A1C21]">Agent aktif</span>
+                  </div>
+                  <span className="text-[#535966] font-mono tabular-nums text-[11.5px]">
+                    {stats.active}/{stats.total} endpoint ({stats.rust} Rust)
+                  </span>
                 </div>
-                <span className="text-[12px] text-[#5A626F]">
-                  {stats.events_total?.toLocaleString('en-US') || 0} event &middot; {(stats.events_all_time ?? stats.events_total ?? 0).toLocaleString('en-US')} total
-                </span>
+                <div className="flex items-center justify-between py-2">
+                  <div className="flex items-center gap-2">
+                    <WuiIcon type="checkInCircleFilled" size="m" className="text-[#017D73]" />
+                    <span className="font-medium text-[#1A1C21]">Event tercatat (24h)</span>
+                  </div>
+                  <span className="text-[#535966] font-mono tabular-nums text-[11.5px]">
+                    {stats.events_total?.toLocaleString('en-US') || 0} (24h) /{' '}
+                    {(stats.events_all_time ?? stats.events_total ?? 0).toLocaleString('en-US')} total
+                  </span>
+                </div>
+                <div className="pt-2 text-[11.5px] text-[#535966]">
+                  Update terakhir: <span className="font-mono">{generatedAt ? formatWazuhTime(generatedAt) : '-'}</span>
+                </div>
               </div>
-              <div className="pt-2 text-[12px] text-[#5A626F]">
-                Update terakhir: {generatedAt ? formatWazuhTime(generatedAt) : '-'}
-              </div>
-            </div>
+            </WuiPanel>
           </div>
 
           {/* Endpoints */}
-          <div className="bg-white border border-[#D3DAE6] rounded p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Activity className="w-4 h-4 text-[#006BB4]" />
-              <h2 className="text-[14px] font-semibold">Backend endpoints</h2>
-            </div>
-            <p className="text-[12px] text-[#5A626F] mb-3">
-              Dashboard rewrite <code className="bg-[#F0F4F8] px-1 rounded font-mono text-[11px]">/api/*</code> ke fleet-monitor :8080 &middot; Webhook n8n di :5678
-            </p>
-            <div className="divide-y divide-[#EDEEF2]">
+          <WuiPanel
+            title={
+              <span className="flex items-center gap-2 text-[13px] font-semibold text-[#1A1C21]">
+                <WuiIcon type="pulse" size="m" className="text-[#006BB4]" />
+                <span>Backend endpoints</span>
+              </span>
+            }
+            subtitle="Dashboard rewrite /api/* ke fleet-monitor :8080, Webhook n8n di :5678"
+            accentColor="#006BB4"
+            bodyClassName="p-0"
+          >
+            <div className="divide-y divide-[#E9EDF3]">
               {endpoints.map((ep) => (
-                <div key={ep.path} className="py-2 flex items-center justify-between">
-                  <div className="flex items-center gap-2 font-mono text-[12px]">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      ep.method === 'GET' ? 'bg-[#EBF5FB] text-[#006BB4]' : 'bg-[#FEF3E8] text-[#B25E09]'
-                    }`}>
+                <div key={ep.path} className="px-4 py-2 flex items-center justify-between gap-2 text-[12px]">
+                  <div className="flex items-center gap-2 font-mono">
+                    <span
+                      className={`text-[11px] font-semibold w-10 ${
+                        ep.method === 'GET' ? 'text-[#006BB4]' : 'text-[#935E00]'
+                      }`}
+                    >
                       {ep.method}
                     </span>
-                    <span>{ep.path}</span>
+                    <span className="text-[#1A1C21]">{ep.path}</span>
                   </div>
-                  <span className="text-[12px] text-[#5A626F]">{ep.desc}</span>
+                  <span className="text-[#535966]">{ep.desc}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </WuiPanel>
         </div>
       )}
     </div>

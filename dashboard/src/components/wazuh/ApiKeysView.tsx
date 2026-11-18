@@ -1,26 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Key,
-  Plus,
-  Copy,
-  Check,
-  Shield,
-  Trash2,
-  AlertTriangle,
-  Code2,
-  RefreshCw,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  ChevronDown,
-  ChevronUp,
-  Mail,
-  Send,
-  ShieldCheck,
-} from 'lucide-react';
+import { WuiIcon } from '../wui/WuiIcon';
 import { formatWazuhTime } from '@/lib/fleet';
+import {
+  WuiBadge,
+  WuiCallOut,
+  WuiCodeBlock,
+  WuiHealth,
+  WuiModal,
+  WuiPageHeader,
+  WuiPanel,
+} from '../wui/WuiPrimitives';
 
 interface ApiKeyItem {
   id: string;
@@ -41,55 +32,27 @@ interface CreatedKeyResponse {
   created_at: string;
 }
 
-/**
- * Komponen Cuplikan Kode bergaya bersih (Clean Light Box).
- * Terinspirasi dari panduan lab/cloud console:
- * Background terang, border lembut, teks hijau monospace, tombol salin di kanan.
- */
-function SnippetBox({
-  label,
-  code,
-  helperText,
-}: {
-  label: string;
-  code: string;
-  helperText?: string;
-}) {
-  const [copied, setCopied] = useState(false);
+const AI_AGENT_SETUP_PROMPT = `Kamu adalah AI Security Operations Agent yang terhubung ke SOAR Fleet Control Plane.
 
-  const handleCopy = () => {
-    if (!navigator?.clipboard) return;
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+1. Konfigurasi Autentikasi & Endpoint:
+   - Simpan API Key di environment variable / secret manager (contoh: SOAR_API_KEY), jangan pernah hardcode di kode sumber.
+   - Base URL: https://soar.raviarnan.dev (atau endpoint internal http://100.73.91.17:8080 jika lewat Tailscale/LAN).
+   - Sertakan header di setiap HTTP request:
+     Authorization: Bearer <SOAR_API_KEY>
 
-  return (
-    <div className="space-y-1.5">
-      <div className="text-[12px] text-[#1A1C21] font-medium">{label}</div>
-      <div className="bg-white border border-[#D3DAE6] rounded-md px-4 py-2.5 flex items-center justify-between gap-3 shadow-2xs hover:border-[#B5C2D4] transition">
-        <code className="font-mono text-[12px] text-[#15803D] select-all break-all leading-relaxed">
-          {code}
-        </code>
-        <button
-          onClick={handleCopy}
-          className="p-1.5 rounded text-[#5A626F] hover:text-[#1A1C21] hover:bg-[#F0F4F8] transition shrink-0"
-          title="Salin cuplikan"
-        >
-          {copied ? (
-            <Check className="w-4 h-4 text-[#15803D]" />
-          ) : (
-            <Copy className="w-4 h-4" />
-          )}
-        </button>
-      </div>
-      {helperText && (
-        <div className="text-[11px] text-[#5A626F]">{helperText}</div>
-      )}
-    </div>
-  );
-}
+2. Daftar Endpoint & Scope yang Tersedia:
+   - [read:fleet]  GET /api/fleet
+     Melihat status kesehatan fleet, daftar agent terdaftar, agent_id, OS, dan IP.
+   - [read:intel]  GET /api/events/history?limit=20&severity=CRITICAL,HIGH
+     Mengambil riwayat alert FIM/Wazuh, SHA-256 hash, dan analisis reasoning.
+   - [write:actions] POST /api/commands (Content-Type: application/json)
+     Body: {"agent_id":"<id>","action":"quarantine|sinkhole|scan|restore","target":"<path_absolut_atau_domain>"}
+
+3. Aturan Operasional & Keamanan:
+   - Selalu lakukan GET /api/fleet dan GET /api/events/history lebih dulu untuk memverifikasi agent_id, severity, dan target sebelum menjalankan aksi.
+   - Dilarang mengeksekusi quarantine pada event berkategori INFO atau berstatus Benign.
+   - Validasi bahwa target quarantine/scan/restore adalah path absolut tanpa traversal, dan target sinkhole adalah domain valid.
+   - Minta konfirmasi operator sebelum memanggil POST /api/commands, kecuali untuk eskalasi otomatis insiden CRITICAL yang sudah disetujui.`;
 
 export function ApiKeysView() {
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
@@ -377,300 +340,248 @@ export function ApiKeysView() {
 
   return (
     <div className="space-y-4">
-      {/* Header Utama */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-semibold text-[#1A1C21]">
-            API Keys & Agent Access
-          </h2>
-          <p className="text-[12px] text-[#5A626F] mt-0.5">
-            Kelola kunci akses machine-to-machine untuk Autonomous AI Agent (Gemini, DeepSeek, n8n) dan automasi mitigasi SOAR.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-[#1A1C21] bg-white border border-[#D3DAE6] rounded hover:bg-[#F8F9FB] transition disabled:opacity-50"
-            title="Segarkan daftar API Key"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#004B80] rounded shadow-xs transition"
-          >
-            <Plus className="w-4 h-4" />
-            Generate New Key
-          </button>
-        </div>
-      </div>
+      <WuiPageHeader
+        title="API Keys &amp; Machine Access"
+        description="Kelola kunci akses machine-to-machine untuk AI Agent dan automasi mitigasi SOAR."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="h-8 px-3 text-[12px] font-medium text-[#1A1C21] bg-white border border-[#D3DAE6] rounded-[4px] hover:bg-[#FAFBFD] inline-flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
+              title="Segarkan daftar API Key"
+            >
+              <WuiIcon type="refresh" size="s" className={loading ? 'animate-spin' : ''} />
+              <span>Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="h-8 px-3 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#00538C] rounded-[4px] inline-flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <WuiIcon type="plus" size="s" />
+              <span>Generate New Key</span>
+            </button>
+          </>
+        }
+      />
 
-      {/* Ringkasan Status Keamanan */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="bg-white border border-[#D3DAE6] rounded p-3.5 flex items-center gap-3">
-          <div className="p-2.5 rounded bg-[#E6F4EA] text-[#137333]">
-            <CheckCircle2 className="w-5 h-5" />
+      {/* WUI Unified Summary Bar */}
+      <div className="bg-white border border-[#D3DAE6] rounded-[4px] grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#E9EDF3]">
+        <div className="px-4 py-3">
+          <div className="text-[12px] font-medium text-[#535966]">
+            Active Keys
           </div>
-          <div>
-            <div className="text-[11px] text-[#5A626F] font-medium uppercase tracking-wider">
-              Kunci Aktif
-            </div>
-            <div className="text-[20px] font-bold text-[#1A1C21] leading-tight">
-              {activeKeysCount}{' '}
-              <span className="text-[12px] font-normal text-[#5A626F]">
-                dari {keys.length} total
-              </span>
-            </div>
+          <div className="text-[22px] font-semibold text-[#007871] font-mono tabular-nums mt-0.5 leading-tight">
+            {activeKeysCount}{' '}
+            <span className="text-[12px] font-sans font-normal text-[#535966]">
+              dari {keys.length} total
+            </span>
           </div>
         </div>
 
-        <div className="bg-white border border-[#D3DAE6] rounded p-3.5 flex items-center gap-3">
-          <div className="p-2.5 rounded bg-[#F0F4F8] text-[#006BB4]">
-            <Shield className="w-5 h-5" />
+        <div className="px-4 py-3">
+          <div className="text-[12px] font-medium text-[#535966]">
+            Hashing Algorithm
           </div>
-          <div>
-            <div className="text-[11px] text-[#5A626F] font-medium uppercase tracking-wider">
-              Enkripsi & Hashing
-            </div>
-            <div className="text-[13px] font-semibold text-[#1A1C21] leading-tight">
-              SHA-256 One-Way Hash
-            </div>
-            <div className="text-[11px] text-[#5A626F] mt-0.5">
-              Token mentah tidak disimpan di database
-            </div>
+          <div className="text-[13px] font-semibold text-[#1A1C21] mt-1">
+            SHA-256 One-Way Hash
+          </div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">
+            Token mentah tidak pernah disimpan di database
           </div>
         </div>
 
-        <div className="bg-white border border-[#D3DAE6] rounded p-3.5 flex items-center gap-3">
-          <div className="p-2.5 rounded bg-[#FEF3E8] text-[#B25E09]">
-            <Clock className="w-5 h-5" />
+        <div className="px-4 py-3">
+          <div className="text-[12px] font-medium text-[#535966]">
+            Telemetry Audit
           </div>
-          <div>
-            <div className="text-[11px] text-[#5A626F] font-medium uppercase tracking-wider">
-              Audit Telemetri
-            </div>
-            <div className="text-[13px] font-semibold text-[#1A1C21] leading-tight">
-              Akses Per-Agent Tercatat
-            </div>
-            <div className="text-[11px] text-[#5A626F] mt-0.5">
-              Riwayat last_used otomatis ter-update
-            </div>
+          <div className="text-[13px] font-semibold text-[#1A1C21] mt-1">
+            Per-Agent Scope &amp; Last Used
+          </div>
+          <div className="text-[11px] text-[#69707D] mt-0.5">
+            Timestamp last_used otomatis tercatat
           </div>
         </div>
       </div>
 
-      {/* Kartu Autentikasi Dua Langkah (2FA) jika diperlukan login */}
+      {/* Kartu Autentikasi Dua Langkah (2FA) */}
       {isAuthRequired && (
-        <div className="bg-white border border-[#B8D7ED] rounded-lg p-5 shadow-xs transition">
-          <div className="flex items-start gap-3.5">
-            <div className="p-2.5 rounded-lg bg-[#EBF5FB] text-[#006BB4] mt-0.5 shrink-0">
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div className="flex-1">
+        <WuiPanel
+          title="Verifikasi Keamanan Dua Langkah (2FA)"
+          accentColor="#006BB4"
+        >
+          <div className="space-y-3.5 max-w-xl">
+            <p className="text-[12px] text-[#535966] leading-relaxed">
+              Pengelolaan API Key dilindungi verifikasi identitas administrator. Sistem akan mengirimkan kode OTP 6-digit ke email resmi administrator yang terdaftar.
+            </p>
+
+            <div className="p-3 rounded-[4px] bg-[#FAFBFD] border border-[#D3DAE6] flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <h3 className="text-[15px] font-semibold text-[#1A1C21]">
-                  Verifikasi Keamanan Dua Langkah (2FA)
-                </h3>
-                <span className="px-2 py-0.5 text-[10px] font-medium bg-[#EBF5FB] text-[#006BB4] rounded-full border border-[#CCE3F5]">
-                  Admin Gate
-                </span>
-              </div>
-              <p className="text-[12px] text-[#5A626F] mt-1 max-w-xl leading-relaxed">
-                Pengelolaan API Key dilindungi oleh verifikasi identitas administrator. Sistem akan mengirimkan kode OTP 6-digit ke email resmi administrator yang terdaftar.
-              </p>
-
-              {/* Status Pengiriman Email Administrator */}
-              <div className="mt-3.5 p-3 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3 max-w-xl">
-                <div className="flex items-center gap-2">
-                  <Mail className="w-4 h-4 text-[#5A626F]" />
-                  <span className="text-[12px] text-[#5A626F]">Email Terdaftar:</span>
-                  <code className="text-[12px] font-mono font-medium text-[#1A1C21] bg-white px-2 py-0.5 rounded border border-[#D3DAE6]">
-                    {maskedEmail}
-                  </code>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRequestOtp}
-                  disabled={isRequestingOtp || otpCooldown > 0}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#004B80] rounded transition disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed shadow-2xs"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  {isRequestingOtp
-                    ? 'Mengirim...'
-                    : otpCooldown > 0
-                    ? `Kirim Ulang (${otpCooldown}s)`
-                    : 'Kirim Kode Verifikasi'}
-                </button>
+                <WuiIcon type="email" size="m" className="text-[#535966]" />
+                <span className="text-[12px] text-[#535966]">Email Terdaftar:</span>
+                <code className="text-[12px] font-mono font-medium text-[#1A1C21] bg-white px-2 py-0.5 rounded-[4px] border border-[#D3DAE6]">
+                  {maskedEmail}
+                </code>
               </div>
 
-              {/* Pesan Feedback Pengiriman */}
-              {otpMessage && (
-                <div className="mt-2.5 p-2.5 rounded bg-[#F0FDF4] border border-[#BBF7D0] text-[#15803D] text-[12px] flex items-center gap-2 max-w-xl">
-                  <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>{otpMessage}</span>
-                </div>
+              <button
+                type="button"
+                onClick={handleRequestOtp}
+                disabled={isRequestingOtp || otpCooldown > 0}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#00538C] rounded-[4px] transition disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+              >
+                <WuiIcon type="arrowRight" size="s" />
+                {isRequestingOtp
+                  ? 'Mengirim...'
+                  : otpCooldown > 0
+                  ? `Kirim Ulang (${otpCooldown}s)`
+                  : 'Kirim Kode Verifikasi'}
+              </button>
+            </div>
+
+            {otpMessage && <WuiCallOut tone="success">{otpMessage}</WuiCallOut>}
+            {otpError && <WuiCallOut tone="danger">{otpError}</WuiCallOut>}
+
+            <form onSubmit={handleVerifyOtp} className="flex items-center gap-2 max-w-md">
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                placeholder="000000"
+                value={otpInput}
+                onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                className="w-36 h-9 px-3 text-[14px] font-mono font-semibold tracking-[6px] text-center bg-white border border-[#D3DAE6] rounded-[4px] focus:outline-none focus:border-[#006BB4]"
+              />
+              <button
+                type="submit"
+                disabled={isVerifyingOtp || otpInput.trim().length !== 6}
+                className="h-9 px-4 text-[12px] font-medium text-white bg-[#007871] hover:bg-[#005E58] rounded-[4px] transition disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isVerifyingOtp ? 'Memverifikasi...' : 'Verifikasi & Buka Akses'}
+              </button>
+            </form>
+
+            <div className="pt-3 border-t border-[#E9EDF3]">
+              <button
+                type="button"
+                onClick={() => setShowManualToken((prev) => !prev)}
+                className="text-[11px] text-[#006BB4] hover:underline cursor-pointer"
+              >
+                {showManualToken
+                  ? 'Sembunyikan opsi master token'
+                  : 'Opsi Teknisi: Buka dengan Master Token (.env)'}
+              </button>
+
+              {showManualToken && (
+                <form onSubmit={handleLoginSubmit} className="mt-2.5 flex items-center gap-2 max-w-md">
+                  <input
+                    type="password"
+                    placeholder="Masukkan DASHBOARD_LOGIN_TOKEN"
+                    value={loginInput}
+                    onChange={(e) => setLoginInput(e.target.value)}
+                    className="flex-1 h-8 px-3 text-[12px] bg-white border border-[#D3DAE6] rounded-[4px] focus:outline-none focus:border-[#006BB4]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isLoggingIn || !loginInput.trim()}
+                    className="h-8 px-3 text-[12px] font-medium text-[#1A1C21] bg-[#FAFBFD] border border-[#D3DAE6] hover:bg-[#F0F4F8] rounded-[4px] transition disabled:opacity-50"
+                  >
+                    {isLoggingIn ? 'Verifikasi...' : 'Login Token'}
+                  </button>
+                </form>
               )}
-
-              {otpError && (
-                <div className="mt-2.5 p-2.5 rounded bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] text-[12px] flex items-center gap-2 max-w-xl">
-                  <AlertTriangle className="w-4 h-4 shrink-0" />
-                  <span>{otpError}</span>
-                </div>
-              )}
-
-              {/* Form Input Kode Verifikasi OTP */}
-              <form onSubmit={handleVerifyOtp} className="mt-4 flex items-center gap-2 max-w-md">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  placeholder="000000"
-                  value={otpInput}
-                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
-                  className="w-36 px-3 py-1.5 text-[15px] font-mono font-bold tracking-[6px] text-center bg-[#F8FAFC] border border-[#D3DAE6] rounded focus:outline-none focus:border-[#006BB4] focus:bg-white"
-                />
-                <button
-                  type="submit"
-                  disabled={isVerifyingOtp || otpInput.trim().length !== 6}
-                  className="px-4 py-1.5 text-[12px] font-medium text-white bg-[#15803D] hover:bg-[#166534] rounded transition disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed shadow-2xs"
-                >
-                  {isVerifyingOtp ? 'Memverifikasi...' : 'Verifikasi & Buka Akses'}
-                </button>
-              </form>
-
-              {/* Opsi Darurat Teknisi (Fallback Master Token) */}
-              <div className="mt-4 pt-3 border-t border-[#EBF2F7] max-w-xl">
-                <button
-                  type="button"
-                  onClick={() => setShowManualToken((prev) => !prev)}
-                  className="text-[11px] text-[#5A626F] hover:text-[#1A1C21] underline cursor-pointer"
-                >
-                  {showManualToken
-                    ? 'Sembunyikan opsi master token'
-                    : 'Opsi Teknisi: Buka dengan Master Token (.env)'}
-                </button>
-
-                {showManualToken && (
-                  <form onSubmit={handleLoginSubmit} className="mt-2.5 flex items-center gap-2 max-w-md">
-                    <input
-                      type="password"
-                      placeholder="Masukkan DASHBOARD_LOGIN_TOKEN"
-                      value={loginInput}
-                      onChange={(e) => setLoginInput(e.target.value)}
-                      className="flex-1 px-3 py-1 text-[11px] bg-[#F8FAFC] border border-[#D3DAE6] rounded focus:outline-none focus:border-[#006BB4]"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isLoggingIn || !loginInput.trim()}
-                      className="px-3 py-1 text-[11px] font-medium text-[#1A1C21] bg-[#E2E8F0] hover:bg-[#CBD5E1] rounded transition disabled:opacity-50"
-                    >
-                      {isLoggingIn ? 'Verifikasi...' : 'Login Token'}
-                    </button>
-                  </form>
-                )}
-              </div>
             </div>
           </div>
-        </div>
+        </WuiPanel>
       )}
 
-      {/* Pesan Error umum jika ada */}
-      {error && !isAuthRequired && (
-        <div className="border border-[#F5C2C0] bg-[#FDF3F2] text-[#BD271E] text-[12px] rounded p-3 flex items-center gap-2">
-          <XCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+      {error && !isAuthRequired && <WuiCallOut tone="danger">{error}</WuiCallOut>}
 
       {/* Tabel Daftar Kunci */}
-      <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#D3DAE6] flex items-center justify-between">
-          <h3 className="text-[13px] font-semibold text-[#1A1C21]">Daftar API Access Keys</h3>
-          <span className="text-[11px] text-[#5A626F]">{keys.length} kunci terdaftar</span>
-        </div>
-
+      <WuiPanel
+        title="Daftar API Access Keys"
+        accentColor="#006BB4"
+        right={<span className="text-[11px] font-mono text-[#535966]">{keys.length} keys</span>}
+        bodyClassName="p-0"
+      >
         {loading ? (
-          <div className="p-8 text-center text-[#5A626F] text-[13px]">Memuat data API Keys...</div>
+          <div className="p-8 text-center text-[#535966] text-[12px]">Memuat data API Keys...</div>
         ) : keys.length === 0 ? (
           <div className="p-8 text-center">
-            <Key className="w-8 h-8 text-[#8A94A6] mx-auto mb-2" />
+            <WuiIcon type="lock" size="l" className="text-[#69707D] mx-auto mb-2" />
             <div className="text-[13px] font-semibold text-[#1A1C21]">Belum ada API Key</div>
-            <p className="text-[12px] text-[#5A626F] mt-1 max-w-sm mx-auto">
-              Klik tombol &quot;Generate New Key&quot; di kanan atas untuk membuat kunci akses pertama bagi AI Agent Anda.
+            <p className="text-[12px] text-[#535966] mt-1 max-w-sm mx-auto">
+              Klik tombol &quot;Generate New Key&quot; untuk membuat kunci akses machine-to-machine pertama.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">
               <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wider text-[#8A94A6] border-b border-[#D3DAE6] bg-[#FAFBFD]">
+                <tr className="text-left text-[12px] text-[#535966] border-b border-[#D3DAE6]">
                   <th className="px-4 py-2.5 font-semibold">Nama Token / Agent</th>
-                  <th className="px-4 py-2.5 font-semibold">Identifier Prefix</th>
-                  <th className="px-4 py-2.5 font-semibold">Cakupan Izin (Scopes)</th>
+                  <th className="px-4 py-2.5 font-semibold">Prefix</th>
+                  <th className="px-4 py-2.5 font-semibold">Scopes</th>
                   <th className="px-4 py-2.5 font-semibold">Dibuat Pada</th>
                   <th className="px-4 py-2.5 font-semibold">Terakhir Digunakan</th>
                   <th className="px-4 py-2.5 font-semibold">Status</th>
-                  <th className="px-4 py-2.5 font-semibold text-right">Aksi</th>
+                  <th className="px-4 py-2.5 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-[#E9EDF3]">
                 {keys.map((k) => (
-                  <tr key={k.id} className="border-b border-[#EDEEF2] last:border-0 hover:bg-[#F8FAFC]">
+                  <tr key={k.id} className="hover:bg-[#FAFBFD] transition-colors">
                     <td className="px-4 py-2.5 font-medium text-[#1A1C21]">
                       <div className="flex items-center gap-1.5">
-                        <Key className="w-3.5 h-3.5 text-[#006BB4]" />
+                        <WuiIcon type="lock" size="s" className="text-[#006BB4]" />
                         <span>{k.name}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-[11px] text-[#475569]">
+                    <td className="px-4 py-2.5 font-mono text-[11px] text-[#535966]">
                       <code>{k.prefix}</code>
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-1 flex-wrap">
                         {k.scopes.map((s) => (
-                          <span
+                          <WuiBadge
                             key={s}
-                            className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${
+                            tone={
                               s === 'write:actions'
-                                ? 'bg-[#FEF3E8] text-[#B25E09] border border-[#FDE5CC]'
+                                ? 'warning'
                                 : s === 'read:intel'
-                                  ? 'bg-[#F3E8FF] text-[#7E22CE] border border-[#E9D5FF]'
-                                  : 'bg-[#E0F2FE] text-[#0369A1] border border-[#BAE6FD]'
-                            }`}
+                                  ? 'primary'
+                                  : 'default'
+                            }
+                            className="font-mono text-[10px]"
                           >
                             {s}
-                          </span>
+                          </WuiBadge>
                         ))}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-[#5A626F]">{formatWazuhTime(k.created_at)}</td>
-                    <td className="px-4 py-2.5 text-[#5A626F]">
+                    <td className="px-4 py-2.5 font-mono tabular-nums text-[11px] text-[#535966]">
+                      {formatWazuhTime(k.created_at)}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono tabular-nums text-[11px] text-[#535966]">
                       {k.last_used_at ? formatWazuhTime(k.last_used_at) : '(Belum pernah)'}
                     </td>
                     <td className="px-4 py-2.5">
-                      {k.revoked ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8A94A6] bg-[#F1F5F9] px-2 py-0.5 rounded">
-                          Revoked
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#137333] bg-[#E6F4EA] px-2 py-0.5 rounded">
-                          Active
-                        </span>
-                      )}
+                      <WuiHealth tone={k.revoked ? 'default' : 'success'}>
+                        {k.revoked ? 'Revoked' : 'Active'}
+                      </WuiHealth>
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       {!k.revoked && (
                         <button
                           onClick={() => handleRevokeKey(k.id, k.name)}
                           disabled={revokingId === k.id}
-                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#BD271E] hover:bg-[#FDECEA] rounded transition disabled:opacity-50"
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#BD271E] hover:bg-[#FBECEB] rounded-[4px] transition disabled:opacity-50 cursor-pointer"
                           title="Cabut akses token ini"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <WuiIcon type="trash" size="s" />
                           <span>{revokingId === k.id ? 'Memproses...' : 'Revoke'}</span>
                         </button>
                       )}
@@ -681,55 +592,59 @@ export function ApiKeysView() {
             </table>
           </div>
         )}
-      </div>
+      </WuiPanel>
 
-      {/* Panduan Cuplikan Kode Integrasi (Clean Light Box Style) */}
-      <div className="bg-white border border-[#D3DAE6] rounded overflow-hidden">
+      {/* Panduan Cuplikan Kode Integrasi */}
+      <div className="bg-white border border-[#D3DAE6] rounded-[4px] overflow-hidden">
         <button
+          type="button"
           onClick={() => setIsGuideOpen(!isGuideOpen)}
-          className="w-full px-4 py-3 bg-[#FAFBFD] hover:bg-[#F0F4F8] flex items-center justify-between text-left transition"
+          className="w-full px-4 py-2.5 bg-[#FAFBFD] hover:bg-[#F0F4F8] flex items-center justify-between text-left transition cursor-pointer"
         >
           <div className="flex items-center gap-2">
-            <Code2 className="w-4 h-4 text-[#006BB4]" />
+            <WuiIcon type="appCode" size="m" className="ouiIcon--mono text-[#006BB4]" />
             <span className="text-[13px] font-semibold text-[#1A1C21]">
-              Panduan Integrasi AI Agent & Cuplikan Kode
+              Panduan Integrasi AI Agent, Prompt Setup &amp; Cuplikan Kode
             </span>
-            <span className="text-[11px] text-[#5A626F] hidden sm:inline">
-              (Format autentikasi header untuk script automasi atau agen otonom)
+            <span className="text-[11px] text-[#535966] hidden sm:inline">
+              (Format Bearer Token, cuplikan cURL, dan template prompt untuk agent otonom)
             </span>
           </div>
           <div className="flex items-center gap-1 text-[12px] text-[#006BB4] font-medium">
-            <span>{isGuideOpen ? 'Sembunyikan' : 'Lihat Cuplikan'}</span>
-            {isGuideOpen ? (
-              <ChevronUp className="w-4 h-4" />
-            ) : (
-              <ChevronDown className="w-4 h-4" />
-            )}
+            <span>{isGuideOpen ? 'Sembunyikan' : 'Lihat Panduan'}</span>
+            <WuiIcon type={isGuideOpen ? 'arrowUp' : 'arrowDown'} size="m" />
           </div>
         </button>
 
         {isGuideOpen && (
-          <div className="p-4 space-y-4 border-t border-[#EDEEF2] bg-[#FAFBFD] animate-in fade-in duration-150">
-            <p className="text-[12px] text-[#5A626F]">
-              Salin cuplikan kode di bawah ini untuk disematkan pada skrip automasi atau konfigurasi HTTP tool AI Agent Anda:
+          <div className="p-4 space-y-4 border-t border-[#E9EDF3] bg-white">
+            <p className="text-[12px] text-[#535966]">
+              Salin cuplikan atau prompt di bawah ini untuk menghubungkan skrip automasi maupun AI Agent Anda ke SOAR Control Plane:
             </p>
 
-            <SnippetBox
+            <WuiCodeBlock
               label="1. Format Header HTTP Autentikasi (Bearer Token):"
               code="Authorization: Bearer soar_live_xxxxxxxxxxxxxxxxxxxxxxxx"
               helperText="Gunakan header ini di setiap panggilan API untuk mengidentifikasi agen."
             />
 
-            <SnippetBox
+            <WuiCodeBlock
               label="2. Cuplikan cURL Baca Riwayat Ancaman & IoC (Scope: read:intel):"
               code='curl -s -H "Authorization: Bearer <API_KEY>" https://soar.raviarnan.dev/api/events/history?limit=10'
-              helperText="Mengembalikan ringkasan deteksi FIM, reputasi VirusTotal, dan analisis reasoning."
+              helperText="Mengembalikan ringkasan deteksi FIM, reputasi multi-sumber, dan analisis reasoning."
             />
 
-            <SnippetBox
+            <WuiCodeBlock
               label="3. Cuplikan cURL Eksekusi Karantina File (Scope: write:actions):"
               code='curl -s -X POST -H "Authorization: Bearer <API_KEY>" -H "Content-Type: application/json" -d "{\"agent_id\":\"003\",\"action\":\"quarantine\",\"target\":\"/tmp/malware.exe\"}" https://soar.raviarnan.dev/api/commands'
               helperText="Mengirimkan instruksi isolasi file langsung ke agen endpoint via Active Response."
+            />
+
+            <WuiCodeBlock
+              label="4. Panduan Prompt Setup AI Agent (System / Setup Prompt):"
+              code={AI_AGENT_SETUP_PROMPT}
+              multiline
+              helperText="Tempelkan prompt ini ke instruksi sistem AI Agent (MCP, n8n AI Agent, Claude, atau bot otonom) lalu ganti <SOAR_API_KEY> dengan token yang baru dibuat."
             />
           </div>
         )}
@@ -737,202 +652,192 @@ export function ApiKeysView() {
 
       {/* Modal Buat Key Baru */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-[#EDEEF2] pb-3">
-              <h3 className="text-[14px] font-semibold text-[#1A1C21] flex items-center gap-2">
-                <Key className="w-4 h-4 text-[#006BB4]" />
-                Generate New API Key
-              </h3>
+        <WuiModal
+          title={
+            <>
+              <WuiIcon type="lock" size="m" className="text-[#006BB4]" />
+              <span>Generate New API Key</span>
+            </>
+          }
+          onClose={() => setIsCreateModalOpen(false)}
+          footer={
+            <>
               <button
+                type="button"
                 onClick={() => setIsCreateModalOpen(false)}
-                className="text-[#8A94A6] hover:text-[#1A1C21] text-[18px] leading-none"
+                className="px-3 py-1.5 text-[12px] font-medium text-[#535966] border border-[#D3DAE6] bg-white hover:bg-[#FAFBFD] rounded-[4px] transition cursor-pointer"
               >
-                &times;
+                Batal
               </button>
+              <button
+                type="submit"
+                form="create-api-key-form"
+                disabled={isSubmitting || selectedScopes.length === 0}
+                className="px-3.5 py-1.5 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#00538C] rounded-[4px] transition disabled:opacity-50 cursor-pointer"
+              >
+                {isSubmitting ? 'Membuat...' : 'Buat API Key'}
+              </button>
+            </>
+          }
+        >
+          <form id="create-api-key-form" onSubmit={handleCreateKey} className="space-y-4">
+            <div>
+              <label className="block text-[12px] font-medium text-[#1A1C21] mb-1">
+                Nama Token / Agent
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="SOAR Triage Agent, Auto Containment Bot"
+                value={keyName}
+                onChange={(e) => setKeyName(e.target.value)}
+                className="w-full h-8 px-3 text-[12px] bg-white border border-[#D3DAE6] rounded-[4px] focus:outline-none focus:border-[#006BB4]"
+              />
             </div>
 
-            <form onSubmit={handleCreateKey} className="space-y-4">
-              <div>
-                <label className="block text-[12px] font-medium text-[#1A1C21] mb-1">
-                  Nama Token / Agent
+            <div>
+              <label className="block text-[12px] font-medium text-[#1A1C21] mb-2">
+                Cakupan Izin (Scopes)
+              </label>
+              <div className="space-y-2 text-[12px]">
+                <label className="flex items-start gap-2 p-2 border border-[#E9EDF3] rounded-[4px] hover:bg-[#FAFBFD] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedScopes.includes('read:fleet')}
+                    onChange={() => handleToggleScope('read:fleet')}
+                    className="mt-0.5 rounded-[2px]"
+                  />
+                  <div>
+                    <div className="font-semibold text-[#1A1C21] font-mono text-[11.5px]">read:fleet</div>
+                    <div className="text-[11px] text-[#535966]">
+                      Membaca status roster agen endpoint, metrik CPU/RAM, dan telemetri kesehatan.
+                    </div>
+                  </div>
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Gemini Triage Agent, Auto Containment Bot"
-                  value={keyName}
-                  onChange={(e) => setKeyName(e.target.value)}
-                  className="w-full px-3 py-1.5 text-[12px] bg-[#F8FAFC] border border-[#D3DAE6] rounded focus:outline-none focus:border-[#006BB4]"
-                />
-              </div>
 
-              <div>
-                <label className="block text-[12px] font-medium text-[#1A1C21] mb-2">
-                  Cakupan Izin (Scopes)
+                <label className="flex items-start gap-2 p-2 border border-[#E9EDF3] rounded-[4px] hover:bg-[#FAFBFD] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedScopes.includes('read:intel')}
+                    onChange={() => handleToggleScope('read:intel')}
+                    className="mt-0.5 rounded-[2px]"
+                  />
+                  <div>
+                    <div className="font-semibold text-[#1A1C21] font-mono text-[11.5px]">read:intel</div>
+                    <div className="text-[11px] text-[#535966]">
+                      Membaca riwayat deteksi ancaman, analisis reasoning AI, dan korelasi hash IoC.
+                    </div>
+                  </div>
                 </label>
-                <div className="space-y-2 text-[12px]">
-                  <label className="flex items-start gap-2 p-2 border border-[#EDEEF2] rounded hover:bg-[#F8FAFC] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedScopes.includes('read:fleet')}
-                      onChange={() => handleToggleScope('read:fleet')}
-                      className="mt-0.5 rounded"
-                    />
-                    <div>
-                      <div className="font-semibold text-[#1A1C21]">read:fleet</div>
-                      <div className="text-[11px] text-[#5A626F]">
-                        Membaca status roster agen endpoint, metrik CPU/RAM, dan telemetri kesehatan.
-                      </div>
-                    </div>
-                  </label>
 
-                  <label className="flex items-start gap-2 p-2 border border-[#EDEEF2] rounded hover:bg-[#F8FAFC] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedScopes.includes('read:intel')}
-                      onChange={() => handleToggleScope('read:intel')}
-                      className="mt-0.5 rounded"
-                    />
-                    <div>
-                      <div className="font-semibold text-[#1A1C21]">read:intel</div>
-                      <div className="text-[11px] text-[#5A626F]">
-                        Membaca riwayat deteksi ancaman, analisis reasoning AI, dan korelasi hash IoC.
-                      </div>
+                <label className="flex items-start gap-2 p-2 border border-[#E9EDF3] rounded-[4px] hover:bg-[#FAFBFD] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedScopes.includes('write:actions')}
+                    onChange={() => handleToggleScope('write:actions')}
+                    className="mt-0.5 rounded-[2px]"
+                  />
+                  <div>
+                    <div className="font-semibold text-[#BD271E] font-mono text-[11.5px]">write:actions</div>
+                    <div className="text-[11px] text-[#535966]">
+                      Mengeksekusi tindakan mitigasi aktif (Karantina file, isolasi sinkhole, scan).
                     </div>
-                  </label>
-
-                  <label className="flex items-start gap-2 p-2 border border-[#EDEEF2] rounded hover:bg-[#F8FAFC] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedScopes.includes('write:actions')}
-                      onChange={() => handleToggleScope('write:actions')}
-                      className="mt-0.5 rounded"
-                    />
-                    <div>
-                      <div className="font-semibold text-[#BD271E]">write:actions</div>
-                      <div className="text-[11px] text-[#5A626F]">
-                        Mengeksekusi tindakan mitigasi aktif (Karantina file, isolasi sinkhole, scan).
-                      </div>
-                    </div>
-                  </label>
-                </div>
+                  </div>
+                </label>
               </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EDEEF2]">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-3 py-1.5 text-[12px] font-medium text-[#5A626F] hover:bg-[#F0F4F8] rounded transition"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || selectedScopes.length === 0}
-                  className="px-3 py-1.5 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#004B80] rounded transition disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Membuat...' : 'Buat API Key'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            </div>
+          </form>
+        </WuiModal>
       )}
 
-      {/* Modal One-Time Reveal (Clean Light Box Style persis referensi) */}
+      {/* Modal One-Time Reveal */}
       {revealedKey && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-2xl max-w-lg w-full p-5 space-y-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-2 text-[#137333]">
-              <CheckCircle2 className="w-5 h-5" />
-              <h3 className="text-[15px] font-semibold text-[#1A1C21]">API Key Berhasil Dibuat</h3>
-            </div>
-
-            <div className="border border-[#FDE5CC] bg-[#FEF3E8] p-3 rounded flex items-start gap-2.5 text-[12px] text-[#B25E09]">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>
-                <strong>Penting:</strong> Salin API Key di bawah ini sekarang. Demi alasan keamanan, token rahasia ini tidak akan pernah ditampilkan lagi.
-              </span>
-            </div>
+        <WuiModal
+          title={
+            <>
+              <WuiIcon type="checkInCircleFilled" size="m" className="text-[#017D73]" />
+              <span>API Key Berhasil Dibuat</span>
+            </>
+          }
+          maxWidth="max-w-lg"
+          onClose={() => setRevealedKey(null)}
+          footer={
+            <button
+              type="button"
+              onClick={() => setRevealedKey(null)}
+              className="px-4 py-1.5 text-[12px] font-medium text-white bg-[#006BB4] hover:bg-[#00538C] rounded-[4px] transition cursor-pointer"
+            >
+              Selesai &amp; Tutup
+            </button>
+          }
+        >
+          <div className="space-y-4">
+            <WuiCallOut tone="warning">
+              <strong>Penting:</strong> Salin API Key di bawah ini sekarang. Demi keamanan, token rahasia ini tidak akan ditampilkan lagi setelah dialog ditutup.
+            </WuiCallOut>
 
             <div className="space-y-1.5">
               <div className="text-[12px] font-medium text-[#1A1C21]">
                 Token Akses untuk <strong>{revealedKey.name}</strong>:
               </div>
-              <div className="bg-white border border-[#D3DAE6] rounded-md px-4 py-3 flex items-center justify-between gap-3 shadow-2xs hover:border-[#B5C2D4] transition">
-                <code className="font-mono text-[13px] text-[#15803D] select-all break-all leading-relaxed">
+              <div className="bg-[#F5F7FA] border border-[#D3DAE6] rounded-[4px] px-3.5 py-2.5 flex items-center justify-between gap-3">
+                <code className="font-mono text-[12.5px] text-[#1A1C21] select-all break-all leading-relaxed">
                   {revealedKey.token}
                 </code>
                 <button
+                  type="button"
                   onClick={() => handleCopyModalToken(revealedKey.token)}
-                  className="p-1.5 rounded text-[#5A626F] hover:text-[#1A1C21] hover:bg-[#F0F4F8] transition shrink-0"
+                  className="p-1.5 rounded-[4px] bg-white border border-[#D3DAE6] text-[#535966] hover:text-[#006BB4] hover:border-[#006BB4] transition shrink-0 cursor-pointer"
                   title="Salin ke clipboard"
                 >
                   {copiedToken ? (
-                    <Check className="w-4 h-4 text-[#15803D]" />
+                    <WuiIcon type="check" size="m" className="text-[#017D73]" />
                   ) : (
-                    <Copy className="w-4 h-4" />
+                    <WuiIcon type="copy" size="m" />
                   )}
                 </button>
               </div>
             </div>
-
-            <div className="flex justify-end pt-3 border-t border-[#EDEEF2]">
-              <button
-                onClick={() => setRevealedKey(null)}
-                className="px-4 py-1.5 text-[12px] font-medium text-white bg-[#1A1C21] hover:bg-[#2C313A] rounded transition"
-              >
-                Selesai & Tutup
-              </button>
-            </div>
           </div>
-        </div>
+        </WuiModal>
       )}
 
       {/* Revoke API Key Confirmation Modal */}
       {revokeTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          role="dialog"
-          aria-modal="true"
+        <WuiModal
+          title={
+            <>
+              <WuiIcon type="alert" size="m" className="text-[#BD271E]" />
+              <span>Cabut API Key</span>
+            </>
+          }
+          onClose={() => setRevokeTarget(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setRevokeTarget(null)}
+                className="px-3 py-1.5 border border-[#D3DAE6] rounded-[4px] text-[12px] font-medium text-[#535966] hover:bg-[#FAFBFD] transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeRevokeKey}
+                disabled={revokingId === revokeTarget.id}
+                className="px-3 py-1.5 rounded-[4px] text-[12px] font-semibold text-white bg-[#BD271E] hover:bg-[#9E1F18] transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {revokingId === revokeTarget.id ? <WuiIcon type="refresh" size="s" className="animate-spin" /> : null}
+                <span>Cabut Kunci</span>
+              </button>
+            </>
+          }
         >
-          <div className="bg-white border border-[#D3DAE6] rounded w-full max-w-md p-5 shadow-xl">
-            <div className="flex items-start gap-3">
-              <div className="p-2 rounded-full bg-[#FDF3F2] text-[#BD271E] shrink-0">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[14px] font-bold text-[#1A1C21]">
-                  Cabut API Key
-                </h3>
-                <p className="text-[12px] text-[#5A626F] mt-1 leading-relaxed">
-                  Apakah Anda yakin ingin mencabut (revoke) API Key{' '}
-                  <strong className="text-[#1A1C21] font-mono">{revokeTarget.name}</strong>? Akses mesin/agen yang menggunakan token ini akan langsung terputus. Tindakan ini tidak dapat dibatalkan.
-                </p>
-
-                <div className="flex items-center justify-end gap-2.5 mt-5">
-                  <button
-                    type="button"
-                    onClick={() => setRevokeTarget(null)}
-                    className="px-3 py-1.5 border border-[#D3DAE6] rounded text-[12px] font-medium text-[#5A626F] hover:bg-[#F5F7FA] transition"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={executeRevokeKey}
-                    disabled={revokingId === revokeTarget.id}
-                    className="px-3 py-1.5 rounded text-[12px] font-semibold text-white bg-[#BD271E] hover:bg-[#9E1F18] transition flex items-center gap-1.5"
-                  >
-                    {revokingId === revokeTarget.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                    <span>Cabut Kunci</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+          <p className="text-[12px] text-[#535966] leading-relaxed">
+            Apakah Anda yakin ingin mencabut (revoke) API Key{' '}
+            <strong className="text-[#1A1C21] font-mono">{revokeTarget.name}</strong>? Akses mesin atau agen yang menggunakan token ini akan langsung terputus. Tindakan ini tidak dapat dibatalkan.
+          </p>
+        </WuiModal>
       )}
     </div>
   );

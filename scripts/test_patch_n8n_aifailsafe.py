@@ -220,6 +220,75 @@ class AiNodeTest(unittest.TestCase):
         self.assertIsNone(out["r"]["llm_error"])
         self.assertEqual(out["r"]["llm_model"], "gemini:2.5-flash")
 
+    def test_runtime_config_openai_primary_fallback_anthropic(self):
+        out = run_js(
+            r"""
+(async () => {
+  const calls = [];
+  const helpers = { httpRequest: async (opts) => {
+    calls.push({ method: opts.method, url: opts.url });
+    if (opts.url.includes('/api/settings/runtime-config')) {
+      return {
+        ai: {
+          enabled: true,
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          api_key: 'sk-oai',
+          fallback_enabled: true,
+          fallback_provider: 'anthropic',
+          fallback_model: 'claude-3-5-sonnet-latest',
+          fallback_api_key: 'sk-ant',
+          temperature: 0.2,
+          max_tokens: 500,
+        },
+      };
+    }
+    if (opts.url.includes('openai.com')) {
+      throw new Error('429 rate limit');
+    }
+    return { content: [{ type: 'text', text: 'Analisis fallback **Claude** aman.' }] };
+  }};
+  const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { FLEET_COMMAND_TOKEN: 'tok' }))[0].json;
+  console.log(JSON.stringify({ r, calls }));
+})();
+""".replace("__BASE__", json.dumps(self.BASE))
+        )
+        self.assertEqual(len(out["calls"]), 3)
+        self.assertEqual(out["r"]["ai_response"], "Analisis fallback Claude aman.")
+        self.assertEqual(out["r"]["llm_model"], "anthropic:claude-3-5-sonnet-latest")
+        self.assertIsNone(out["r"]["llm_error"])
+
+    def test_runtime_config_experiential_primary(self):
+        out = run_js(
+            r"""
+(async () => {
+  const calls = [];
+  const helpers = { httpRequest: async (opts) => {
+    calls.push({ method: opts.method, url: opts.url });
+    if (opts.url.includes('/api/settings/runtime-config')) {
+      return {
+        ai: {
+          enabled: true,
+          provider: 'experiential',
+          model: 'gpt-6-luna:free',
+          api_key: 'xpl_test_key',
+          fallback_enabled: false,
+        },
+      };
+    }
+    return { choices: [{ message: { content: 'Isolasi host terindikasi ransomware.' } }] };
+  }};
+  const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { FLEET_COMMAND_TOKEN: 'tok' }))[0].json;
+  console.log(JSON.stringify({ r, calls }));
+})();
+""".replace("__BASE__", json.dumps(self.BASE))
+        )
+        self.assertEqual(len(out["calls"]), 2)
+        self.assertEqual(out["calls"][1]["url"], "https://api.experientiallabs.ai/v1/chat/completions")
+        self.assertEqual(out["r"]["ai_response"], "Isolasi host terindikasi ransomware.")
+        self.assertEqual(out["r"]["llm_model"], "experiential:gpt-6-luna:free")
+        self.assertIsNone(out["r"]["llm_error"])
+
 
 class TemplateTest(unittest.TestCase):
     def test_normal_lengkap(self):

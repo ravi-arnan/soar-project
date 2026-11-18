@@ -2,6 +2,7 @@ import {
   createSessionToken,
   secretMatches,
   sessionCookie,
+  touchUserLastLogin,
   validLoginToken,
 } from "../../../lib/session.ts";
 
@@ -169,6 +170,7 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse("login gagal", 401);
   }
   rateLimit.delete(key);
+  await touchUserLastLogin({ username: "admin" });
   const token = createSessionToken(expectedToken);
   const secure =
     new URL(request.url).protocol === "https:" || request.headers.get("origin")?.startsWith("https://") === true;

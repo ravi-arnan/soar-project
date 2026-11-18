@@ -119,7 +119,7 @@ INDEXER_PASS = os.environ.get("WAZUH_INDEXER_PASS", "").strip()
 INDEXER_INDEX = os.environ.get("WAZUH_INDEXER_INDEX", "wazuh-alerts-*")
 INDEXER_SEARCH_MAX = 1000
 HISTORY_DEFAULT_LIMIT = 100
-HISTORY_MAX_LIMIT = 1000
+HISTORY_MAX_LIMIT = 10000
 
 # Command queue per agent (aksi dari dashboard, di-poll agent via GET):
 # id -> [{action: quarantine|sinkhole|scan, target, ts, by}]
@@ -1715,6 +1715,238 @@ def _user_authenticate(username, password):
         return None
 
 
+def _user_touch_login(username="", email=""):
+    """Catat timestamp login terakhir untuk sesi SSO, 2FA OTP, atau token master."""
+    clean_email = (email or "").strip().lower()
+    clean_user = (username or "").strip().lower()
+    if not clean_email and not clean_user:
+        return False
+    now_iso = datetime.now(WITA).isoformat()
+    try:
+        with closing(_db()) as conn, conn:
+            if clean_email:
+                cur = conn.execute(
+                    "UPDATE users SET last_login_at = ? WHERE LOWER(email) = ? AND active = 1",
+                    (now_iso, clean_email),
+                )
+                if cur.rowcount > 0:
+                    return True
+            if clean_user:
+                cur = conn.execute(
+                    "UPDATE users SET last_login_at = ? WHERE username = ? AND active = 1",
+                    (now_iso, clean_user),
+                )
+                return cur.rowcount > 0
+    except Exception as e:
+        print(f"user_touch_login error: {e}", flush=True)
+    return False
+
+
+_CF_SYNC_STATE = {
+    "last_synced_at": None,
+    "last_status": "idle",
+    "last_detail": "",
+    "emails_count": 0,
+    "policy_name": "",
+}
+
+
+def _cf_access_config():
+    return {
+        "token": os.environ.get("CLOUDFLARE_API_TOKEN", "").strip(),
+        "account_id": os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip(),
+        "app_id": os.environ.get("CLOUDFLARE_ACCESS_APP_ID", "").strip(),
+        "policy_id": os.environ.get("CLOUDFLARE_ACCESS_POLICY_ID", "").strip(),
+        "api_base": os.environ.get("CLOUDFLARE_API_BASE_URL", "https://api.cloudflare.com/client/v4").strip().rstrip("/"),
+    }
+
+
+def _cf_active_user_emails():
+    emails = set()
+    try:
+        with closing(_db()) as conn:
+            rows = conn.execute(
+                "SELECT email FROM users WHERE active = 1 AND email IS NOT NULL AND TRIM(email) != ''"
+            ).fetchall()
+        for r in rows:
+            em = str(r["email"] or "").strip().lower()
+            if "@" in em and " " not in em:
+                emails.add(em)
+    except Exception as e:
+        print(f"cf_active_user_emails error: {e}", flush=True)
+    return sorted(emails)
+
+
+def _cf_build_include_rules(existing_include, emails):
+    preserved = []
+    if isinstance(existing_include, list):
+        for rule in existing_include:
+            if isinstance(rule, dict) and "email" not in rule:
+                preserved.append(rule)
+    for em in emails:
+        preserved.append({"email": {"email": em}})
+    return preserved
+
+
+def _cf_api_request(url, token, method="GET", payload=None, timeout=12):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _cf_sync_status_summary():
+    cfg = _cf_access_config()
+    configured = bool(cfg["token"] and cfg["account_id"] and cfg["policy_id"])
+    emails = _cf_active_user_emails()
+    return {
+        "configured": configured,
+        "account_id": cfg["account_id"],
+        "app_id": cfg["app_id"],
+        "policy_id": cfg["policy_id"],
+        "active_emails_count": len(emails),
+        "last_synced_at": _CF_SYNC_STATE.get("last_synced_at"),
+        "last_status": _CF_SYNC_STATE.get("last_status", "idle"),
+        "last_detail": _CF_SYNC_STATE.get("last_detail", ""),
+        "policy_name": _CF_SYNC_STATE.get("policy_name", ""),
+    }
+
+
+def _sync_cloudflare_access_policy():
+    """Sinkronkan daftar email user aktif ke Cloudflare Zero Trust Access Policy."""
+    cfg = _cf_access_config()
+    emails = _cf_active_user_emails()
+    if not (cfg["token"] and cfg["account_id"] and cfg["policy_id"]):
+        detail = "Belum dikonfigurasi: isi CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, dan CLOUDFLARE_ACCESS_POLICY_ID"
+        _CF_SYNC_STATE.update({
+            "last_status": "unconfigured",
+            "last_detail": detail,
+            "emails_count": len(emails),
+        })
+        return {
+            "configured": False,
+            "synced": False,
+            "status": "unconfigured",
+            "detail": detail,
+            "emails_count": len(emails),
+            "emails": emails,
+        }
+
+    if not emails:
+        detail = "Sinkronisasi dilewati: tidak ada email user aktif (proteksi anti-lockout)"
+        _CF_SYNC_STATE.update({
+            "last_status": "skipped",
+            "last_detail": detail,
+            "emails_count": 0,
+        })
+        return {
+            "configured": True,
+            "synced": False,
+            "status": "skipped",
+            "detail": detail,
+            "emails_count": 0,
+            "emails": [],
+        }
+
+    candidates = []
+    if cfg["app_id"]:
+        candidates.append(
+            f"{cfg['api_base']}/accounts/{cfg['account_id']}/access/apps/{cfg['app_id']}/policies/{cfg['policy_id']}"
+        )
+    candidates.append(
+        f"{cfg['api_base']}/accounts/{cfg['account_id']}/access/policies/{cfg['policy_id']}"
+    )
+
+    last_err = ""
+    for target_url in candidates:
+        try:
+            get_resp = _cf_api_request(target_url, cfg["token"], method="GET")
+            if not isinstance(get_resp, dict) or not get_resp.get("success"):
+                errs = get_resp.get("errors", []) if isinstance(get_resp, dict) else []
+                raise RuntimeError(f"Cloudflare GET policy gagal: {errs or get_resp}")
+
+            policy_obj = get_resp.get("result") or {}
+            put_body = {
+                "name": policy_obj.get("name") or "SOAR Authorized Users",
+                "decision": policy_obj.get("decision") or "allow",
+                "include": _cf_build_include_rules(policy_obj.get("include"), emails),
+            }
+            for opt_key in (
+                "precedence",
+                "exclude",
+                "require",
+                "session_duration",
+                "purpose_justification_required",
+                "purpose_justification_prompt",
+                "approval_required",
+                "approval_groups",
+                "isolation_required",
+            ):
+                if opt_key in policy_obj and policy_obj[opt_key] is not None:
+                    put_body[opt_key] = policy_obj[opt_key]
+
+            put_resp = _cf_api_request(target_url, cfg["token"], method="PUT", payload=put_body)
+            if not isinstance(put_resp, dict) or not put_resp.get("success"):
+                errs = put_resp.get("errors", []) if isinstance(put_resp, dict) else []
+                raise RuntimeError(f"Cloudflare PUT policy gagal: {errs or put_resp}")
+
+            synced_at = datetime.now(WITA).isoformat()
+            policy_name = str(put_resp.get("result", {}).get("name") or put_body["name"])
+            detail = f"Tersinkron ke policy '{policy_name}' ({len(emails)} email aktif)"
+            _CF_SYNC_STATE.update({
+                "last_synced_at": synced_at,
+                "last_status": "synced",
+                "last_detail": detail,
+                "emails_count": len(emails),
+                "policy_name": policy_name,
+            })
+            return {
+                "configured": True,
+                "synced": True,
+                "status": "synced",
+                "detail": detail,
+                "policy_name": policy_name,
+                "emails_count": len(emails),
+                "emails": emails,
+                "synced_at": synced_at,
+            }
+        except urllib.error.HTTPError as he:
+            err_body = ""
+            try:
+                err_body = he.read().decode("utf-8", errors="replace")[:300]
+            except Exception:
+                pass
+            last_err = f"HTTP {he.code}: {err_body or he.reason}"
+            # Jika app-scoped URL mengembalikan 404 dan masih ada kandidat reusable policy, lanjut coba
+            if he.code == 404 and target_url != candidates[-1]:
+                continue
+            break
+        except Exception as e:
+            last_err = str(e)
+            break
+
+    detail = f"Gagal sinkron Cloudflare Access: {last_err}"
+    print(f"sync_cloudflare_access_policy error: {detail}", flush=True)
+    _CF_SYNC_STATE.update({
+        "last_status": "error",
+        "last_detail": detail,
+        "emails_count": len(emails),
+    })
+    return {
+        "configured": True,
+        "synced": False,
+        "status": "error",
+        "detail": detail,
+        "emails_count": len(emails),
+        "emails": emails,
+    }
+
+
 def _load_enrolled_agents(conn):
     try:
         cur = conn.execute("SELECT agent_id, poll_token FROM enrolled_agents WHERE status = 'active'")
@@ -1978,19 +2210,22 @@ printf '%s\\n' "$POLL_TOKEN" > /etc/soar-agent/fleet.token
 printf 'SOAR_FLEET_POLL_TOKEN_FILE=/etc/soar-agent/fleet.token\\n' > /etc/soar-agent/fleet.env
 chmod 600 /etc/soar-agent/fleet.token /etc/soar-agent/fleet.env
 
-if [ ! -f /usr/local/bin/soar-agent ]; then
+if [ ! -f /usr/local/bin/soar-agent ] || [ ! -s /usr/local/bin/soar-agent ]; then
   echo "      Mengunduh binary soar-agent..."
-  curl -fsSL -o /usr/local/bin/soar-agent "$SERVER_URL/api/installer/download/soar-agent" || true
+  curl -fsSL -o /usr/local/bin/soar-agent "$SERVER_URL/api/installer/download/soar-agent" || rm -f /usr/local/bin/soar-agent
   if [ ! -f /usr/local/bin/soar-agent ] || [ ! -s /usr/local/bin/soar-agent ]; then
     if [ -f /tmp/soar-agent ]; then
       cp /tmp/soar-agent /usr/local/bin/soar-agent
     fi
   fi
 fi
-chmod 755 /usr/local/bin/soar-agent || true
+if [ -f /usr/local/bin/soar-agent ]; then
+  chmod 755 /usr/local/bin/soar-agent || true
+fi
 
-echo "[4/4] Mendaftarkan layanan systemd soar-agent..."
-cat > /etc/systemd/system/soar-agent.service <<UNIT
+echo "[4/4] Mendaftarkan layanan soar-agent..."
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  cat > /etc/systemd/system/soar-agent.service <<UNIT
 [Unit]
 Description=SOAR Agen Ringan Rust
 After=network-online.target
@@ -1998,7 +2233,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/soar-agent --webhook $SERVER_URL/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name $AGENT_NAME --fleet-url $SERVER_URL/api/heartbeat
+ExecStart=/usr/local/bin/soar-agent --webhook $SERVER_URL/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name $AGENT_NAME --fleet-url $SERVER_URL/api/heartbeat --fleet-poll-token-file /etc/soar-agent/fleet.token
 Restart=always
 RestartSec=5
 Environment=RUST_LOG=info
@@ -2007,9 +2242,29 @@ EnvironmentFile=/etc/soar-agent/fleet.env
 [Install]
 WantedBy=multi-user.target
 UNIT
-
-systemctl daemon-reload || true
-systemctl enable --now soar-agent || true
+  systemctl daemon-reload || true
+  if [ -x /usr/local/bin/soar-agent ]; then
+    systemctl enable --now soar-agent || true
+  else
+    echo "[!] Binary /usr/local/bin/soar-agent belum tersedia (misal non-x86_64). Build agent-rs lalu jalankan: systemctl enable --now soar-agent"
+  fi
+elif command -v rc-service >/dev/null 2>&1; then
+  cat > /etc/init.d/soar-agent <<OPENRC
+#!/sbin/openrc-run
+name="soar-agent"
+command="/usr/local/bin/soar-agent"
+command_args="--webhook $SERVER_URL/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name $AGENT_NAME --fleet-url $SERVER_URL/api/heartbeat --fleet-poll-token-file /etc/soar-agent/fleet.token"
+command_background=true
+pidfile="/run/soar-agent.pid"
+depend() {{ need net; }}
+OPENRC
+  chmod 755 /etc/init.d/soar-agent
+  rc-update add soar-agent default || true
+  [ -x /usr/local/bin/soar-agent ] && rc-service soar-agent restart || true
+else
+  echo "[!] systemd/OpenRC tidak terdeteksi. Jalankan manual:"
+  echo "    /usr/local/bin/soar-agent --webhook $SERVER_URL/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name $AGENT_NAME --fleet-url $SERVER_URL/api/heartbeat --fleet-poll-token-file /etc/soar-agent/fleet.token"
+fi
 
 echo "========================================================"
 echo " [✓] Instalasi Selesai!"
@@ -2017,6 +2272,148 @@ echo " Agent ID   : $AGENT_ID"
 echo " Nama Agent : $AGENT_NAME"
 echo " Status     : Aktif & Terhubung ke SOAR Security Platform"
 echo "========================================================"
+"""
+
+
+def _generate_macos_installer_script(server_origin):
+    return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+# SOAR Agent Automated One-Line Installer for macOS (Apple Silicon & Intel)
+SERVER_URL="{server_origin}"
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "[!] Script ini khusus macOS (Darwin). Gunakan ?os=linux atau ?os=windows untuk OS lain."
+  exit 1
+fi
+
+HOSTNAME=$(scutil --get LocalHostName 2>/dev/null || hostname -s | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9.-' | cut -c1-30)
+ARCH=$(uname -m)
+
+echo "========================================================"
+echo " SOAR Endpoint Security: Automated macOS Agent Installer"
+echo " Target Host: $HOSTNAME ($ARCH)"
+echo " Server URL : $SERVER_URL"
+echo "========================================================"
+
+[ "$(id -u)" = 0 ] || {{ echo "[!] Harap jalankan script ini sebagai root (sudo)"; exit 1; }}
+
+echo "[1/4] Mengirim permohonan pendaftaran ke server SOAR..."
+REQUEST_JSON=$(curl -fsSL -X POST "$SERVER_URL/api/enroll/request" \\
+  -H "Content-Type: application/json" \\
+  -d "{{\\"hostname\\":\\"$HOSTNAME\\",\\"os\\":\\"macos\\",\\"arch\\":\\"$ARCH\\"}}")
+
+REQ_ID=$(echo "$REQUEST_JSON" | grep -o '"request_id":"[^"]*' | cut -d'"' -f4)
+if [ -z "$REQ_ID" ]; then
+  echo "[x] Gagal mendaftarkan host ke server. Respons: $REQUEST_JSON"
+  exit 1
+fi
+
+echo "[2/4] Permohonan tercatat dengan Request ID: $REQ_ID"
+echo "      Menunggu persetujuan (Approval) dari Administrator di SOAR Dashboard..."
+
+APPROVED=0
+for i in $(seq 1 120); do
+  sleep 3
+  STATUS_JSON=$(curl -fsSL "$SERVER_URL/api/enroll/status?request_id=$REQ_ID" || true)
+  STATUS=$(echo "$STATUS_JSON" | grep -o '"status":"[^"]*' | cut -d'"' -f4)
+  if [ "$STATUS" = "approved" ]; then
+    APPROVED=1
+    AGENT_ID=$(echo "$STATUS_JSON" | grep -o '"agent_id":"[^"]*' | cut -d'"' -f4)
+    AGENT_NAME=$(echo "$STATUS_JSON" | grep -o '"agent_name":"[^"]*' | cut -d'"' -f4)
+    POLL_TOKEN=$(echo "$STATUS_JSON" | grep -o '"poll_token":"[^"]*' | cut -d'"' -f4)
+    echo ""
+    echo "[✓] Disetujui oleh Admin! Menerima Agent ID: $AGENT_ID ($AGENT_NAME)"
+    break
+  elif [ "$STATUS" = "rejected" ]; then
+    echo ""
+    echo "[x] Permohonan instalasi ditolak oleh administrator."
+    exit 1
+  fi
+  printf "."
+done
+echo ""
+
+if [ "$APPROVED" -ne 1 ]; then
+  echo "[x] Waktu tunggu persetujuan habis (timeout 6 menit). Silakan coba lagi."
+  exit 1
+fi
+
+echo "[3/4] Menyiapkan direktori, token, dan binary macOS..."
+mkdir -p /etc/soar-agent /var/ossec/quarantine /usr/local/bin /Library/LaunchDaemons
+chmod 750 /var/ossec/quarantine
+printf '%s\\n' "$POLL_TOKEN" > /etc/soar-agent/fleet.token
+printf 'SOAR_FLEET_POLL_TOKEN_FILE=/etc/soar-agent/fleet.token\\n' > /etc/soar-agent/fleet.env
+chmod 600 /etc/soar-agent/fleet.token /etc/soar-agent/fleet.env
+
+if [ ! -f /usr/local/bin/soar-agent ] || [ ! -s /usr/local/bin/soar-agent ]; then
+  echo "      Mengunduh binary macOS ($ARCH)..."
+  curl -fsSL -o /usr/local/bin/soar-agent "$SERVER_URL/api/installer/download/soar-agent-macos-$ARCH" 2>/dev/null \\
+    || curl -fsSL -o /usr/local/bin/soar-agent "$SERVER_URL/api/installer/download/soar-agent-macos" 2>/dev/null \\
+    || rm -f /usr/local/bin/soar-agent
+  if [ ! -f /usr/local/bin/soar-agent ] && [ -f /tmp/soar-agent ]; then
+    cp /tmp/soar-agent /usr/local/bin/soar-agent
+  fi
+fi
+
+if [ -f /usr/local/bin/soar-agent ] && [ -s /usr/local/bin/soar-agent ]; then
+  chmod 755 /usr/local/bin/soar-agent
+fi
+
+echo "[4/4] Mendaftarkan LaunchDaemon launchd (dev.raviarnan.soar-agent)..."
+PLIST_PATH="/Library/LaunchDaemons/dev.raviarnan.soar-agent.plist"
+cat > "$PLIST_PATH" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.raviarnan.soar-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/soar-agent</string>
+    <string>--webhook</string>
+    <string>$SERVER_URL/webhook/wazuh-alert</string>
+    <string>--agent-id</string>
+    <string>$AGENT_ID</string>
+    <string>--agent-name</string>
+    <string>$AGENT_NAME</string>
+    <string>--fleet-url</string>
+    <string>$SERVER_URL/api/heartbeat</string>
+    <string>--fleet-poll-token-file</string>
+    <string>/etc/soar-agent/fleet.token</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/var/log/soar-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/soar-agent.log</string>
+</dict>
+</plist>
+PLIST
+chmod 644 "$PLIST_PATH"
+chown root:wheel "$PLIST_PATH"
+
+if [ -x /usr/local/bin/soar-agent ]; then
+  launchctl bootout system/dev.raviarnan.soar-agent 2>/dev/null || launchctl unload "$PLIST_PATH" 2>/dev/null || true
+  launchctl bootstrap system "$PLIST_PATH" 2>/dev/null || launchctl load -w "$PLIST_PATH"
+  echo "========================================================"
+  echo " [✓] Instalasi macOS Selesai!"
+  echo " Agent ID   : $AGENT_ID"
+  echo " Nama Agent : $AGENT_NAME"
+  echo " Service    : dev.raviarnan.soar-agent (launchd aktif)"
+  echo "========================================================"
+else
+  echo "========================================================"
+  echo " [!] Token & LaunchDaemon macOS sudah siap, namun binary macOS ($ARCH) belum tersedia di server."
+  echo "     Build di Mac dari folder agent-rs:"
+  echo "       cargo build --release && sudo cp target/release/soar-agent /usr/local/bin/soar-agent"
+  echo "     Lalu aktifkan service:"
+  echo "       sudo launchctl bootstrap system $PLIST_PATH"
+  echo "========================================================"
+fi
 """
 
 
@@ -2080,26 +2477,47 @@ if (-not $Approved) {{
     exit 1
 }}
 
-# 3. Setup direktori dan konfigurasi
-Write-Host "`n[3/4] Menyiapkan direktori C:\\soar-agent..." -ForegroundColor Yellow
+# 3. Setup direktori, token ACL ketat, dan unduh binary
+Write-Host "`n[3/4] Menyiapkan direktori C:\\soar-agent dan token..." -ForegroundColor Yellow
 $TargetDir = "C:\\soar-agent"
 if (-not (Test-Path $TargetDir)) {{
     New-Item -Path $TargetDir -ItemType Directory | Out-Null
 }}
+$QuarantineDir = "$TargetDir\\quarantine"
+if (-not (Test-Path $QuarantineDir)) {{
+    New-Item -Path $QuarantineDir -ItemType Directory | Out-Null
+}}
 
 $TokenPath = "$TargetDir\\fleet.token"
-Set-Content -Path $TokenPath -Value $PollToken
+Remove-Item $TokenPath -Force -ErrorAction SilentlyContinue
+[System.IO.File]::WriteAllText($TokenPath, $PollToken)
+icacls $TokenPath /inheritance:r /grant:r "*S-1-5-18:(R)" "*S-1-5-32-544:(R)" | Out-Null
 
-# 4. Unduh binary jika belum ada
 $ExePath = "$TargetDir\\soar-agent.exe"
 if (-not (Test-Path $ExePath)) {{
     Write-Host "      Mengunduh binary soar-agent.exe..." -ForegroundColor Gray
     $BinUrl = "$ServerUrl/api/installer/download/soar-agent.exe"
     try {{
-        Invoke-WebRequest -Uri $BinUrl -OutFile $ExePath
+        Invoke-WebRequest -Uri $BinUrl -OutFile $ExePath -UseBasicParsing
     }} catch {{
         Write-Host "[!] Binary tidak dapat diunduh otomatis dari server. Pastikan soar-agent.exe tersedia di $TargetDir" -ForegroundColor Yellow
     }}
+}}
+
+# 4. Daftarkan & jalankan Scheduled Task SYSTEM
+Write-Host "[4/4] Mendaftarkan Scheduled Task 'SOAR Agent' (SYSTEM)..." -ForegroundColor Yellow
+$TaskName = "SOAR Agent"
+$WatchPaths = "$env:USERPROFILE\\Downloads,$env:USERPROFILE\\Desktop,$env:USERPROFILE\\Documents"
+$AgentArgs = "--webhook $ServerUrl/webhook/wazuh-alert --agent-id $AgentId --agent-name `"$AgentName`" --fleet-url $ServerUrl/api/heartbeat --fleet-poll-token-file `"$TokenPath`" --watch `"$WatchPaths`" --scan-interval-secs 21600"
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+$Action = New-ScheduledTaskAction -Execute $ExePath -Argument $AgentArgs
+$TriggerStartup = New-ScheduledTaskTrigger -AtStartup
+$TriggerLogon = New-ScheduledTaskTrigger -AtLogOn
+$Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$Settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
+Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger @($TriggerStartup, $TriggerLogon) -Principal $Principal -Settings $Settings -Force | Out-Null
+if (Test-Path $ExePath) {{
+    Start-ScheduledTask -TaskName $TaskName
 }}
 
 Write-Host "========================================================" -ForegroundColor Green
@@ -2119,10 +2537,121 @@ DEFAULT_AI_CONFIG = {
     "max_tokens": 1500,
     "system_instruction": "You are a senior SOC analyst. Respond in formal Bahasa Indonesia. Write 2-3 concise sentences. Focus on immediate containment and severity.",
     "api_key": "",
+    "custom_base_url": "",
+    "primary_saved_key_id": "",
+    "fallback_enabled": True,
     "fallback_provider": "pollinations",
     "fallback_model": "deepseek/deepseek-v4-flash",
-    "custom_base_url": "",
+    "fallback_api_key": "",
+    "fallback_base_url": "",
+    "fallback_saved_key_id": "",
+    "saved_api_keys": [],
 }
+
+PROVIDER_ENV_KEYS = {
+    "google": "GEMINI_API_KEY",
+    "pollinations": "POLLINATIONS_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "experiential": "EXPERIENTIAL_API_KEY",
+}
+
+
+def _merge_ai_defaults(raw):
+    merged = dict(DEFAULT_AI_CONFIG)
+    if isinstance(raw, dict):
+        merged.update(raw)
+    if not isinstance(merged.get("saved_api_keys"), list):
+        merged["saved_api_keys"] = []
+    return merged
+
+
+def _resolve_provider_env_key(provider):
+    env_name = PROVIDER_ENV_KEYS.get(str(provider or "").strip().lower(), "")
+    return os.environ.get(env_name, "").strip() if env_name else ""
+
+
+def _find_saved_key(saved_keys, key_id):
+    kid = str(key_id or "").strip()
+    if not kid or not isinstance(saved_keys, list):
+        return None
+    for item in saved_keys:
+        if isinstance(item, dict) and str(item.get("id", "")).strip() == kid:
+            return item
+    return None
+
+
+def _sanitize_discovered_models(raw_models):
+    if not isinstance(raw_models, list):
+        return []
+    cleaned = []
+    seen = set()
+    for m in raw_models[:400]:
+        if not isinstance(m, dict):
+            continue
+        mid = str(m.get("id", "")).strip()
+        if not mid or mid in seen:
+            continue
+        seen.add(mid)
+        entry = {
+            "id": mid,
+            "label": str(m.get("label") or mid).strip(),
+            "free": bool(m.get("free", False)),
+            "chat_supported": bool(m.get("chat_supported", True)),
+        }
+        if m.get("context_window") is not None:
+            try:
+                entry["context_window"] = int(m["context_window"])
+            except (TypeError, ValueError):
+                pass
+        cleaned.append(entry)
+    return cleaned
+
+
+def _sanitize_saved_key_entry(item, existing_by_id):
+    if not isinstance(item, dict):
+        return None
+    kid = str(item.get("id") or "").strip() or f"key_{uuid.uuid4().hex[:10]}"
+    prev = existing_by_id.get(kid, {})
+    raw_in = str(item.get("api_key") or "").strip()
+    if item.get("clear_api_key"):
+        final_key = ""
+    elif raw_in and "•" not in raw_in:
+        final_key = raw_in
+    else:
+        final_key = str(prev.get("api_key") or "").strip()
+
+    models = (
+        _sanitize_discovered_models(item.get("models"))
+        if "models" in item
+        else _sanitize_discovered_models(prev.get("models", []))
+    )
+    return {
+        "id": kid,
+        "name": str(item.get("name") or prev.get("name") or "Saved Key").strip()[:80],
+        "provider": str(item.get("provider") or prev.get("provider") or "google").strip().lower(),
+        "model": str(item.get("model") or prev.get("model") or "").strip(),
+        "base_url": str(item.get("base_url") if "base_url" in item else prev.get("base_url") or "").strip(),
+        "api_key": final_key,
+        "models": models,
+        "models_updated_at": str(
+            item.get("models_updated_at") if "models_updated_at" in item else prev.get("models_updated_at") or ""
+        ).strip(),
+    }
+
+
+def _resolve_ai_key(inline_key, saved_key_id, stored_ai, slot_key_field="api_key", provider=""):
+    s = str(inline_key or "").strip()
+    if s and "•" not in s:
+        return s
+    saved = _find_saved_key((stored_ai or {}).get("saved_api_keys"), saved_key_id)
+    if saved and str(saved.get("api_key") or "").strip():
+        return str(saved["api_key"]).strip()
+    if slot_key_field and stored_ai:
+        slot_val = str(stored_ai.get(slot_key_field) or "").strip()
+        if slot_val:
+            return slot_val
+    return _resolve_provider_env_key(provider)
 
 DEFAULT_THREAT_INTEL_CONFIG = {
     "consensus_mode": "ensemble",
@@ -2212,14 +2741,41 @@ def _set_system_setting(key, value, updated_by="admin"):
 
 
 def _get_masked_settings():
-    ai = _get_system_setting("ai_config", DEFAULT_AI_CONFIG)
+    ai = _merge_ai_defaults(_get_system_setting("ai_config", DEFAULT_AI_CONFIG))
     ti = _get_system_setting("threat_intel_config", DEFAULT_THREAT_INTEL_CONFIG)
 
     ai_safe = dict(ai)
-    env_gemini = os.environ.get("GEMINI_API_KEY", "")
-    ai_safe["has_api_key"] = bool(ai_safe.get("api_key") or env_gemini)
-    ai_safe["api_key_masked"] = _mask_secret(ai_safe.get("api_key") or env_gemini)
+    primary_key = (ai_safe.get("api_key") or "").strip() or _resolve_provider_env_key(ai_safe.get("provider"))
+    ai_safe["has_api_key"] = bool(primary_key)
+    ai_safe["api_key_masked"] = _mask_secret(primary_key)
     ai_safe["api_key"] = ai_safe["api_key_masked"]
+
+    fb_key = (ai_safe.get("fallback_api_key") or "").strip() or _resolve_provider_env_key(ai_safe.get("fallback_provider"))
+    ai_safe["has_fallback_api_key"] = bool(fb_key)
+    ai_safe["fallback_api_key_masked"] = _mask_secret(fb_key)
+    ai_safe["fallback_api_key"] = ai_safe["fallback_api_key_masked"]
+
+    masked_saved = []
+    for item in ai_safe.get("saved_api_keys") or []:
+        if not isinstance(item, dict):
+            continue
+        raw_k = str(item.get("api_key") or "").strip()
+        masked_k = _mask_secret(raw_k)
+        masked_saved.append(
+            {
+                "id": str(item.get("id") or ""),
+                "name": str(item.get("name") or "Saved Key"),
+                "provider": str(item.get("provider") or "google"),
+                "model": str(item.get("model") or ""),
+                "base_url": str(item.get("base_url") or ""),
+                "has_api_key": bool(raw_k),
+                "api_key_masked": masked_k,
+                "api_key": masked_k,
+                "models": _sanitize_discovered_models(item.get("models") or []),
+                "models_updated_at": str(item.get("models_updated_at") or ""),
+            }
+        )
+    ai_safe["saved_api_keys"] = masked_saved
 
     ti_safe = json.loads(json.dumps(ti))
     sources = ti_safe.get("sources", {})
@@ -2248,16 +2804,60 @@ def _get_masked_settings():
 
 
 def _update_system_settings(payload, updated_by="admin"):
-    curr_ai = _get_system_setting("ai_config", DEFAULT_AI_CONFIG)
+    curr_ai = _merge_ai_defaults(_get_system_setting("ai_config", DEFAULT_AI_CONFIG))
     curr_ti = _get_system_setting("threat_intel_config", DEFAULT_THREAT_INTEL_CONFIG)
 
     if "ai_config" in payload and isinstance(payload["ai_config"], dict):
         new_ai = payload["ai_config"]
-        for field in ("enabled", "provider", "model", "temperature", "max_tokens", "system_instruction", "fallback_provider", "fallback_model", "custom_base_url"):
+        existing_saved = {
+            str(k.get("id") or ""): k
+            for k in (curr_ai.get("saved_api_keys") or [])
+            if isinstance(k, dict) and k.get("id")
+        }
+        if "saved_api_keys" in new_ai and isinstance(new_ai["saved_api_keys"], list):
+            next_saved = []
+            for raw_item in new_ai["saved_api_keys"][:30]:
+                cleaned_item = _sanitize_saved_key_entry(raw_item, existing_saved)
+                if cleaned_item:
+                    next_saved.append(cleaned_item)
+            curr_ai["saved_api_keys"] = next_saved
+
+        for field in (
+            "enabled",
+            "provider",
+            "model",
+            "temperature",
+            "max_tokens",
+            "system_instruction",
+            "custom_base_url",
+            "primary_saved_key_id",
+            "fallback_enabled",
+            "fallback_provider",
+            "fallback_model",
+            "fallback_base_url",
+            "fallback_saved_key_id",
+        ):
             if field in new_ai:
                 curr_ai[field] = new_ai[field]
-        if "api_key" in new_ai and new_ai["api_key"] and "•" not in str(new_ai["api_key"]):
+
+        if new_ai.get("clear_api_key"):
+            curr_ai["api_key"] = ""
+        elif "api_key" in new_ai and new_ai["api_key"] and "•" not in str(new_ai["api_key"]):
             curr_ai["api_key"] = str(new_ai["api_key"]).strip()
+        elif new_ai.get("primary_saved_key_id"):
+            saved_p = _find_saved_key(curr_ai.get("saved_api_keys"), new_ai.get("primary_saved_key_id"))
+            if saved_p and saved_p.get("api_key"):
+                curr_ai["api_key"] = saved_p["api_key"]
+
+        if new_ai.get("clear_fallback_api_key"):
+            curr_ai["fallback_api_key"] = ""
+        elif "fallback_api_key" in new_ai and new_ai["fallback_api_key"] and "•" not in str(new_ai["fallback_api_key"]):
+            curr_ai["fallback_api_key"] = str(new_ai["fallback_api_key"]).strip()
+        elif new_ai.get("fallback_saved_key_id"):
+            saved_fb = _find_saved_key(curr_ai.get("saved_api_keys"), new_ai.get("fallback_saved_key_id"))
+            if saved_fb and saved_fb.get("api_key"):
+                curr_ai["fallback_api_key"] = saved_fb["api_key"]
+
         _set_system_setting("ai_config", curr_ai, updated_by)
 
     if "threat_intel_config" in payload and isinstance(payload["threat_intel_config"], dict):
@@ -2281,20 +2881,65 @@ def _update_system_settings(payload, updated_by="admin"):
     return _get_masked_settings()
 
 
-def _test_ai_inference(provider, model_name, prompt="Tes analisis SOC", api_key=None):
-    start_t = time.time()
-    clean_prompt = prompt or "Uji inferensi model untuk triage keamanan SOAR"
-    effective_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+_OPENAI_COMPAT_BASES = {
+    "openai": "https://api.openai.com/v1",
+    "pollinations": "https://gen.pollinations.ai/v1",
+    "experiential": "https://api.experientiallabs.ai/v1",
+}
 
-    if provider == "google" or "gemini" in str(model_name).lower():
+_OPENAI_COMPAT_DEFAULTS = {
+    "openai": "gpt-4o-mini",
+    "pollinations": "deepseek/deepseek-v4-flash",
+    "experiential": "gpt-6-luna:free",
+}
+
+_NON_CHAT_EXPERIENTIAL_MODELS = {
+    "clef",
+    "clef:free",
+    "clef-flash",
+    "gemini-decision-1",
+    "gpt-6-luna-decisions",
+    "gpt-6-luna-decisions:free",
+    "jev-latest",
+    "jev-latest:free",
+}
+
+
+def _invoke_ai_provider(
+    provider,
+    model_name,
+    prompt,
+    api_key=None,
+    base_url=None,
+    temperature=0.3,
+    max_tokens=300,
+    system_instruction=None,
+):
+    start_t = time.time()
+    prov = str(provider or "google").strip().lower()
+    model_id = str(model_name or "").strip()
+    clean_prompt = prompt or "Uji inferensi model untuk triage keamanan SOAR"
+    effective_key = (api_key or "").strip()
+    if "•" in effective_key:
+        effective_key = ""
+    if not effective_key:
+        effective_key = _resolve_provider_env_key(prov)
+    clean_base = str(base_url or "").strip().rstrip("/")
+    temp = float(temperature) if temperature is not None else 0.3
+    tok = int(max_tokens) if max_tokens is not None else 300
+    sys_inst = str(system_instruction or "").strip()
+
+    if prov == "google":
         if not effective_key:
-            return {"success": False, "error": "GEMINI_API_KEY belum dikonfigurasi"}
-        model_id = model_name if model_name else "gemini-2.5-flash"
+            return {"success": False, "provider": prov, "model": model_id or "gemini-2.5-flash", "error": "API Key Google Gemini belum dikonfigurasi"}
+        model_id = model_id or "gemini-2.5-flash"
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={effective_key}"
         body_data = {
             "contents": [{"parts": [{"text": clean_prompt}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300},
+            "generationConfig": {"temperature": temp, "maxOutputTokens": tok},
         }
+        if sys_inst:
+            body_data["systemInstruction"] = {"parts": [{"text": sys_inst}]}
         req = urllib.request.Request(
             url,
             data=json.dumps(body_data).encode("utf-8"),
@@ -2302,11 +2947,13 @@ def _test_ai_inference(provider, model_name, prompt="Tes analisis SOC", api_key=
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 res_json = json.loads(resp.read().decode("utf-8"))
                 parts = res_json.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])
-                text = parts[0].get("text", "") if parts else ""
+                text = "".join(str(p.get("text", "")) for p in parts if isinstance(p, dict))
                 latency = int((time.time() - start_t) * 1000)
+                if not text.strip():
+                    return {"success": False, "provider": prov, "model": model_id, "error": "Gemini mengembalikan respons kosong"}
                 return {
                     "success": True,
                     "model": model_id,
@@ -2315,20 +2962,68 @@ def _test_ai_inference(provider, model_name, prompt="Tes analisis SOC", api_key=
                     "response": text.strip(),
                 }
         except Exception as e:
-            return {"success": False, "error": f"Gemini error: {str(e)}"}
+            return {"success": False, "provider": prov, "model": model_id, "error": f"Gemini error: {str(e)}"}
 
-    if provider == "pollinations" or "deepseek" in str(model_name).lower():
-        poll_key = api_key or os.environ.get("POLLINATIONS_API_KEY", "")
-        model_id = model_name if model_name else "deepseek/deepseek-v4-flash"
-        url = "https://gen.pollinations.ai/v1/chat/completions"
-        headers = {"Content-Type": "application/json"}
-        if poll_key:
-            headers["Authorization"] = f"Bearer {poll_key}"
+    if prov == "anthropic":
+        if not effective_key:
+            return {"success": False, "provider": prov, "model": model_id or "claude-3-5-sonnet-latest", "error": "API Key Anthropic Claude belum dikonfigurasi"}
+        model_id = model_id or "claude-3-5-sonnet-latest"
+        url = f"{clean_base}/messages" if clean_base else "https://api.anthropic.com/v1/messages"
         body_data = {
             "model": model_id,
-            "max_tokens": 300,
-            "temperature": 0.3,
+            "max_tokens": tok,
+            "temperature": temp,
             "messages": [{"role": "user", "content": clean_prompt}],
+        }
+        if sys_inst:
+            body_data["system"] = sys_inst
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(body_data).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": effective_key,
+                "anthropic-version": "2023-06-01",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                res_json = json.loads(resp.read().decode("utf-8"))
+                blocks = res_json.get("content", [])
+                text = "".join(str(b.get("text", "")) for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+                latency = int((time.time() - start_t) * 1000)
+                if not text.strip():
+                    return {"success": False, "provider": prov, "model": model_id, "error": "Anthropic mengembalikan respons kosong"}
+                return {
+                    "success": True,
+                    "model": model_id,
+                    "provider": "anthropic",
+                    "latency_ms": latency,
+                    "response": text.strip(),
+                }
+        except Exception as e:
+            return {"success": False, "provider": prov, "model": model_id, "error": f"Anthropic error: {str(e)}"}
+
+    if prov in _OPENAI_COMPAT_BASES or (prov == "custom" and clean_base):
+        if prov in ("openai", "experiential") and not effective_key:
+            label = "OpenAI" if prov == "openai" else "Experiential Labs"
+            return {"success": False, "provider": prov, "model": model_id or _OPENAI_COMPAT_DEFAULTS[prov], "error": f"API Key {label} belum dikonfigurasi"}
+        model_id = model_id or _OPENAI_COMPAT_DEFAULTS.get(prov, "default-model")
+        endpoint_base = clean_base or _OPENAI_COMPAT_BASES.get(prov, "")
+        url = endpoint_base if endpoint_base.endswith("/chat/completions") else f"{endpoint_base}/chat/completions"
+        headers = {"Content-Type": "application/json", "User-Agent": "soar-fleet-monitor/1.0"}
+        if effective_key:
+            headers["Authorization"] = f"Bearer {effective_key}"
+        messages = []
+        if sys_inst:
+            messages.append({"role": "system", "content": sys_inst})
+        messages.append({"role": "user", "content": clean_prompt})
+        body_data = {
+            "model": model_id,
+            "max_tokens": tok,
+            "temperature": temp,
+            "messages": messages,
         }
         req = urllib.request.Request(
             url,
@@ -2337,26 +3032,254 @@ def _test_ai_inference(provider, model_name, prompt="Tes analisis SOC", api_key=
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=25) as resp:
                 res_json = json.loads(resp.read().decode("utf-8"))
-                text = res_json.get("choices", [{}])[0].get("message", {}).get("content", "")
+                msg = res_json.get("choices", [{}])[0].get("message", {})
+                text = (msg.get("content") if isinstance(msg, dict) else "") or ""
                 latency = int((time.time() - start_t) * 1000)
+                if not str(text).strip():
+                    return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} mengembalikan respons kosong"}
                 return {
                     "success": True,
                     "model": model_id,
-                    "provider": "pollinations",
+                    "provider": prov,
                     "latency_ms": latency,
-                    "response": text.strip(),
+                    "response": str(text).strip(),
                 }
         except Exception as e:
-            return {"success": False, "error": f"Pollinations error: {str(e)}"}
+            return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} error: {str(e)}"}
 
+    # Custom tanpa base URL: mode simulasi lokal untuk pengujian offline
     return {
         "success": True,
-        "model": model_name,
-        "provider": provider,
+        "model": model_id or "custom-local",
+        "provider": prov,
         "latency_ms": 12,
-        "response": f"Simulasi respons inferensi berhasil untuk model '{model_name}' (Provider: {provider}). Analisis kontekstual siap beroperasi.",
+        "response": f"Simulasi respons inferensi berhasil untuk model '{model_id}' (Provider: {prov}). Analisis kontekstual siap beroperasi.",
+    }
+
+
+def _fetch_provider_models(provider, api_key=None, base_url=None, saved_key_id=None, slot=None):
+    prov = str(provider or "google").strip().lower()
+    stored_ai = _merge_ai_defaults(_get_system_setting("ai_config", DEFAULT_AI_CONFIG))
+    slot_field = ""
+    if slot == "primary" and stored_ai.get("provider") == prov:
+        slot_field = "api_key"
+    elif slot == "fallback" and stored_ai.get("fallback_provider") == prov:
+        slot_field = "fallback_api_key"
+    effective_key = _resolve_ai_key(api_key, saved_key_id, stored_ai, slot_field, prov)
+    clean_base = str(base_url or "").strip().rstrip("/")
+
+    if prov == "google":
+        if not effective_key:
+            return {"success": False, "provider": prov, "error": "API Key Google Gemini diperlukan untuk memuat daftar model"}
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={effective_key}"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            models = []
+            for m in data.get("models", []):
+                methods = m.get("supportedGenerationMethods") or []
+                if "generateContent" not in methods:
+                    continue
+                raw_name = str(m.get("name", ""))
+                mid = raw_name[7:] if raw_name.startswith("models/") else raw_name
+                if not mid:
+                    continue
+                disp = str(m.get("displayName") or mid).strip()
+                models.append(
+                    {
+                        "id": mid,
+                        "label": f"{mid} ({disp})" if disp and disp != mid else mid,
+                        "free": False,
+                        "chat_supported": True,
+                        "context_window": m.get("inputTokenLimit"),
+                    }
+                )
+            models.sort(key=lambda x: x["id"])
+            return {"success": True, "provider": prov, "models": models, "total": len(models), "free_count": 0}
+        except Exception as e:
+            return {"success": False, "provider": prov, "error": f"Gagal memuat model Google: {str(e)}"}
+
+    if prov == "anthropic":
+        if not effective_key:
+            return {"success": False, "provider": prov, "error": "API Key Anthropic diperlukan untuk memuat daftar model"}
+        base = clean_base or "https://api.anthropic.com/v1"
+        url = f"{base}/models"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/json",
+                "x-api-key": effective_key,
+                "anthropic-version": "2023-06-01",
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            models = []
+            for m in data.get("data", []):
+                mid = str(m.get("id", "")).strip()
+                if not mid:
+                    continue
+                disp = str(m.get("display_name") or mid).strip()
+                models.append(
+                    {
+                        "id": mid,
+                        "label": f"{mid} ({disp})" if disp and disp != mid else mid,
+                        "free": False,
+                        "chat_supported": True,
+                    }
+                )
+            models.sort(key=lambda x: x["id"])
+            return {"success": True, "provider": prov, "models": models, "total": len(models), "free_count": 0}
+        except Exception as e:
+            return {"success": False, "provider": prov, "error": f"Gagal memuat model Anthropic: {str(e)}"}
+
+    if prov in _OPENAI_COMPAT_BASES or (prov == "custom" and clean_base):
+        if prov in ("openai", "experiential") and not effective_key:
+            label = "OpenAI" if prov == "openai" else "Experiential Labs"
+            return {"success": False, "provider": prov, "error": f"API Key {label} diperlukan untuk memuat daftar model"}
+        endpoint_base = clean_base or _OPENAI_COMPAT_BASES.get(prov, "")
+        if endpoint_base.endswith("/chat/completions"):
+            endpoint_base = endpoint_base[: -len("/chat/completions")]
+        url = endpoint_base if endpoint_base.endswith("/models") else f"{endpoint_base}/models"
+        headers = {"Accept": "application/json", "User-Agent": "soar-fleet-monitor/1.0"}
+        if effective_key:
+            headers["Authorization"] = f"Bearer {effective_key}"
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            raw_list = data.get("data") if isinstance(data, dict) else data
+            if not isinstance(raw_list, list):
+                raw_list = []
+            models = []
+            for m in raw_list:
+                if not isinstance(m, dict):
+                    continue
+                mid = str(m.get("id") or m.get("name") or "").strip()
+                if not mid:
+                    continue
+                pricing = m.get("pricing") if isinstance(m.get("pricing"), dict) else {}
+                in_nano = pricing.get("input_nano_usd_per_million_tokens")
+                out_nano = pricing.get("output_nano_usd_per_million_tokens")
+                is_free = (
+                    (in_nano == 0 and out_nano == 0)
+                    or ":free" in mid.lower()
+                    or bool(m.get("is_free"))
+                )
+                chat_ok = True
+                if m.get("supports_completions") is False or (
+                    prov == "experiential" and mid.lower() in _NON_CHAT_EXPERIENTIAL_MODELS
+                ):
+                    chat_ok = False
+                ctx = m.get("context_window_tokens") or m.get("context_length")
+                tag = ""
+                if is_free and not chat_ok:
+                    tag = " [Free - Non-Chat]"
+                elif is_free:
+                    tag = " [FREE]"
+                elif not chat_ok:
+                    tag = " [Non-Chat]"
+                models.append(
+                    {
+                        "id": mid,
+                        "label": f"{mid}{tag}",
+                        "free": bool(is_free),
+                        "chat_supported": chat_ok,
+                        "context_window": ctx,
+                    }
+                )
+            models.sort(key=lambda x: (not (x["free"] and x["chat_supported"]), not x["free"], not x["chat_supported"], x["id"]))
+            free_count = sum(1 for x in models if x["free"])
+            return {"success": True, "provider": prov, "models": models, "total": len(models), "free_count": free_count}
+        except Exception as e:
+            return {"success": False, "provider": prov, "error": f"Gagal memuat model {prov}: {str(e)}"}
+
+    return {"success": False, "provider": prov, "error": "Isi Base URL Endpoint untuk memuat daftar model dari Custom Endpoint"}
+
+
+def _test_ai_inference(
+    provider,
+    model_name,
+    prompt="Tes analisis SOC",
+    api_key=None,
+    base_url=None,
+    fallback_config=None,
+    temperature=0.3,
+    max_tokens=300,
+    system_instruction=None,
+    target="primary",
+    saved_key_id=None,
+):
+    stored_ai = _merge_ai_defaults(_get_system_setting("ai_config", DEFAULT_AI_CONFIG))
+
+    if target == "fallback":
+        fb = fallback_config if isinstance(fallback_config, dict) else {}
+        fb_prov = fb.get("provider") or stored_ai.get("fallback_provider") or "pollinations"
+        fb_model = fb.get("model") or stored_ai.get("fallback_model") or "deepseek/deepseek-v4-flash"
+        fb_slot = "fallback_api_key" if stored_ai.get("fallback_provider") == fb_prov else ""
+        fb_key = _resolve_ai_key(fb.get("api_key"), fb.get("saved_key_id"), stored_ai, fb_slot, fb_prov)
+        fb_base = fb.get("base_url") if fb.get("base_url") is not None else stored_ai.get("fallback_base_url")
+        return _invoke_ai_provider(
+            fb_prov,
+            fb_model,
+            prompt,
+            api_key=fb_key,
+            base_url=fb_base,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            system_instruction=system_instruction,
+        )
+
+    p_slot = "api_key" if stored_ai.get("provider") == provider else ""
+    eff_key = _resolve_ai_key(api_key, saved_key_id, stored_ai, p_slot, provider)
+    eff_base = base_url if base_url is not None else stored_ai.get("custom_base_url")
+    primary_res = _invoke_ai_provider(
+        provider,
+        model_name,
+        prompt,
+        api_key=eff_key,
+        base_url=eff_base,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        system_instruction=system_instruction,
+    )
+    if primary_res.get("success") or target != "auto":
+        return primary_res
+
+    fb = fallback_config if isinstance(fallback_config, dict) else {}
+    fb_enabled = fb.get("enabled") if "enabled" in fb else stored_ai.get("fallback_enabled", True)
+    if not fb_enabled:
+        return primary_res
+
+    fb_prov = fb.get("provider") or stored_ai.get("fallback_provider") or "pollinations"
+    fb_model = fb.get("model") or stored_ai.get("fallback_model") or "deepseek/deepseek-v4-flash"
+    fb_slot = "fallback_api_key" if stored_ai.get("fallback_provider") == fb_prov else ""
+    fb_key = _resolve_ai_key(fb.get("api_key"), fb.get("saved_key_id"), stored_ai, fb_slot, fb_prov)
+    fb_base = fb.get("base_url") if fb.get("base_url") is not None else stored_ai.get("fallback_base_url")
+    fb_res = _invoke_ai_provider(
+        fb_prov,
+        fb_model,
+        prompt,
+        api_key=fb_key,
+        base_url=fb_base,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        system_instruction=system_instruction,
+    )
+    if fb_res.get("success"):
+        fb_res["used_fallback"] = True
+        fb_res["primary_error"] = primary_res.get("error")
+        return fb_res
+    return {
+        "success": False,
+        "provider": provider,
+        "model": model_name,
+        "error": f"Primary gagal ({primary_res.get('error')}) | Fallback gagal ({fb_res.get('error')})",
     }
 
 
@@ -3036,7 +3959,7 @@ class Handler(BaseHTTPRequestHandler):
                     {"WWW-Authenticate": "Bearer"},
                 )
                 return
-            self._json(200, {"users": _user_list()})
+            self._json(200, {"users": _user_list(), "cloudflare_sync": _cf_sync_status_summary()})
         elif parsed.path == "/api/users/lookup":
             # Lookup user by email for Cloudflare Access Zero Trust SSO
             qs = parse_qs(parsed.query)
@@ -3066,40 +3989,40 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             status_filter = qs.get("status", [""])[0].strip() or None
             self._json(200, {"requests": _enroll_requests_list(status_filter)})
-        elif parsed.path == "/api/enroll/script/linux":
-            host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "127.0.0.1:8080")
-            if "host.docker.internal" in host or "127.0.0.1" in host:
-                host = "soar.raviarnan.dev"
-            proto = "https" if "soar.raviarnan.dev" in host or self.headers.get("X-Forwarded-Proto") == "https" else "http"
+        elif parsed.path in ("/api/enroll/script/linux", "/api/enroll/script/windows", "/api/enroll/script/macos"):
+            host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "127.0.0.1:8080")).split(",")[0].strip()
+            if "host.docker.internal" in host or "127.0.0.1" in host or "soar.raviarnan.dev" in host:
+                host = "soar-agent.raviarnan.dev"
+            proto = "https" if "raviarnan.dev" in host or self.headers.get("X-Forwarded-Proto") == "https" else "http"
             origin = f"{proto}://{host}"
-            script = _generate_linux_installer_script(origin)
+            script_map = {
+                "linux": _generate_linux_installer_script,
+                "windows": _generate_windows_installer_script,
+                "macos": _generate_macos_installer_script,
+            }
+            target_os = parsed.path.rsplit("/", 1)[-1]
+            script = script_map[target_os](origin)
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
             self.wfile.write(script.encode("utf-8"))
-        elif parsed.path == "/api/enroll/script/windows":
-            host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "127.0.0.1:8080")
-            if "host.docker.internal" in host or "127.0.0.1" in host:
-                host = "soar.raviarnan.dev"
-            proto = "https" if "soar.raviarnan.dev" in host or self.headers.get("X-Forwarded-Proto") == "https" else "http"
-            origin = f"{proto}://{host}"
-            script = _generate_windows_installer_script(origin)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(script.encode("utf-8"))
-        elif parsed.path in ("/api/installer/download/soar-agent", "/api/installer/download/soar-agent.exe"):
-            is_win = parsed.path.endswith(".exe")
+        elif parsed.path in (
+            "/api/installer/download/soar-agent",
+            "/api/installer/download/soar-agent.exe",
+            "/api/installer/download/soar-agent-macos",
+            "/api/installer/download/soar-agent-macos-arm64",
+            "/api/installer/download/soar-agent-macos-x86_64",
+        ):
+            bin_name = parsed.path.rsplit("/", 1)[-1]
+            here = os.path.dirname(__file__)
             search_paths = [
-                "/deploy/bundle/soar-agent.exe" if is_win else "/agent-rs/target/release/soar-agent",
-                os.path.join(os.path.dirname(__file__), "../deploy/bundle/soar-agent.exe" if is_win else "../agent-rs/target/release/soar-agent"),
-                os.path.join(os.path.dirname(__file__), "soar-agent.exe" if is_win else "soar-agent"),
+                f"/deploy/bundle/{bin_name}",
+                f"/agent-rs/target/release/{bin_name}",
+                os.path.join(here, "../deploy/bundle", bin_name),
+                os.path.join(here, "../agent-rs/target/release", bin_name),
+                os.path.join(here, bin_name),
             ]
-            found_path = None
-            for p in search_paths:
-                if os.path.isfile(p):
-                    found_path = p
-                    break
+            found_path = next((p for p in search_paths if os.path.isfile(p)), None)
             if found_path:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
@@ -3109,7 +4032,7 @@ class Handler(BaseHTTPRequestHandler):
                     while chunk := bf.read(65536):
                         self.wfile.write(chunk)
             else:
-                self._json(404, {"error": "Binary belum tersedia di server"})
+                self._json(404, {"error": f"Binary {bin_name} belum tersedia di server"})
         elif parsed.path == "/api/settings/threat-intel":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
                 self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
@@ -3120,7 +4043,12 @@ class Handler(BaseHTTPRequestHandler):
             if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
                 self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
                 return
-            ai = _get_system_setting("ai_config", DEFAULT_AI_CONFIG)
+            ai = _merge_ai_defaults(_get_system_setting("ai_config", DEFAULT_AI_CONFIG))
+            if not (ai.get("api_key") or "").strip():
+                ai["api_key"] = _resolve_ai_key("", ai.get("primary_saved_key_id"), ai, "", ai.get("provider"))
+            if not (ai.get("fallback_api_key") or "").strip():
+                ai["fallback_api_key"] = _resolve_ai_key("", ai.get("fallback_saved_key_id"), ai, "", ai.get("fallback_provider"))
+            ai.pop("saved_api_keys", None)
             ti = _get_system_setting("threat_intel_config", DEFAULT_THREAT_INTEL_CONFIG)
             self._json(200, {"ai": ai, "threat_intel": ti})
         elif parsed.path == "/healthz":
@@ -3511,15 +4439,30 @@ class Handler(BaseHTTPRequestHandler):
                         email=data.get("email", ""),
                         name=data.get("name", ""),
                     )
-                    self._json(201, {"success": True, "user": created})
+                    cf_sync = _sync_cloudflare_access_policy()
+                    self._json(201, {"success": True, "user": created, "cloudflare_sync": cf_sync})
                 elif action == "update":
                     user_id = data.get("id") or data.get("user_id")
                     updated = _user_update(user_id, data)
-                    self._json(200, {"success": True, "user": updated})
+                    cf_sync = _sync_cloudflare_access_policy()
+                    self._json(200, {"success": True, "user": updated, "cloudflare_sync": cf_sync})
                 elif action == "delete":
                     user_id = data.get("id") or data.get("user_id")
                     ok = _user_delete(user_id)
-                    self._json(200, {"success": ok, "id": user_id})
+                    cf_sync = _sync_cloudflare_access_policy() if ok else _cf_sync_status_summary()
+                    self._json(200, {"success": ok, "id": user_id, "cloudflare_sync": cf_sync})
+                elif action == "sync_cloudflare":
+                    cf_sync = _sync_cloudflare_access_policy()
+                    if cf_sync.get("configured") and cf_sync.get("status") == "error":
+                        self._json(502, {"success": False, "error": cf_sync.get("detail"), "cloudflare_sync": cf_sync})
+                    else:
+                        self._json(200, {"success": bool(cf_sync.get("synced")), "cloudflare_sync": cf_sync})
+                elif action == "touch_login":
+                    ok = _user_touch_login(
+                        username=str(data.get("username", "")),
+                        email=str(data.get("email", "")),
+                    )
+                    self._json(200, {"success": ok})
                 else:
                     self._json(400, {"error": f"action '{action}' tidak dikenal"})
             except ValueError as ve:
@@ -3615,7 +4558,44 @@ class Handler(BaseHTTPRequestHandler):
                 model_name = data.get("model", "gemini-2.5-flash")
                 prompt = data.get("prompt", "")
                 custom_key = data.get("api_key")
-                res = _test_ai_inference(provider, model_name, prompt, custom_key)
+                base_url = data.get("base_url")
+                fallback_config = data.get("fallback")
+                temperature = data.get("temperature", 0.3)
+                max_tokens = data.get("max_tokens", 300)
+                system_instruction = data.get("system_instruction")
+                target = data.get("target", "primary")
+                saved_key_id = data.get("saved_key_id")
+                res = _test_ai_inference(
+                    provider,
+                    model_name,
+                    prompt,
+                    api_key=custom_key,
+                    base_url=base_url,
+                    fallback_config=fallback_config,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    system_instruction=system_instruction,
+                    target=target,
+                    saved_key_id=saved_key_id,
+                )
+                self._json(200, res)
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/settings/ai/models":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                res = _fetch_provider_models(
+                    data.get("provider", "google"),
+                    api_key=data.get("api_key"),
+                    base_url=data.get("base_url"),
+                    saved_key_id=data.get("saved_key_id"),
+                    slot=data.get("slot"),
+                )
                 self._json(200, res)
             except Exception as e:
                 self._json(400, {"error": str(e)})

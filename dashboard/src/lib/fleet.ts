@@ -436,6 +436,7 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
     url: string;
     result: EventHistoryResult;
   } | null>(null);
+  const [settledUrl, setSettledUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const url = `/api/events/history?${buildHistoryQuery(query)}`;
@@ -460,6 +461,7 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (abortControllerRef.current === controller) {
+        setSettledUrl(url);
         setLoading(false);
       }
     }
@@ -485,7 +487,7 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
     indexerOk: data?.indexer_ok ?? null,
     indexerMatched: data?.indexer_matched ?? null,
     sources: data?.sources ?? { soar: 0, wazuh: 0 },
-    loading,
+    loading: loading || settledUrl !== url,
     error,
     refresh: load,
   };

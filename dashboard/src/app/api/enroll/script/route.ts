@@ -8,12 +8,17 @@ function fleetBaseUrl(): string {
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const osParam = (url.searchParams.get("os") || "linux").toLowerCase();
-  const scriptPath = osParam === "windows" ? "/api/enroll/script/windows" : "/api/enroll/script/linux";
+  const scriptPaths: Record<string, string> = {
+    linux: "/api/enroll/script/linux",
+    windows: "/api/enroll/script/windows",
+    macos: "/api/enroll/script/macos",
+  };
+  const scriptPath = scriptPaths[osParam] || "/api/enroll/script/linux";
   const upstreamUrl = `${fleetBaseUrl()}${scriptPath}`;
 
   // Meneruskan host header publik ke backend
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "soar.raviarnan.dev";
-  const proto = request.headers.get("x-forwarded-proto") || (host.includes("soar.raviarnan.dev") ? "https" : "http");
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "soar-agent.raviarnan.dev";
+  const proto = request.headers.get("x-forwarded-proto") || (host.includes("raviarnan.dev") ? "https" : "http");
 
   try {
     const upstream = await fetch(upstreamUrl, {
