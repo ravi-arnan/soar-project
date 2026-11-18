@@ -232,6 +232,100 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "soar_save_investigation",
+        "description": (
+            "Menyimpan laporan hasil investigasi dan penalaran AI Agent eksternal (misal agy / Gemini 4 Hydrogen) "
+            "ke database SOAR agar muncul terpisah dari AI pipeline otomatis di tab 'Investigasi AI Agent' "
+            "pada halaman Threat Intelligence Dashboard."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Judul singkat temuan atau investigasi",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Ringkasan eksekutif hasil investigasi (1-3 kalimat)",
+                },
+                "analysis": {
+                    "type": "string",
+                    "description": "Analisis mendalam, korelasi antar-event/agent, dan alasan kesimpulan",
+                },
+                "verdict": {
+                    "type": "string",
+                    "enum": ["MALICIOUS", "SUSPICIOUS", "BENIGN", "NEEDS_REVIEW"],
+                    "description": "Kesimpulan verdict hasil investigasi agent",
+                },
+                "severity": {
+                    "type": "string",
+                    "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"],
+                    "description": "Tingkat keparahan insiden",
+                },
+                "agent_source": {
+                    "type": "string",
+                    "description": "Nama agent AI yang melakukan analisis (default: agy)",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Nama model yang digunakan (contoh: gemini-4-hydrogen)",
+                },
+                "recommendations": {
+                    "type": "string",
+                    "description": "Langkah tindak lanjut atau mitigasi yang direkomendasikan",
+                },
+                "mitre_techniques": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Daftar teknik MITRE ATT&CK terkait (contoh: ['T1059.001'])",
+                },
+                "target_agent_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Daftar agent_id terdampak (contoh: ['001', '009'])",
+                },
+                "target_hashes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Daftar hash SHA-256 artefak terkait",
+                },
+                "target_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Daftar path berkas atau URL terkait",
+                },
+            },
+            "required": ["title", "summary", "analysis", "verdict", "severity"],
+        },
+    },
+    {
+        "name": "soar_list_investigations",
+        "description": (
+            "Mengambil daftar laporan investigasi yang sudah disimpan oleh AI Agent eksternal (agy / MCP)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Jumlah maksimum laporan (default 20)",
+                    "default": 20,
+                },
+                "verdict": {
+                    "type": "string",
+                    "enum": ["ALL", "MALICIOUS", "SUSPICIOUS", "BENIGN", "NEEDS_REVIEW"],
+                    "description": "Filter verdict",
+                },
+                "q": {
+                    "type": "string",
+                    "description": "Kata kunci pencarian",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -450,6 +544,56 @@ def handle_tool_call(client: SoarClient, name: str, args: Dict[str, Any]) -> str
                 lines.append(f"- {d.get('date')}: {d.get('count')} insiden")
 
         return "\n".join(lines)
+
+    elif name == "soar_save_investigation":
+        payload = {
+            "title": str(args.get("title", "")).strip(),
+            "summary": str(args.get("summary", "")).strip(),
+            "analysis": str(args.get("analysis", "")).strip(),
+            "verdict": str(args.get("verdict", "NEEDS_REVIEW")).strip().upper(),
+            "severity": str(args.get("severity", "MEDIUM")).strip().upper(),
+            "agent_source": str(args.get("agent_source") or "agy").strip(),
+            "model": str(args.get("model") or "").strip(),
+            "recommendations": str(args.get("recommendations") or "").strip(),
+            "mitre_techniques": args.get("mitre_techniques") or [],
+            "target_agent_ids": args.get("target_agent_ids") or [],
+            "target_hashes": args.get("target_hashes") or [],
+            "target_paths": args.get("target_paths") or [],
+        }
+        status, data = client.request("/api/investigations", method="POST", body=payload)
+        if status in (200, 201) and isinstance(data, dict) and data.get("investigation"):
+            inv = data["investigation"]
+            return (
+                f"Investigasi AI Agent berhasil disimpan ke Dashboard SOAR!\n"
+                f"- ID: {inv.get('id')}\n"
+                f"- Judul: {inv.get('title')}\n"
+                f"- Agent/Model: {inv.get('agent_source')} ({inv.get('model') or '-'})\n"
+                f"- Verdict/Severity: {inv.get('verdict')} / {inv.get('severity')}\n"
+                f"- Lokasi UI: Threat Intelligence -> Tab 'Investigasi AI Agent'"
+            )
+        return f"Gagal menyimpan investigasi (HTTP {status}): {json.dumps(data)}"
+
+    elif name == "soar_list_investigations":
+        params = {"limit": str(min(int(args.get("limit", 20)), 100))}
+        if args.get("verdict") and args["verdict"] != "ALL":
+            params["verdict"] = str(args["verdict"]).upper()
+        if args.get("q"):
+            params["q"] = str(args["q"]).strip()
+        qs = urllib.parse.urlencode(params)
+        status, data = client.request(f"/api/investigations?{qs}")
+        if status != 200 or not isinstance(data, dict):
+            return f"Gagal mengambil daftar investigasi (HTTP {status}): {json.dumps(data)}"
+        invs = data.get("investigations", [])
+        if not invs:
+            return "Belum ada laporan investigasi AI Agent yang tersimpan."
+        lines = [f"=== DAFTAR INVESTIGASI AI AGENT ({len(invs)} dari {data.get('total', len(invs))}) ==="]
+        for idx, inv in enumerate(invs, 1):
+            lines.append(
+                f"{idx}. [{inv.get('verdict')} / {inv.get('severity')}] {inv.get('title')}\n"
+                f"   ID: {inv.get('id')} | Waktu: {inv.get('ts')} | Agent: {inv.get('agent_source')} ({inv.get('model') or '-'})\n"
+                f"   Ringkasan: {inv.get('summary')}"
+            )
+        return "\n\n".join(lines)
 
     return f"Tool '{name}' tidak dikenali."
 

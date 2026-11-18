@@ -45,6 +45,8 @@ const AI_AGENT_SETUP_PROMPT = `Kamu adalah AI Security Operations Agent yang ter
      Melihat status kesehatan fleet, daftar agent terdaftar, agent_id, OS, dan IP.
    - [read:intel]  GET /api/events/history?limit=20&severity=CRITICAL,HIGH
      Mengambil riwayat alert FIM/Wazuh, SHA-256 hash, dan analisis reasoning.
+   - [read:intel]  GET /api/investigations & POST /api/investigations
+     Membaca & menyimpan laporan investigasi AI Agent (agy/MCP) agar tampil terpisah di tab 'Investigasi AI Agent' pada halaman Threat Intelligence.
    - [write:actions] POST /api/commands (Content-Type: application/json)
      Body: {"agent_id":"<id>","action":"quarantine|sinkhole|scan|restore","target":"<path_absolut_atau_domain>"}
 

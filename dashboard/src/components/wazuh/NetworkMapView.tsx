@@ -331,9 +331,7 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
                   key={agent.id}
                   type="button"
                   onClick={() => onSelectAgent?.(agent.id)}
-                  className={`text-left bg-white border border-[#D3DAE6] border-l-[3px] ${
-                    active ? 'border-l-[#017D73]' : 'border-l-[#BD271E]'
-                  } hover:border-[#006BB4] rounded-[4px] p-3 transition-colors cursor-pointer`}
+                  className="text-left bg-white border border-[#D3DAE6] hover:border-[#006BB4] rounded-[4px] p-3 transition-colors cursor-pointer"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2 min-w-0">

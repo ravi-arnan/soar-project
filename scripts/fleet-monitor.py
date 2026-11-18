@@ -1248,6 +1248,31 @@ def _event_store_init():
                 )"""
             )
             _init_default_settings(conn)
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS agent_investigations (
+                    id TEXT PRIMARY KEY,
+                    ts TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    agent_source TEXT NOT NULL,
+                    model TEXT,
+                    verdict TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    analysis TEXT NOT NULL,
+                    recommendations TEXT,
+                    mitre_techniques TEXT,
+                    target_agent_ids TEXT,
+                    target_hashes TEXT,
+                    target_paths TEXT,
+                    created_by TEXT
+                )"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_inv_ts ON agent_investigations(ts)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_inv_verdict ON agent_investigations(verdict, ts)"
+            )
         print(f"event store siap: {EVENTS_DB}", flush=True)
         _event_store_load_recent()
     except Exception as e:
@@ -1452,6 +1477,173 @@ def _verify_api_key(headers, required_scope=""):
     except Exception as e:
         print(f"verify_api_key error: {e}", flush=True)
         return False, None
+
+
+INVESTIGATION_MAX_ROWS = 2000
+
+
+def _clean_str_list(val, max_items=25):
+    if isinstance(val, str):
+        items = [x.strip() for x in val.split(",") if x.strip()]
+    elif isinstance(val, list):
+        items = [str(x).strip() for x in val if str(x).strip()]
+    else:
+        items = []
+    seen = []
+    for item in items:
+        clean = item[:256]
+        if clean and clean not in seen:
+            seen.append(clean)
+        if len(seen) >= max_items:
+            break
+    return seen
+
+
+def _investigation_row_to_dict(row):
+    d = dict(row)
+    for field in ("mitre_techniques", "target_agent_ids", "target_hashes", "target_paths"):
+        raw = d.get(field) or "[]"
+        try:
+            parsed = json.loads(raw)
+            d[field] = parsed if isinstance(parsed, list) else []
+        except Exception:
+            d[field] = []
+    return d
+
+
+def _investigation_create(data, created_by="external-agent"):
+    if not isinstance(data, dict):
+        raise ValueError("Payload investigasi harus berupa JSON object")
+    title = str(data.get("title", "")).strip()[:200]
+    summary = str(data.get("summary", "")).strip()[:2000]
+    analysis = str(data.get("analysis", "")).strip()[:12000] or summary
+    if not title:
+        raise ValueError("title wajib diisi")
+    if not summary:
+        raise ValueError("summary wajib diisi")
+
+    verdict = str(data.get("verdict", "NEEDS_REVIEW")).strip().upper()
+    if verdict not in ("MALICIOUS", "SUSPICIOUS", "BENIGN", "NEEDS_REVIEW"):
+        verdict = "NEEDS_REVIEW"
+
+    severity = str(data.get("severity", "MEDIUM")).strip().upper()
+    if severity not in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+        severity = "MEDIUM"
+
+    agent_source = str(data.get("agent_source", "agy")).strip()[:80] or "agy"
+    model = str(data.get("model", "")).strip()[:120]
+    recommendations = str(data.get("recommendations", "")).strip()[:4000]
+
+    mitre = _clean_str_list(data.get("mitre_techniques"))
+    agent_ids = _clean_str_list(data.get("target_agent_ids"))
+    hashes = _clean_str_list(data.get("target_hashes"))
+    paths = _clean_str_list(data.get("target_paths"))
+
+    inv_id = f"inv_{uuid.uuid4().hex[:12]}"
+    ts = datetime.now(WITA).isoformat()
+    actor = (str(data.get("created_by") or created_by or "external-agent")).strip()[:120]
+
+    with closing(_db()) as conn, conn:
+        conn.execute(
+            """INSERT INTO agent_investigations
+            (id, ts, title, agent_source, model, verdict, severity, summary, analysis,
+             recommendations, mitre_techniques, target_agent_ids, target_hashes, target_paths, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                inv_id,
+                ts,
+                title,
+                agent_source,
+                model,
+                verdict,
+                severity,
+                summary,
+                analysis,
+                recommendations,
+                json.dumps(mitre),
+                json.dumps(agent_ids),
+                json.dumps(hashes),
+                json.dumps(paths),
+                actor,
+            ),
+        )
+        conn.execute(
+            "DELETE FROM agent_investigations WHERE id IN ("
+            "SELECT id FROM agent_investigations ORDER BY ts DESC LIMIT -1 OFFSET ?)",
+            (INVESTIGATION_MAX_ROWS,),
+        )
+
+    return {
+        "id": inv_id,
+        "ts": ts,
+        "title": title,
+        "agent_source": agent_source,
+        "model": model,
+        "verdict": verdict,
+        "severity": severity,
+        "summary": summary,
+        "analysis": analysis,
+        "recommendations": recommendations,
+        "mitre_techniques": mitre,
+        "target_agent_ids": agent_ids,
+        "target_hashes": hashes,
+        "target_paths": paths,
+        "created_by": actor,
+    }
+
+
+def _investigation_list(limit=50, verdict=None, severity=None, q=None, agent_source=None):
+    try:
+        limit = max(1, min(int(limit), 200))
+    except (TypeError, ValueError):
+        limit = 50
+
+    where = []
+    params = []
+    if verdict and verdict.upper() != "ALL":
+        where.append("verdict = ?")
+        params.append(verdict.upper())
+    if severity and severity.upper() != "ALL":
+        where.append("severity = ?")
+        params.append(severity.upper())
+    if agent_source and agent_source.lower() != "all":
+        where.append("LOWER(agent_source) = ?")
+        params.append(agent_source.lower())
+    if q:
+        like = f"%{q}%"
+        where.append(
+            "(title LIKE ? OR summary LIKE ? OR analysis LIKE ? OR recommendations LIKE ?"
+            " OR agent_source LIKE ? OR model LIKE ? OR mitre_techniques LIKE ?"
+            " OR target_agent_ids LIKE ? OR target_hashes LIKE ? OR target_paths LIKE ?)"
+        )
+        params.extend([like] * 10)
+
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    try:
+        with closing(_db()) as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM agent_investigations{clause}", params
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"SELECT * FROM agent_investigations{clause} ORDER BY ts DESC LIMIT ?",
+                [*params, limit],
+            ).fetchall()
+        return {"investigations": [_investigation_row_to_dict(r) for r in rows], "total": total}
+    except Exception as e:
+        print(f"investigation list error: {e}", flush=True)
+        return {"investigations": [], "total": 0}
+
+
+def _investigation_delete(inv_id):
+    if not inv_id:
+        return False
+    try:
+        with closing(_db()) as conn, conn:
+            cur = conn.execute("DELETE FROM agent_investigations WHERE id = ?", (inv_id,))
+            return cur.rowcount > 0
+    except Exception as e:
+        print(f"investigation delete error: {e}", flush=True)
+        return False
 
 
 def _hash_password(password, salt=None):
@@ -3942,6 +4134,24 @@ class Handler(BaseHTTPRequestHandler):
                         "file": VT_CACHE_FILE,
                     },
                 )
+        elif parsed.path == "/api/investigations":
+            valid_key, _ = _verify_api_key(self.headers, "read:intel")
+            if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            qs = parse_qs(parsed.query)
+            res = _investigation_list(
+                limit=(qs.get("limit", ["50"])[0] or "50").strip(),
+                verdict=(qs.get("verdict", [""])[0] or "").strip() or None,
+                severity=(qs.get("severity", [""])[0] or "").strip() or None,
+                q=(qs.get("q", [""])[0] or "").strip() or None,
+                agent_source=(qs.get("agent_source", [""])[0] or "").strip() or None,
+            )
+            self._json(200, res)
         elif parsed.path == "/api/keys":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
                 self._json(
@@ -4597,6 +4807,51 @@ class Handler(BaseHTTPRequestHandler):
                     slot=data.get("slot"),
                 )
                 self._json(200, res)
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/investigations":
+            valid_key, key_info = _verify_api_key(self.headers, "read:intel")
+            if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            if length > 131072:
+                self._json(413, {"error": "Payload investigasi terlalu besar"})
+                return
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                actor = (
+                    f"api_key:{key_info['name']}"
+                    if valid_key and key_info
+                    else str(data.get("created_by") or "dashboard-admin")
+                )
+                created = _investigation_create(data, created_by=actor)
+                self._json(201, {"success": True, "investigation": created})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/investigations/delete":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._json(
+                    401,
+                    {"error": "unauthorized"},
+                    {"WWW-Authenticate": "Bearer"},
+                )
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if length else b"{}"
+            try:
+                data = json.loads(body)
+                inv_id = str(data.get("id", "")).strip()
+                if not inv_id:
+                    self._json(400, {"error": "id investigasi diperlukan"})
+                    return
+                ok = _investigation_delete(inv_id)
+                self._json(200, {"deleted": ok, "id": inv_id})
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/commands":

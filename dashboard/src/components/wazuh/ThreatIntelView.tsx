@@ -160,7 +160,26 @@ interface ThreatIntelViewProps {
   onOpenAiSettings?: () => void;
 }
 
+interface AgentInvestigation {
+  id: string;
+  ts: string;
+  title: string;
+  agent_source: string;
+  model?: string;
+  verdict: 'MALICIOUS' | 'SUSPICIOUS' | 'BENIGN' | 'NEEDS_REVIEW';
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+  summary: string;
+  analysis: string;
+  recommendations?: string;
+  mitre_techniques: string[];
+  target_agent_ids: string[];
+  target_hashes: string[];
+  target_paths: string[];
+  created_by?: string;
+}
+
 export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'agent'>('pipeline');
   const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
   const [filterSeverity, setFilterSeverity] = useState<'ALL' | 'MALICIOUS' | 'SUSPICIOUS' | 'BENIGN'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -169,6 +188,31 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
   const [isQuarantining, setIsQuarantining] = useState<string | null>(null);
   const [aiConfig, setAiConfig] = useState<AiConfig>(DEFAULT_AI_CONFIG);
   const [tiConfig, setTiConfig] = useState<ThreatIntelConfig>(DEFAULT_THREAT_INTEL_CONFIG);
+
+  const [investigations, setInvestigations] = useState<AgentInvestigation[]>([]);
+  const [invLoading, setInvLoading] = useState(false);
+  const [invError, setInvError] = useState<string | null>(null);
+  const [invVerdictFilter, setInvVerdictFilter] = useState<'ALL' | 'MALICIOUS' | 'SUSPICIOUS' | 'NEEDS_REVIEW' | 'BENIGN'>('ALL');
+  const [invSearch, setInvSearch] = useState('');
+  const [deletingInvId, setDeletingInvId] = useState<string | null>(null);
+
+  const loadInvestigations = React.useCallback(async () => {
+    try {
+      setInvLoading(true);
+      const res = await fetch('/api/investigations?limit=100', { cache: 'no-store' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setInvError((data && data.error) || `HTTP ${res.status}`);
+        return;
+      }
+      setInvestigations(Array.isArray(data?.investigations) ? data.investigations : []);
+      setInvError(null);
+    } catch (err: unknown) {
+      setInvError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInvLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -184,7 +228,23 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
         // Pertahankan default jika endpoint settings belum tersedia
       }
     }
+    async function initInvestigations() {
+      try {
+        const res = await fetch('/api/investigations?limit=100', { cache: 'no-store' });
+        const data = await res.json().catch(() => null);
+        if (ignore) return;
+        if (!res.ok) {
+          setInvError((data && data.error) || `HTTP ${res.status}`);
+          return;
+        }
+        setInvestigations(Array.isArray(data?.investigations) ? data.investigations : []);
+        setInvError(null);
+      } catch (err: unknown) {
+        if (!ignore) setInvError(err instanceof Error ? err.message : String(err));
+      }
+    }
     loadSettings();
+    initInvestigations();
     return () => {
       ignore = true;
     };
@@ -300,27 +360,116 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
     }
   };
 
+  const handleDeleteInvestigation = async (invId: string) => {
+    try {
+      setDeletingInvId(invId);
+      const res = await fetch('/api/investigations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id: invId }),
+      });
+      if (res.ok) {
+        setInvestigations((prev) => prev.filter((item) => item.id !== invId));
+      } else {
+        const data = await res.json().catch(() => null);
+        setInvError((data && data.error) || `Gagal menghapus (HTTP ${res.status})`);
+      }
+    } catch (err: unknown) {
+      setInvError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingInvId(null);
+    }
+  };
+
+  const invStats = useMemo(() => {
+    let mal = 0;
+    let susp = 0;
+    let review = 0;
+    let benign = 0;
+    for (const inv of investigations) {
+      if (inv.verdict === 'MALICIOUS') mal += 1;
+      else if (inv.verdict === 'SUSPICIOUS') susp += 1;
+      else if (inv.verdict === 'BENIGN') benign += 1;
+      else review += 1;
+    }
+    return { total: investigations.length, mal, susp, review, benign };
+  }, [investigations]);
+
+  const filteredInvestigations = useMemo(() => {
+    const q = invSearch.trim().toLowerCase();
+    return investigations.filter((inv) => {
+      if (invVerdictFilter !== 'ALL' && inv.verdict !== invVerdictFilter) return false;
+      if (!q) return true;
+      return (
+        inv.title.toLowerCase().includes(q) ||
+        inv.summary.toLowerCase().includes(q) ||
+        inv.analysis.toLowerCase().includes(q) ||
+        (inv.recommendations || '').toLowerCase().includes(q) ||
+        inv.agent_source.toLowerCase().includes(q) ||
+        (inv.model || '').toLowerCase().includes(q) ||
+        inv.mitre_techniques.some((m) => m.toLowerCase().includes(q)) ||
+        inv.target_agent_ids.some((a) => a.toLowerCase().includes(q)) ||
+        inv.target_paths.some((p) => p.toLowerCase().includes(q)) ||
+        inv.target_hashes.some((h) => h.toLowerCase().includes(q))
+      );
+    });
+  }, [investigations, invVerdictFilter, invSearch]);
+
+  const subtabCls = (active: boolean) =>
+    `pb-2.5 -mb-[9px] text-[13px] font-medium transition-colors flex items-center gap-1.5 cursor-pointer ${
+      active
+        ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
+        : 'text-[#5A626F] hover:text-[#1A1C21]'
+    }`;
+
   return (
     <div className="space-y-4">
       <WuiPageHeader
         title="Threat Intelligence"
-        description="Analisis penalaran ancaman berbasis AI Agent dan koroborasi reputasi multi-sumber (VirusTotal, MalwareBazaar, AlienVault OTX, MISP)."
+        description="Memisahkan analisis otomatis pipeline (n8n + LLM) dengan laporan investigasi AI Agent eksternal (agy / MCP)."
         actions={
           <>
             <button
               type="button"
-              onClick={() => refresh()}
-              disabled={loading}
+              onClick={() => (activeTab === 'pipeline' ? refresh() : loadInvestigations())}
+              disabled={activeTab === 'pipeline' ? loading : invLoading}
               className="h-8 px-3 text-[12px] font-medium text-[#1A1C21] bg-white border border-[#D3DAE6] rounded-[4px] hover:bg-[#FAFBFD] flex items-center gap-1.5 transition disabled:opacity-50 cursor-pointer"
-              title="Muat ulang riwayat intelijen"
+              title="Muat ulang data"
             >
-              <WuiIcon type="refresh" size="s" className={loading ? 'animate-spin' : ''} />
+              <WuiIcon
+                type="refresh"
+                size="s"
+                className={(activeTab === 'pipeline' ? loading : invLoading) ? 'animate-spin' : ''}
+              />
               <span>Refresh</span>
             </button>
-            <PeriodFilter value={period} onChange={setPeriod} />
+            {activeTab === 'pipeline' && <PeriodFilter value={period} onChange={setPeriod} />}
           </>
         }
       />
+
+      {/* Sub-tab pemisah Pipeline AI Otomatis vs Investigasi AI Agent (agy/MCP) */}
+      <div className="flex flex-wrap items-center gap-6 border-b border-[#D3DAE6] pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('pipeline')}
+          className={subtabCls(activeTab === 'pipeline')}
+        >
+          <span>Pipeline AI Otomatis (n8n &amp; LLM)</span>
+          <WuiBadge tone={activeTab === 'pipeline' ? 'primary' : 'default'}>{intel.items.length}</WuiBadge>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('agent')}
+          className={subtabCls(activeTab === 'agent')}
+        >
+          <span>Investigasi AI Agent (agy / MCP)</span>
+          <WuiBadge tone={activeTab === 'agent' ? 'primary' : 'default'}>{investigations.length}</WuiBadge>
+        </button>
+      </div>
+
+      {activeTab === 'pipeline' && (
+        <>
 
       {/* Panel Status Agent & Model AI (Dinamis dari /api/settings/threat-intel) */}
       <WuiPanel
@@ -682,18 +831,229 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
         )}
       </div>
 
-      {/* Footer Penjelas */}
-      <div className="px-4 py-2.5 text-[11.5px] text-[#535966] bg-white border border-[#D3DAE6] rounded-[4px] flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <WuiIcon type="appCode" size="m" className="ouiIcon--mono text-[#006BB4]" />
-          <span>
-            Pipeline deteksi aktif menghubungkan Wazuh Manager, orkestrasi n8n, AI Reasoning Engine dinamis, dan Active Response.
-          </span>
+          {/* Footer Penjelas Pipeline */}
+          <div className="px-4 py-2.5 text-[11.5px] text-[#535966] bg-white border border-[#D3DAE6] rounded-[4px] flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <WuiIcon type="appCode" size="m" className="ouiIcon--mono text-[#006BB4]" />
+              <span>
+                Pipeline deteksi aktif menghubungkan Wazuh Manager, orkestrasi n8n, AI Reasoning Engine dinamis, dan Active Response.
+              </span>
+            </div>
+            <span className="text-[11px] text-[#69707D] hidden sm:inline font-mono">
+              WITA (UTC+8)
+            </span>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'agent' && (
+        <div className="space-y-4">
+          {invError && <WuiCallOut tone="danger">{invError}</WuiCallOut>}
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 bg-white border border-[#D3DAE6] rounded-[4px] divide-y lg:divide-y-0 lg:divide-x divide-[#E9EDF3] text-center">
+            <div className="p-3.5">
+              <div className="text-[12px] text-[#535966] font-medium">Total Laporan Agent</div>
+              <div className="text-[26px] font-semibold text-[#006BB4] font-mono tabular-nums leading-tight mt-1">
+                {invStats.total}
+              </div>
+              <div className="text-[11px] text-[#69707D] mt-0.5">Tersimpan di SQLite</div>
+            </div>
+            <div className="p-3.5">
+              <div className="text-[12px] text-[#535966] font-medium">Malicious</div>
+              <div className="text-[26px] font-semibold text-[#BD271E] font-mono tabular-nums leading-tight mt-1">
+                {invStats.mal}
+              </div>
+              <div className="text-[11px] text-[#BD271E] mt-0.5">Perlu isolasi / eskalasi</div>
+            </div>
+            <div className="p-3.5">
+              <div className="text-[12px] text-[#535966] font-medium">Suspicious / Review</div>
+              <div className="text-[26px] font-semibold text-[#8A5300] font-mono tabular-nums leading-tight mt-1">
+                {invStats.susp + invStats.review}
+              </div>
+              <div className="text-[11px] text-[#8A5300] mt-0.5">Tindak lanjut analis</div>
+            </div>
+            <div className="p-3.5">
+              <div className="text-[12px] text-[#535966] font-medium">Benign</div>
+              <div className="text-[26px] font-semibold text-[#017D73] font-mono tabular-nums leading-tight mt-1">
+                {invStats.benign}
+              </div>
+              <div className="text-[11px] text-[#017D73] mt-0.5">False positive / aman</div>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-white border border-[#D3DAE6] rounded-[4px] p-2.5">
+            <div className="relative flex-1">
+              <WuiIcon type="search" size="m" className="text-[#69707D] absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Cari judul, ringkasan, model, teknik MITRE, agent_id, path, atau hash..."
+                value={invSearch}
+                onChange={(e) => setInvSearch(e.target.value)}
+                className="w-full h-8 pl-9 pr-3 text-[12px] bg-white border border-[#D3DAE6] rounded-[4px] focus:outline-none focus:border-[#006BB4] transition"
+              />
+            </div>
+
+            <div className="flex items-center gap-1 overflow-x-auto text-[11px]">
+              {(
+                [
+                  { id: 'ALL', label: `Semua (${invStats.total})` },
+                  { id: 'MALICIOUS', label: `Malicious (${invStats.mal})` },
+                  { id: 'SUSPICIOUS', label: `Suspicious (${invStats.susp})` },
+                  { id: 'NEEDS_REVIEW', label: `Review (${invStats.review})` },
+                  { id: 'BENIGN', label: `Benign (${invStats.benign})` },
+                ] as const
+              ).map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => setInvVerdictFilter(chip.id)}
+                  className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
+                    invVerdictFilter === chip.id
+                      ? 'bg-[#006BB4] text-white'
+                      : 'bg-[#FAFBFD] border border-[#D3DAE6] text-[#535966] hover:text-[#1A1C21]'
+                  }`}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredInvestigations.length === 0 ? (
+            <WuiPanel>
+              <div className="py-6 text-center space-y-2">
+                <WuiIcon type="machineLearningApp" size={28} className="ouiIcon--mono text-[#69707D] mx-auto" />
+                <div className="text-[13px] font-semibold text-[#1A1C21]">
+                  Belum ada laporan investigasi AI Agent eksternal
+                </div>
+                <p className="text-[12px] text-[#535966] max-w-xl mx-auto leading-relaxed">
+                  Hasil investigasi interaktif dari <code className="font-mono text-[#1A1C21]">agy</code> (atau client MCP/API lainnya) akan tersimpan di sini dan terpisah dari analisis pipeline n8n otomatis. Gunakan tool MCP <code className="font-mono text-[#006BB4]">soar_save_investigation</code> atau endpoint <code className="font-mono text-[#006BB4]">POST /api/investigations</code>.
+                </p>
+              </div>
+            </WuiPanel>
+          ) : (
+            <div className="space-y-3">
+              {filteredInvestigations.map((inv) => {
+                const vTone: WuiTone =
+                  inv.verdict === 'MALICIOUS'
+                    ? 'danger'
+                    : inv.verdict === 'SUSPICIOUS' || inv.verdict === 'NEEDS_REVIEW'
+                      ? 'warning'
+                      : 'success';
+                const sTone: WuiTone =
+                  inv.severity === 'CRITICAL' || inv.severity === 'HIGH'
+                    ? 'danger'
+                    : inv.severity === 'MEDIUM'
+                      ? 'warning'
+                      : 'default';
+
+                return (
+                  <div
+                    key={inv.id}
+                    className="bg-white border border-[#D3DAE6] rounded-[4px] overflow-hidden"
+                  >
+                    <div className="px-4 py-2.5 bg-[#FAFBFD] border-b border-[#E9EDF3] flex flex-col md:flex-row md:items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[13px] font-semibold text-[#1A1C21]">
+                            {inv.title}
+                          </span>
+                          {inv.verdict === 'BENIGN' ? (
+                            <span
+                              title="Benign / Aman"
+                              aria-label="Benign / Aman"
+                              className="inline-flex items-center text-[#017D73]"
+                            >
+                              <WuiIcon type="checkInCircleFilled" size="s" />
+                            </span>
+                          ) : (
+                            <WuiHealth tone={vTone} className="text-[11.5px]">
+                              {inv.verdict}
+                            </WuiHealth>
+                          )}
+                          <WuiBadge tone="primary">
+                            {inv.agent_source}
+                            {inv.model ? ` · ${inv.model}` : ''}
+                          </WuiBadge>
+                        </div>
+                        <p className="mt-1 text-[12px] text-[#535966]">{inv.summary}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2.5 shrink-0 pt-1.5 md:pt-0 border-t md:border-0 border-[#E9EDF3]">
+                        <WuiBadge tone={sTone}>{inv.severity}</WuiBadge>
+                        <span className="text-[11px] font-mono tabular-nums text-[#535966]">
+                          {formatWazuhTime(inv.ts)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="px-4 py-3 space-y-2.5">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-[#535966]">
+                        Analisis &amp; Korelasi AI Agent
+                      </div>
+                      <p className="text-[12px] text-[#1A1C21] leading-relaxed whitespace-pre-line">
+                        {inv.analysis}
+                      </p>
+
+                      {(inv.recommendations ||
+                        inv.mitre_techniques.length > 0 ||
+                        inv.target_agent_ids.length > 0 ||
+                        inv.target_paths.length > 0 ||
+                        inv.target_hashes.length > 0) && (
+                        <div className="pt-2 border-t border-[#F0F2F6] space-y-1.5 text-[11.5px]">
+                          {inv.recommendations && (
+                            <div>
+                              <span className="text-[#535966]">Rekomendasi: </span>
+                              <span className="font-medium text-[#1A1C21]">{inv.recommendations}</span>
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {inv.mitre_techniques.map((m) => (
+                              <WuiBadge key={m} tone="primary" className="font-mono">
+                                {m}
+                              </WuiBadge>
+                            ))}
+                            {inv.target_agent_ids.map((aid) => (
+                              <WuiBadge key={aid} tone="default" className="font-mono">
+                                Agent: {aid}
+                              </WuiBadge>
+                            ))}
+                            {inv.target_paths.map((p) => (
+                              <WuiBadge key={p} tone="default" className="font-mono max-w-md truncate">
+                                {p}
+                              </WuiBadge>
+                            ))}
+                            {inv.target_hashes.map((h) => (
+                              <WuiBadge key={h} tone="default" className="font-mono">
+                                {h.slice(0, 16)}...
+                              </WuiBadge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="px-4 py-2 bg-[#FAFBFD] border-t border-[#E9EDF3] flex items-center justify-between gap-2 text-[11px] text-[#535966]">
+                      <div className="font-mono">
+                        ID: {inv.id} · Dicatat oleh: {inv.created_by || inv.agent_source}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteInvestigation(inv.id)}
+                        disabled={deletingInvId === inv.id}
+                        className="inline-flex items-center gap-1 text-[#BD271E] hover:underline disabled:opacity-50 cursor-pointer"
+                      >
+                        <WuiIcon type="trash" size="xs" />
+                        <span>{deletingInvId === inv.id ? 'Menghapus...' : 'Hapus'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <span className="text-[11px] text-[#69707D] hidden sm:inline font-mono">
-          WITA (UTC+8)
-        </span>
-      </div>
+      )}
     </div>
   );
 }

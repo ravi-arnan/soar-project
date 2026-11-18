@@ -28,9 +28,9 @@ class TestSoarMcpTools(unittest.TestCase):
         self.mock_client = MagicMock(spec=mcp.SoarClient)
 
     def test_tools_list_schema(self):
-        """Pastikan seluruh 6 tools terdaftar dengan schema valid."""
+        """Pastikan seluruh 8 tools terdaftar dengan schema valid."""
         tools = mcp.TOOLS
-        self.assertEqual(len(tools), 6)
+        self.assertEqual(len(tools), 8)
         tool_names = {t["name"] for t in tools}
         expected = {
             "soar_get_fleet_status",
@@ -39,6 +39,8 @@ class TestSoarMcpTools(unittest.TestCase):
             "soar_lookup_hash",
             "soar_execute_command",
             "soar_get_stats",
+            "soar_save_investigation",
+            "soar_list_investigations",
         }
         self.assertEqual(tool_names, expected)
         for t in tools:
@@ -188,6 +190,61 @@ class TestSoarMcpTools(unittest.TestCase):
         self.assertIn("Agent 003: 15 insiden", res)
         self.assertIn("2026-11-06: 22 insiden", res)
 
+    def test_handle_save_and_list_investigations(self):
+        self.mock_client.request.return_value = (
+            201,
+            {
+                "success": True,
+                "investigation": {
+                    "id": "inv_1234567890ab",
+                    "title": "Korelasi rundll32 pada ideapc",
+                    "agent_source": "agy",
+                    "model": "gemini-4-hydrogen",
+                    "verdict": "SUSPICIOUS",
+                    "severity": "HIGH",
+                },
+            },
+        )
+        res_save = mcp.handle_tool_call(
+            self.mock_client,
+            "soar_save_investigation",
+            {
+                "title": "Korelasi rundll32 pada ideapc",
+                "summary": "Aktivitas mencurigakan terdeteksi.",
+                "analysis": "Detail analisis.",
+                "verdict": "SUSPICIOUS",
+                "severity": "HIGH",
+                "agent_source": "agy",
+                "model": "gemini-4-hydrogen",
+            },
+        )
+        self.assertIn("Investigasi AI Agent berhasil disimpan", res_save)
+        self.assertIn("inv_1234567890ab", res_save)
+
+        self.mock_client.request.return_value = (
+            200,
+            {
+                "total": 1,
+                "investigations": [
+                    {
+                        "id": "inv_1234567890ab",
+                        "ts": "2026-11-19T00:50:00+08:00",
+                        "title": "Korelasi rundll32 pada ideapc",
+                        "agent_source": "agy",
+                        "model": "gemini-4-hydrogen",
+                        "verdict": "SUSPICIOUS",
+                        "severity": "HIGH",
+                        "summary": "Aktivitas mencurigakan terdeteksi.",
+                    }
+                ],
+            },
+        )
+        res_list = mcp.handle_tool_call(
+            self.mock_client, "soar_list_investigations", {"limit": 10}
+        )
+        self.assertIn("Korelasi rundll32 pada ideapc", res_list)
+        self.assertIn("agy (gemini-4-hydrogen)", res_list)
+
 
 class TestSoarMcpJsonRpcSubprocess(unittest.TestCase):
     """Pengujian E2E protokol JSON-RPC melalui subprocess stdio."""
@@ -231,7 +288,7 @@ class TestSoarMcpJsonRpcSubprocess(unittest.TestCase):
             proc.stdin.flush()
             list_resp = json.loads(proc.stdout.readline())
             self.assertEqual(list_resp["id"], 3)
-            self.assertEqual(len(list_resp["result"]["tools"]), 6)
+            self.assertEqual(len(list_resp["result"]["tools"]), 8)
 
         finally:
             if proc.stdin:

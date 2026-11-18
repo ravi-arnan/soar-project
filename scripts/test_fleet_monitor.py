@@ -621,5 +621,60 @@ class HistoryEndpointTests(_ApiTestCase):
         self.assertEqual(stats["severity"]["CRITICAL"], 1)
 
 
+class AgentInvestigationApiTests(_ApiTestCase):
+    def test_save_list_filter_and_delete_investigation(self):
+        # 1. Tanpa auth harus ditolak (401)
+        st, _, _ = self.request("GET", "/api/investigations")
+        self.assertEqual(st, 401)
+
+        # 2. Buat API Key read:intel untuk agy
+        key = fleet_monitor._api_key_create("agy-mcp-test", ["read:intel"])
+        api_token = key["token"]
+
+        # 3. Simpan investigasi via API Key
+        st, _, body = self.request(
+            "POST",
+            "/api/investigations",
+            {
+                "title": "Investigasi E2E Agen agy",
+                "summary": "Ditemukan eksekusi PowerShell mencurigakan di agent 001",
+                "analysis": "Korelasi log menunjukkan anomali parent process.",
+                "verdict": "SUSPICIOUS",
+                "severity": "HIGH",
+                "agent_source": "agy",
+                "model": "gemini-4-hydrogen",
+                "mitre_techniques": ["T1059.001"],
+                "target_agent_ids": ["001"],
+            },
+            token=api_token,
+        )
+        self.assertEqual(st, 201)
+        inv = body["investigation"]
+        self.assertEqual(inv["agent_source"], "agy")
+        self.assertEqual(inv["model"], "gemini-4-hydrogen")
+        self.assertEqual(inv["created_by"], "api_key:agy-mcp-test")
+
+        # 4. List & filter via API Key
+        st, _, listed = self.request("GET", "/api/investigations?verdict=SUSPICIOUS", token=api_token)
+        self.assertEqual(st, 200)
+        self.assertGreaterEqual(listed["total"], 1)
+        self.assertEqual(listed["investigations"][0]["id"], inv["id"])
+
+        # 5. Delete harus pakai FLEET_COMMAND_TOKEN
+        st_unauth, _, _ = self.request(
+            "POST", "/api/investigations/delete", {"id": inv["id"]}, token=api_token
+        )
+        self.assertEqual(st_unauth, 401)
+
+        st_del, _, del_body = self.request(
+            "POST",
+            "/api/investigations/delete",
+            {"id": inv["id"]},
+            token=fleet_monitor.FLEET_COMMAND_TOKEN,
+        )
+        self.assertEqual(st_del, 200)
+        self.assertTrue(del_body["deleted"])
+
+
 if __name__ == "__main__":
     unittest.main()
