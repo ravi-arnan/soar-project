@@ -1,253 +1,177 @@
 <div align="center">
 
-# SOAR Open-Source (Wazuh + n8n + HITL)
+# Agentic-Driven Open-Source SOAR
 
-**Implementasi Sistem SOAR Open-Source Berbasis n8n untuk Deteksi dan Respons Ancaman Malware dan Phishing dengan Mitigasi Aktif Human-in-the-Loop (Studi Kasus: CV Bali Handmade)**
+**Autonomous AI-Driven Security Orchestration, Automation, and Response Platform Built on Wazuh, n8n, Rust Endpoint Agents, and Human-in-the-Loop Governance**
 
 [![Status](https://img.shields.io/badge/status-active-success)](#)
+[![Architecture](https://img.shields.io/badge/architecture-Agentic_SOAR-006BB4)](#core-focus-agentic-driven-soar)
 [![Wazuh](https://img.shields.io/badge/Wazuh-4.14.8-005792)](https://wazuh.com)
 [![n8n](https://img.shields.io/badge/n8n-2.42.5-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
 [![Agent](https://img.shields.io/badge/soar--agent-Rust-000000?logo=rust&logoColor=white)](agent-rs/)
+[![MCP](https://img.shields.io/badge/MCP-JSON--RPC_2.0-017D73)](scripts/soar_mcp_server.py)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org)
-[![Telegram](https://img.shields.io/badge/Telegram-Bot_API-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots/api)
 
-Threat intelligence multi-sumber, respons berjenjang berbasis keyakinan, ringkasan AI, dan approval analis lewat satu klik di Telegram.
+Autonomous threat reasoning, multi-source threat intelligence consensus, external AI agent integration over MCP, and tiered containment (Autonomous + Human-in-the-Loop).
 
 </div>
 
 ---
 
-## Sorotan
+## Core Focus: Agentic-Driven SOAR
 
-- **SOAR penuh dari komponen open-source** - setara kapabilitas Cortex XSOAR atau Splunk SOAR tanpa biaya lisensi.
-- **Respons berjenjang (confidence-based)** - sistem yakin bertindak otomatis; sistem ragu menyerahkan keputusan ke analis (human-in-the-loop).
-- **Threat intelligence multi-sumber** - VirusTotal + MalwareBazaar + **MISP** (feed OSINT komunitas) untuk malware, GSB + URLScan.io untuk phishing, AlienVault OTX sebagai fallback saat rate-limit.
-- **Dinamisasi AI Engine & Threat Intel Synthesis** - model LLM (Gemini 2.5 Flash, 1.5 Pro, DeepSeek V4, Claude), bobot skor, threshold, dan API key dapat dikonfigurasi runtime via UI tanpa restart server, lengkap dengan Live AI Playground.
-- **Hemat kuota & anti-noise** - filter noise pra-scan dan selective media triage (mengabaikan media pasif murni ekspor chat tanpa mengorbankan proteksi berkas eksekutabel/arsip), cache verdict berbasis hash dengan TTL diferensial, serta dedup claim-check di sisi server.
-- **Agen ringan lintas OS** - `soar-agent` (Rust, ~5 MB) untuk Linux, Windows, dan macOS; mengirim metadata + hash saja, isi berkas tidak pernah keluar endpoint.
-- **Installer UI & Pendaftaran Agent Tanpa Konfigurasi (Zero-Config)** - instalasi endpoint cukup satu baris perintah (`curl -sSL ... | sudo bash`), pendaftaran host masuk antrean persetujuan, dan admin cukup klik Approve di dashboard.
-- **User Management & Cloudflare Access Zero Trust RBAC** - otentikasi SSO email berbasis header Cloudflare Access dengan pemisahan peran Admin (mitigasi penuh) dan Viewer (audit read-only).
-- **Bukti yang bisa dipantau** - dashboard web (UI bergaya Wazuh), TUI terminal, dan API monitoring dengan heartbeat 60 detik.
-- **Akses machine-to-machine AI Agent & Integrasi MCP** (Model Context Protocol JSON-RPC 2.0 stdio dan antarmuka API Keys berbasis granular scopes untuk integrasi AI Agent seperti agy, Claude Code, Codex, dan Cursor).
-- **Setup lintas-device** - bootstrap server satu perintah + empat jalur pemasangan agent, termasuk rollout fleet via Ansible.
+Instead of relying purely on static `if-then` playbooks, this project places **AI agents at the center of alert triage, context synthesis, and response orchestration**, constrained by strict operational guardrails:
 
----
-
-## Arsitektur
-
-![Arsitektur SOAR](docs/diagrams/arsitektur-soar.png)
-
-Empat kelompok komponen:
-
-| Kelompok | Isi |
-|----------|-----|
-| **Endpoint** | `soar-agent` (Rust) — FIM (`~/Downloads`, `~/Desktop`, USB), hash SHA-256, karantina lokal. Kompatibel dengan Wazuh Agent untuk aturan rantai proses. |
-| **SOAR Server** | Wazuh Manager (korelasi aturan + Active Response + API `:55000`), n8n (orkestrasi, 5 workflow), LLM (ringkasan/rekomendasi), `fleet-monitor` + dashboard. |
-| **Threat Intelligence** | VirusTotal, MalwareBazaar, AlienVault OTX (hash); Google Safe Browsing, URLScan.io (URL). |
-| **Human-in-the-Loop** | Telegram Bot (notifikasi + tombol keputusan) dan Analis SOC. |
-
-Penjelasan awam dan diagram lain: [`docs/arsitektur/ARCHITECTURE.md`](docs/arsitektur/ARCHITECTURE.md), [`docs/arsitektur/FLOW.md`](docs/arsitektur/FLOW.md), [`docs/panduan/PANDUAN-DIAGRAM.md`](docs/panduan/PANDUAN-DIAGRAM.md).
+1. **AI Reasoning & Dynamic Multi-Provider Engine**:
+   Every incident passing pre-scan filters is analyzed by an AI agent to produce structured reasoning, **MITRE ATT&CK** technique mapping, and containment recommendations. Primary and fallback providers (`Google Gemini`, `OpenAI GPT`, `Anthropic Claude`, `Pollinations`, `Experiential Labs`, and OpenAI-compatible custom endpoints such as `Ollama`, `Groq`, or `vLLM`), along with **Saved API Keys** and live model discovery, are configurable at runtime through the Dashboard Settings UI without restarting services.
+2. **External AI Agent Access via MCP & Scoped API Keys**:
+   Includes a pure Python stdlib **SOAR MCP Server** ([`scripts/soar_mcp_server.py`](scripts/soar_mcp_server.py)) implementing JSON-RPC 2.0 over stdio, paired with granular scoped API keys (`read:fleet`, `read:intel`, `write:actions`) and a copy-ready **Agent Setup Prompt** in the dashboard. External AI agents such as Antigravity (`agy`), Claude Code, Codex, Cursor, and OpenCode can inspect fleet health, query IoC reputations, and trigger Active Response actions programmatically.
+3. **Confidence-Based Escalation & Anti-Overreaction**:
+   - **CRITICAL / High Confidence**: Autonomous execution of containment (`quarantine` or `sinkhole`) with real-time Telegram reporting.
+   - **HIGH / Ambiguous**: The agent prepares full reasoning and mitigation context, then delegates final execution to a human analyst via **Human-in-the-Loop (HITL)** approval controls in Telegram and the Dashboard.
+   - **INFO / Benign**: Routine OS and baseline artifacts are classified cleanly without quarantine actions or noisy external OSINT lookups, keeping analysts focused on real threats.
+4. **Lightweight Cross-Platform Endpoint Telemetry (`soar-agent` + Wazuh)**:
+   Endpoints run a lightweight Rust agent ([`agent-rs/`](agent-rs/)) supporting Linux, Windows, and macOS. Only metadata and SHA-256 hashes leave the endpoint; raw file contents are never uploaded.
 
 ---
 
-## Alur Singkat
+## Architecture
 
-1. **Endpoint** — berkas baru terdeteksi; agent menghitung SHA-256 dan mengirim alert ringan (1-2 KB) ke webhook n8n. Isi berkas tidak dikirim.
-2. **n8n** — menyaring noise, lalu memeriksa verdict: cache hash → VirusTotal → MalwareBazaar (bila perlu) → OTX bila VT rate-limit.
-3. **Klasifikasi** — severity ditentukan dari verdict threat intel (VirusTotal/MalwareBazaar/OTX) dan status eksekutabel; level rule FIM saja tidak menjadikan berkas "malware".
-4. **Respons** — kasus berkeyakinan tinggi dieksekusi otomatis; kasus ambigu memunculkan tombol keputusan di Telegram.
-5. **Jejak** — setiap event masuk `fleet-monitor` (dipersist ke SQLite) dan tampil di dashboard (status, severity, hash, tautan VirusTotal). Riwayat bisa ditelusuri per periode (24 jam–90 hari atau rentang custom), digabung dengan arsip alert Wazuh Indexer.
+![SOAR Architecture](docs/diagrams/arsitektur-soar.png)
 
----
+Four core architectural layers:
 
-## Stack Teknologi
+| Layer | Components & Responsibilities |
+|-------|-------------------------------|
+| **Endpoint Fleet** | `soar-agent` (Rust: FIM for `~/Downloads`, `~/Desktop`, USB; SHA-256 hashing; local quarantine/restore; on-demand scan) and `Wazuh Agent` (process-chain correlation and SIEM rules). |
+| **Agentic Orchestration & AI** | `n8n` (playbook orchestration, deduplication, selective media triage), Multi-Provider AI Engine (dynamic Primary + Fallback LLM routing), and `soar_mcp_server.py` (MCP interface for external AI agents). |
+| **Control Plane & Threat Intel** | `fleet-monitor` (Python stdlib: SQLite durable event store, differential TTL verdict cache, Active Response command queue, RBAC, M2M API keys), `misp-index` (CIRCL OSINT feed), VirusTotal, MalwareBazaar, AlienVault OTX, Google Safe Browsing, and URLScan.io. |
+| **Dashboard & HITL Interface** | Next.js Web UI styled after Wazuh Dashboard (`WUI`), public zero-config agent installer portal (`/install`), `fleet-tui.py` (SSH curses TUI), and bidirectional Telegram Bot (`tg-callback-poller.py` + `alert-log.py`). |
 
-| Komponen | Peran | Versi |
-|----------|-------|-------|
-| **Wazuh Manager** | SIEM, korelasi aturan, integratord, Active Response | 4.14.8 |
-| **Wazuh Indexer** | OpenSearch, penyimpanan dan pencarian log | 4.14.8 |
-| **Wazuh Dashboard** | Antarmuka bawaan Wazuh (opsional) | 4.14.8 |
-| **n8n** | Mesin orkestrasi playbook (otak SOAR) | 2.42.5 |
-| **soar-agent** | Agen endpoint Rust: FIM, hash, karantina, scan on-demand | - |
-| **fleet-monitor** | API monitoring (heartbeat, event, command queue, cache verdict, API Keys M2M) | stdlib Python |
-| **misp-index** | Sumber threat-intel MISP (feed CIRCL OSINT) + API lookup | stdlib Python |
-| **alert-log** | Pencatat alert Telegram keluar (observability) | stdlib Python |
-| **dashboard** | UI monitoring (gaya Wazuh) | Next.js |
-| **VirusTotal API** | Reputasi hash (70+ antivirus) | v3 |
-| **MalwareBazaar API** | Sumber intel kedua untuk malware | v1 |
-| **AlienVault OTX** | Fallback saat VirusTotal rate-limit | v1 |
-| **Google Safe Browsing** | Reputasi URL phishing | v4 |
-| **URLScan.io** | Analisis dan verdict URL | v1 |
-| **LLM** | Ringkasan dan rekomendasi Bahasa Indonesia (provider dapat ditukar) | - |
-| **Telegram Bot** | Kanal notifikasi dan antarmuka keputusan dua arah | - |
+Detailed architecture and flow references: [`docs/arsitektur/ARCHITECTURE.md`](docs/arsitektur/ARCHITECTURE.md), [`docs/arsitektur/FLOW.md`](docs/arsitektur/FLOW.md), [`docs/panduan/PANDUAN-DIAGRAM.md`](docs/panduan/PANDUAN-DIAGRAM.md).
 
 ---
 
-## Kapabilitas Deteksi dan Respons
+## End-to-End Workflow
 
-### Malware (berbasis reputasi hash)
-
-Agent memantau filesystem; setiap hash diperiksa ke sumber intel, dan keputusan mengikuti verdict — bukan sekadar "ada berkas baru".
-
-| Verdict | Severity | Tindakan |
-|---------|----------|----------|
-| Deteksi tinggi (`malicious >= 20`) atau MB + `malicious >= 5` | **KRITIS** | Karantina otomatis + notifikasi |
-| Terdeteksi (`malicious >= 5`), atau dikenali MalwareBazaar/OTX | **TINGGI** | Tombol Telegram, analis memutuskan |
-| Indikator lemah (`malicious` 1-4/`suspicious`) atau eksekutabel dengan hash belum dikenal | **SEDANG / PERLU REVIEW** | Info silent, tanpa tombol |
-| Tanpa indikator apa pun (VT 0/404, MB/OTX kosong) | **INFO** | Media/dokumen jinak **tidak dinotifikasi**; selebihnya info silent |
-
-### Phishing (berbasis reputasi URL)
-
-| Verdict | Severity | Tindakan |
-|---------|----------|----------|
-| GSB atau URLScan mendeteksi jahat | **BERBAHAYA** | Auto-sinkhole domain (`0.0.0.0` di `/etc/hosts`) |
-| Skor mencurigakan | MENCURIGAKAN | Tombol Telegram, analis memutuskan |
-| Sumber tak bisa diverifikasi (rate-limit/error) | PERLU VERIFIKASI | Eskalasi ke analis — tidak diklaim aman |
-| Bersih | AMAN | Tidak ada aksi |
-
-### Lapisan penghemat kuota dan anti-noise
-
-- **Filter noise pra-scan** — berkas sementara (`*.part`, `*.crdownload`), berkas 0-byte, dan event `deleted` akibat karantina tidak diproses.
-- **Cache verdict per hash** — TTL diferensial: **malicious 7 hari**, **bersih 24 jam**, **tidak dikenal 6 jam** (verdict bersih cepat di-refresh agar deteksi tidak basi). Cache berbasis hash, sehingga burst 100 PC dengan malware sama hanya memanggil VirusTotal sekali.
-- **Dedup claim-check** — alert identik dalam 5 menit tidak diproses dua kali (fail-open: dedup rusak tidak boleh mematikan deteksi).
-- **Fallback bertingkat** — 429/error VirusTotal dialihkan ke OTX; deteksi tinggi tetap dinaikkan.
+1. **Endpoint Detection**: A new or modified file is detected on an endpoint; `soar-agent` computes its SHA-256 hash and sends a lightweight payload (1-2 KB) to the n8n webhook.
+2. **Noise Filtering & Deduplication**: Temporary browser artifacts (`*.part`, `*.crdownload`), 0-byte files, post-quarantine delete events, and 5-minute duplicates are dropped before consuming external API quota.
+3. **Threat Intel Synthesis**: Hashes are checked against the SQLite verdict cache (differential TTL: 7 days malicious, 24 hours clean, 6 hours unknown), then evaluated via multi-source consensus across VirusTotal, MalwareBazaar, MISP OSINT, and AlienVault OTX (or Google Safe Browsing + URLScan.io for phishing URLs).
+4. **AI Agent Triage**: The active LLM generates contextual reasoning, MITRE ATT&CK mapping, and response recommendations, automatically failing over to the fallback provider if needed.
+5. **Tiered Execution**: Autonomous containment for `CRITICAL` threats, analyst HITL approval via Telegram/Dashboard for `HIGH` threats, and silent baseline logging for `INFO`/`BENIGN` artifacts.
+6. **Observability & Forensics**: All telemetry persists in SQLite and merges seamlessly with historical archives in Wazuh Indexer (`wazuh-alerts-*`).
 
 ---
 
-## Quick Start
+## Dashboard Module Separation
+
+To avoid operational overlap across the SOC workflow, the three primary investigation views serve distinct purposes:
+
+| Module | Perspective | Operational Goal |
+|--------|-------------|------------------|
+| **Security events** | Alert timeline & fleet aggregation | Track daily alert trends, top 5 active agents, server-side search and filtering (`q`, `severity`, `agent_id`, `24h`-`90d` or custom time ranges), pagination (`10`, `25`, `50`, `100`, `All`), CSV export, and quick Active Response on non-`INFO` alerts. |
+| **Threat Intel** | IoC reputation & AI reasoning | Inspect AI verdict (`MALICIOUS`, `SUSPICIOUS`, `BENIGN`), active model reasoning, **MITRE ATT&CK** mapping, mitigation guidance, and OSINT pivots/quarantine controls for non-`INFO` artifacts. |
+| **Integrity monitoring (FIM)** | Per-file inventory & host forensics | Audit monitored files by path with full metadata (`User`, `Group`, `Size`, `Inode`, `MD5`, `SHA1`, `SHA256`, `Permissions`), per-file change history, and Syscheck baseline assessment. |
+
+Additional modules: **Overview Hub**, **Agents Management & Detail**, **Deploy agent** (and public `/install` portal), **MITRE ATT&CK Matrix**, **Network map**, **Users (RBAC)**, **API Keys (2FA + AI Agent Setup Prompt)**, and **Settings (AI Engine & Threat Intel Policy)**.
+
+---
+
+## Technology Stack
+
+| Component | Role | Baseline |
+|-----------|------|----------|
+| **Wazuh Manager & Indexer** | SIEM, process-chain rule correlation, OpenSearch storage, Active Response | 4.14.8 |
+| **n8n** | Webhook playbook orchestration and workflow automation | 2.42.5 |
+| **soar-agent** | Lightweight endpoint agent: FIM, SHA-256, quarantine, restore, scan | Rust (`agent-rs/`) |
+| **fleet-monitor** | Control plane API, SQLite history, VT/OSINT cache, RBAC & M2M keys | Python 3.12 stdlib |
+| **dashboard** | Wazuh-style Web UI, `/install` portal, auth & RBAC API proxy | Next.js 16 (App Router) |
+| **soar_mcp_server.py** | JSON-RPC 2.0 stdio MCP server for external AI agents | Python 3 stdlib |
+| **misp-index & alert-log** | CIRCL OSINT MISP feed sync and outbound Telegram alert observability | Python 3.12 stdlib |
+| **Cloudflare Zero Trust** | Tunnel ingress + Cloudflare Access SSO and session logout (`/cdn-cgi/access/logout`) | Cloudflare Access |
+
+---
+
+## Setup & Quick Start
+
+### 1. Server Bootstrap
+```bash
+# Copy .env.example to .env and populate required tokens and API keys
+cp .env.example .env
+
+# Run idempotent server bootstrap (Wazuh certs, Docker Compose, n8n workflow sync)
+bash deploy/setup-server.sh
+```
+
+> Required `.env` secrets for full operation: `FLEET_COMMAND_TOKEN`, `FLEET_AGENT_POLL_TOKENS_JSON`, and `DASHBOARD_LOGIN_TOKEN` (minimum 32 random characters, no placeholder prefixes).
+
+### 2. Zero-Config Endpoint Enrollment
+Open the public installer portal at **`https://soar-agent.raviarnan.dev`** (or **Deploy agent** inside the dashboard) and choose your target platform:
+- **Linux**: single-line installer `curl -sSL https://soar-agent.raviarnan.dev/api/enroll/script?os=linux | sudo bash`, `.deb` package, or NixOS module ([`deploy/nixos/`](deploy/nixos/)).
+- **Windows**: PowerShell enrollment script (`deploy/install-agent-windows.ps1`) or portal one-liner.
+- **macOS**: Darwin installer script from `/install`.
+- **Wazuh Agent / Other OS**: standard Wazuh Agent commands for FreeBSD/Solaris/AIX/Source and fleet-wide Ansible rollout ([`deploy/ansible/`](deploy/ansible/)).
+
+Newly enrolled hosts enter **Pending Approvals** and activate immediately once approved by an Admin in the dashboard.
+
+### 3. External AI Agent Integration (MCP & API Keys)
+1. Navigate to **Settings -> API Keys & Agent Access** in the dashboard (gated by dual-channel Email + Telegram 2FA).
+2. Generate an API key with least-privilege scopes (`read:fleet`, `read:intel`, `write:actions`).
+3. Copy the built-in **AI Agent Setup Prompt** and cURL snippets from the guide, or register `scripts/soar_mcp_server.py` as an MCP server in your AI client.
+
+---
+
+## Security & Governance
+
+- **RBAC & Zero Trust**: Supports **Cloudflare Access** SSO headers (`cf-access-authenticated-user-email`) and signed HMAC session cookies (`soar_session`) across `admin`, `analyst`, and `viewer` roles. Logging out clears server email caches, local cookies, and revokes the Cloudflare Access session via `/cdn-cgi/access/logout`.
+- **Noise Suppression & Least Privilege**: `INFO` / `BENIGN` entries suppress quarantine actions and uninformative OSINT pivot links, while `/api/commands` strictly validates absolute non-traversal file paths and domain targets for `sinkhole`.
+- **Credential Hygiene**: Runtime secrets remain strictly in `.env` (gitignored) and encrypted n8n credentials; `.env.example` contains placeholders only. Endpoint file payloads never leave the host.
+
+---
+
+## Repository Structure
+
+```text
+soar-project/
+├── docker-compose.yml              # n8n, fleet-monitor, dashboard, health-monitor, poller, misp-index
+├── wazuh-docker/single-node/       # Wazuh manager + indexer + dashboard
+├── agent-rs/                       # soar-agent (Rust): FIM, SHA-256, quarantine, restore, scan
+├── dashboard/                      # Next.js Web UI (Wazuh/OUI primitives, /install, API proxies)
+├── deploy/                         # setup-server.sh, n8n-setup.py, OS installers, Ansible, NixOS
+├── scripts/
+│   ├── fleet-monitor.py            # Control plane API, SQLite store, VT/OSINT cache, RBAC, API keys
+│   ├── soar_mcp_server.py          # JSON-RPC 2.0 stdio MCP server for external AI agents
+│   ├── fleet-tui.py                # Terminal dashboard (curses)
+│   ├── health-monitor.py           # Pipeline & container health monitor
+│   ├── custom-n8n.py               # Wazuh integratord bridge to n8n webhooks
+│   ├── tg-callback-poller.py       # Telegram HITL callback long-poller to n8n
+│   └── patch-n8n-*.py              # Idempotent live n8n workflow patchers with local backups
+├── config/wazuh/                   # Persistent Wazuh Manager & Agent configurations
+└── docs/                           # Architecture, flows, guides, and diagrams
+```
+
+---
+
+## Local Verification & Tests
 
 ```bash
-# 1. Server — bootstrap satu perintah (idempoten: .env, sertifikat Wazuh,
-#    compose up, integrasi, sinkron credential + workflow n8n)
-bash deploy/setup-server.sh
+# Dashboard unit tests, ESLint, TypeScript check, and Next.js production build
+cd dashboard && nice -n 19 npm run check
 
-# 2. Workstation — pilih salah satu jalur
-sudo apt install ./soar-agent_0.3.0_amd64.deb              # Linux, via .deb
-sudo install -d -m 700 /etc/soar-agent
-sudo bash -c 'umask 077; read -rsp "Poll token: " t; printf "%s\\n" "$t" > /etc/soar-agent/fleet.token'
-sudo AGENT_ID=004 AGENT_NAME=laptop-budi FLEET_AGENT_POLL_TOKEN=... bash deploy/agent-install.sh
-ansible-playbook -i deploy/ansible/inventory-agents.ini \
-  deploy/ansible/deploy-agents.yml                          # rollout fleet
-powershell -File deploy/install-agent-windows.ps1           # set BINARY_URL HTTPS + SOAR_FLEET_POLL_TOKEN
-
-#    Inventory Ansible: salin `deploy/ansible/inventory-agents.ini.example`
-#    lalu isi daftar host dan agent_id-nya.
-
-# 3. Verifikasi pipeline malware (EICAR) — notifikasi Telegram dalam 15-30 detik
-printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' \
-  > ~/Downloads/eicar-test.com
-
-# 4. Verifikasi pipeline phishing
-bash scripts/test-phishing.sh "https://www.google.com/"      # hasil: AMAN
+# Backend & MCP Python unit tests
+python3 -m unittest scripts/test_dynamic_settings.py scripts/test_patch_n8n_aifailsafe.py scripts/test_user_management.py scripts/test_soar_mcp.py
 ```
 
-> **Konfigurasi:** salin `.env.example` ke `.env` dan isi API key; `deploy/n8n-setup.py`
-> mendaftarkannya sebagai credential n8n (ID credential di-remap by name, jadi tidak ada
-> node merah setelah import). `FLEET_COMMAND_TOKEN` dan
-> `FLEET_AGENT_POLL_TOKENS_JSON` wajib diisi sebelum fleet-monitor menerima
-> command atau agent memollnya. `DASHBOARD_LOGIN_TOKEN` dipakai saat browser
-> meminta sesi dashboard sebelum mengirim command.
->
-> **Active Response phishing:** `sudo bash scripts/deploy-block-domain.sh` (sekali).
-
 ---
 
-## Monitoring
+## License
 
-| Cara | Alamat | Catatan |
-|------|--------|---------|
-| Dashboard web | `http://127.0.0.1:3000` | GUI utama (UI bergaya Wazuh): status agent, severity, event, detail agent |
-| API monitoring | `http://<server>:8080` | `/api/fleet`, `/api/events`, `/api/events/history`, `/api/scan-results`, `/api/vt-cache` |
-| TUI terminal | `python3 scripts/fleet-tui.py` | Kembaran dashboard untuk sesi SSH (stdlib curses) |
-
-Dashboard menyimpan event secara **durable** (SQLite) dan bisa menampilkan **riwayat per periode** (24 jam / 7 / 30 / 90 hari, atau rentang custom) di semua view event, menggabungkan event pipeline SOAR dengan arsip alert Wazuh Indexer (`wazuh-alerts-*`). Endpoint: `GET /api/events/history?since=&until=&source=all|soar|wazuh`.
-
-Filter severity, agent, dan pencarian diproses di Wazuh Indexer, bukan setelah mengambil 1.000 dokumen terbaru, sehingga alert lama tetap ditemukan. Statistik memakai aggregasi indexer. Daftar event masih dibatasi 1.000 per query; UI menampilkan jumlah yang cocok saat batas itu tercapai.
-
-Fleet saat ini (bertambah sampai 100 workstation):
-
-| ID | Host | OS |
-|----|------|-----|
-| 000 | wazuh.manager | Server (manager) |
-| 001 | ideapc | Windows |
-| 002 | bali-handmade | Windows |
-| 003 | toshiba-bapak | Windows |
-| 008 | macbook | macOS |
-| 009 | nixbox | Linux (NixOS) |
-| 010 | ravi-debian | Linux (Debian 13) |
-
----
-
-## Struktur Repositori
-
-```
-soar-project/
-├── docker-compose.yml              # n8n, fleet-monitor, dashboard, health-monitor, poller
-├── wazuh-docker/single-node/       # Wazuh manager + indexer + dashboard (upstream)
-├── agent-rs/                       # soar-agent (Rust): FIM, hash, karantina, scan on-demand
-├── dashboard/                      # Dashboard web (Next.js, gaya Wazuh)
-├── deploy/
-│   ├── setup-server.sh             # Bootstrap server satu perintah (idempoten)
-│   ├── n8n-setup.py                # Sinkron credential + import workflow via API
-│   ├── agent-install.sh            # Pemasangan agent satu host (Linux)
-│   ├── install-agent-windows.ps1   # Pemasangan agent Windows
-│   ├── ansible/                    # Rollout fleet N host + verifikasi heartbeat
-│   ├── nixos/                      # Modul NixOS untuk agent
-│   └── hardened/                   # Caddy TLS + basic-auth (opsional)
-├── scripts/
-│   ├── fleet-monitor.py            # API monitoring + cache verdict + command queue
-│   ├── fleet-tui.py                # Dashboard terminal
-│   ├── health-monitor.py           # Self-aware health (alert saat status berubah)
-│   ├── custom-n8n.py               # Jembatan integratord Wazuh ke webhook n8n
-│   ├── tg-callback-poller.py       # Long-poll Telegram ke n8n (aman di balik NAT)
-│   ├── quarantine-file, block-domain   # Active Response
-│   ├── patch-n8n-*.py              # Patch workflow live via API (idempoten + backup)
-│   └── process-chain-rules.xml, phishing-rule.xml
-├── config/wazuh/                   # Konfigurasi permanen manager + agent
-├── n8n-workflows/                  # Snapshot workflow (lihat catatan di bawah)
-└── docs/                           # Arsitektur, alur, deployment, panduan, laporan, diagrams/
-```
-
-> **Catatan workflow:** sumber kebenaran adalah workflow **live** di n8n. Berkas di
-> `n8n-workflows/` adalah snapshot historis — workflow live sudah berkembang (cabang
-> rantai proses, dedup, cache verdict, ensemble MalwareBazaar, OTX). Perubahan dilakukan
-> lewat `scripts/patch-n8n-*.py` (idempoten, menyimpan backup), bukan import ulang berkas.
-
----
-
-## Endpoint
-
-| Layanan | URL |
-|---------|-----|
-| Dashboard SOAR | `http://127.0.0.1:3000` |
-| API fleet / monitoring | `http://<server>:8080` |
-| n8n editor | `http://<server>:5678` |
-| Webhook malware | `http://<server>:5678/webhook/wazuh-alert` |
-| Webhook phishing | `http://<server>:5678/webhook/wazuh-phishing` |
-| Webhook callback Telegram | `http://<server>:5678/webhook/tg-callback` |
-| Wazuh Dashboard | `https://<server>:443` |
-| Wazuh API | `https://<server>:55000` |
-| Wazuh Indexer | `https://<server>:9200` |
-
----
-
-## Keamanan
-
-- Tidak ada kredensial hardcode: rahasia disimpan di `.env` (gitignored) dan credential n8n terenkripsi; `.env.example` hanya berisi placeholder.
-- `backups/` memuat snapshot lokal workflow dan diabaikan git (jangan di-commit).
-- Active Response untuk kasus ambigu memerlukan persetujuan analis, sehingga tidak terjadi isolasi atau blokir buta; karantina berkas dapat dikembalikan.
-- Agent hanya mengirim metadata + hash — isi berkas tidak meninggalkan endpoint.
-
----
-
-## Lisensi
-
-Proyek akademik open-source. Tiap komponen tunduk pada lisensinya masing-masing:
+Open-source academic project. Individual components follow their respective upstream licenses:
 **Wazuh** (GPLv2), **n8n** (Sustainable Use License), **soar-agent Rust** (GPL-2.0).
 
 <div align="center">
 
-Dibuat untuk Tugas Akhir oleh **Ravi Arnan Irianto**, Teknologi Informasi, Universitas Udayana.
+Developed as an Undergraduate Thesis Project by **Ravi Arnan Irianto**, Information Technology, Udayana University.
 
 </div>
