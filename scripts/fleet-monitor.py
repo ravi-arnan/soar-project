@@ -3761,7 +3761,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("need id")
                 if not _is_agent_or_command_authorized(self.headers, hid):
                     legacy_compat = os.environ.get("FLEET_LEGACY_HEARTBEAT_COMPAT", "").strip().lower() in ("1", "true", "yes")
-                    if not (legacy_compat and hid in _load_agent_poll_tokens()):
+                    with _fleet_locks.STATE_LOCK:
+                        enrolled = bool(FLEET_AGENT_POLL_TOKENS.get(hid)) or (hid in HEARTBEATS)
+                    if not (legacy_compat and _valid_agent_id(hid) and enrolled):
                         self._unauthorized()
                         return
                     print(f"[compat] legacy unauthenticated heartbeat accepted for enrolled agent {hid} (upgrade soar-agent binary)", flush=True)
