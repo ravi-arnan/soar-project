@@ -19,6 +19,8 @@ x-security: &default-security
     - no-new-privileges:true
   cap_drop:
     - ALL
+  cap_add:
+    - DAC_OVERRIDE
 
 services:
   caddy:
@@ -91,7 +93,7 @@ services:
       - N8N_WEBHOOK=http://n8n:5678/webhook/tg-callback
       - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-}
       - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
-      - POLLER_STATE_FILE=/state/tg-poller-offset.json
+      - TG_POLLER_OFFSET_FILE=/state/tg-poller-offset.json
     volumes:
       - ../../scripts:/scripts:ro
       - ../../state:/state

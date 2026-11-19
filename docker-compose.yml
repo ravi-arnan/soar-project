@@ -55,6 +55,8 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     mem_limit: 128m
     network_mode: host
     env_file:
@@ -81,6 +83,8 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     mem_limit: 128m
     network_mode: host
     env_file:
@@ -89,10 +93,10 @@ services:
       - WAZUH_API_URL=${WAZUH_API_URL:-https://127.0.0.1:55000}
       - WAZUH_INDEXER_URL=${WAZUH_INDEXER_URL:-https://127.0.0.1:9200}
       - N8N_HEALTH_URL=http://127.0.0.1:5678/healthz
-      - FLEET_HEALTH_URL=http://127.0.0.1:8080/healthz
-      - DASHBOARD_HEALTH_URL=http://127.0.0.1:3000/api/auth/me
-      - MISP_HEALTH_URL=http://127.0.0.1:8090/stats
-      - ALERT_LOG_HEALTH_URL=http://127.0.0.1:8091/stats
+      - FLEET_URL=http://127.0.0.1:8080
+      - DASHBOARD_URL=http://127.0.0.1:3000
+      - MISP_URL=http://127.0.0.1:8090
+      - ALERT_LOG_URL=http://127.0.0.1:8091
       - HEALTHCHECK_PING_URL=${HEALTHCHECK_PING_URL:-}
     volumes:
       - ./scripts:/scripts:ro
@@ -110,6 +114,8 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     mem_limit: 512m
     dns:
       - 8.8.8.8
@@ -200,6 +206,8 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     mem_limit: 256m
     dns:
       - 8.8.8.8
@@ -232,6 +240,8 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_OVERRIDE
     mem_limit: 256m
     dns:
       - 8.8.8.8
