@@ -588,13 +588,7 @@ export function ApiKeysView() {
                         {k.scopes.map((s) => (
                           <WuiBadge
                             key={s}
-                            tone={
-                              s === 'write:actions'
-                                ? 'warning'
-                                : s === 'read:intel'
-                                  ? 'primary'
-                                  : 'default'
-                            }
+                            tone="default"
                             className="font-mono text-[10px]"
                           >
                             {s}

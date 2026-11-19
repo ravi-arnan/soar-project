@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { WuiIcon, type WuiIconType } from '../wui/WuiIcon';
-import { WuiHealth, WuiPanel } from '../wui/WuiPrimitives';
+import { WuiPanel } from '../wui/WuiPrimitives';
 
 import type {
   FleetAgent,
@@ -173,13 +173,6 @@ export const ModulesHub = React.memo(function ModulesHub({
             title: 'Stack health',
             description: `${stackOk}/3 services online (n8n, AI Engine, Wazuh API). Inspect connection status and endpoints.`,
             icon: 'monitoringApp',
-            extra: (
-              <div className="mt-2">
-                <WuiHealth tone={stackOk === 3 ? 'success' : stackOk > 0 ? 'warning' : 'danger'} className="text-[11px]">
-                  {stackOk === 3 ? '3/3 layanan aktif' : `${stackOk}/3 layanan aktif`}
-                </WuiHealth>
-              </div>
-            ),
           },
           {
             id: 'network-map',

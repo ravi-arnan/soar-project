@@ -315,7 +315,7 @@ export function SettingsView({
                     <th className="py-2.5 px-3">Port / Jalur</th>
                     <th className="py-2.5 px-3">Beban Memori</th>
                     <th className="py-2.5 px-3">Rasio Limit</th>
-                    <th className="py-2.5 px-4 text-left">Status Operasional</th>
+                    <th className="py-2.5 px-4 w-px whitespace-nowrap text-left">Status Operasional</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E9EDF3]">
@@ -348,7 +348,7 @@ export function SettingsView({
                       >
                         {comp.memPercent}
                       </td>
-                      <td className="py-2.5 px-4 text-left">
+                      <td className="py-2.5 px-4 w-px whitespace-nowrap text-left">
                         <WuiHealth tone={comp.isOk ? 'success' : 'warning'}>
                           {comp.status}
                         </WuiHealth>
