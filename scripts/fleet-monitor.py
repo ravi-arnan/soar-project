@@ -3760,8 +3760,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not hid:
                     raise ValueError("need id")
                 if not _is_agent_or_command_authorized(self.headers, hid):
-                    self._unauthorized()
-                    return
+                    legacy_compat = os.environ.get("FLEET_LEGACY_HEARTBEAT_COMPAT", "").strip().lower() in ("1", "true", "yes")
+                    if not (legacy_compat and hid in _load_agent_poll_tokens()):
+                        self._unauthorized()
+                        return
+                    print(f"[compat] legacy unauthenticated heartbeat accepted for enrolled agent {hid} (upgrade soar-agent binary)", flush=True)
                 _sent_ip = (j.get("ip") or "").strip()
                 if _sent_ip in ("", "127.0.0.1", "0.0.0.0", "localhost", "::1"):
                     _sent_ip = ""
