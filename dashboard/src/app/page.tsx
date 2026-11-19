@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useSyncExternalStore } from 'react';
 import dynamic from 'next/dynamic';
+import { AuthProvider, LoginGate, useAuth } from '@/components/AuthContext';
 import { WazuhHeader } from '@/components/wazuh/WazuhHeader';
 import { WazuhSidebar } from '@/components/wazuh/WazuhSidebar';
 import { ModulesHub } from '@/components/wazuh/ModulesHub';
@@ -62,6 +63,29 @@ const AgentDeploymentView = dynamic(
 );
 
 export default function Home() {
+  return (
+    <AuthProvider>
+      <DashboardShell />
+    </AuthProvider>
+  );
+}
+
+function DashboardShell() {
+  const { authenticated, loading: authLoading, role } = useAuth();
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#FAFBFD] flex items-center justify-center text-[13px] text-[#535966]">
+        Memeriksa sesi autentikasi...
+      </div>
+    );
+  }
+  if (!authenticated || !role) {
+    return <LoginGate />;
+  }
+  return <AuthenticatedDashboard userRole={role} />;
+}
+
+function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 'viewer' }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentView, setCurrentView] = useState<string>('modules');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('004');
@@ -72,15 +96,27 @@ export default function Home() {
   const [eventsSource, setEventsSource] = useState<HistorySource | undefined>(undefined);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'keys' | 'dynamic-config'>('general');
 
-  const [refreshMs, setRefreshMs] = useState(() => {
-    try {
-      return Number(localStorage.getItem('soar:refreshMs')) || 5000;
-    } catch {
-      return 5000;
-    }
-  });
+  // Baca preferensi refreshMs via useSyncExternalStore (deterministik SSR=5000, bebas hydration mismatch).
+  const [refreshOverride, setRefreshOverride] = useState<number | null>(null);
+  const storedRefreshMs = useSyncExternalStore(
+    (cb) => {
+      if (typeof window === 'undefined') return () => {};
+      window.addEventListener('storage', cb);
+      return () => window.removeEventListener('storage', cb);
+    },
+    () => {
+      try {
+        const saved = Number(localStorage.getItem('soar:refreshMs'));
+        return saved && saved >= 2000 ? saved : 5000;
+      } catch {
+        return 5000;
+      }
+    },
+    () => 5000
+  );
+  const refreshMs = refreshOverride ?? storedRefreshMs;
   const updateRefreshMs = (ms: number) => {
-    setRefreshMs(ms);
+    setRefreshOverride(ms);
     try {
       localStorage.setItem('soar:refreshMs', String(ms));
     } catch {}
@@ -292,6 +328,7 @@ export default function Home() {
         {currentView === 'agent-deployment' && (
           <AgentDeploymentView
             onBackToAgents={() => setCurrentView('agents')}
+            userRole={userRole}
           />
         )}
 
@@ -318,7 +355,13 @@ export default function Home() {
 
         {currentView === 'integrity-monitoring' && <FimDashboard />}
 
-        {currentView === 'mitre' && <MitreAttackView />}
+        {currentView === 'mitre' && (
+          <MitreAttackView
+            onSelectTechnique={() =>
+              handleNavigate('security-events', { tab: 'events', period: '30d', source: 'all' })
+            }
+          />
+        )}
 
         {currentView === 'network-map' && (
           <NetworkMapView agents={agents} health={health} onSelectAgent={handleSelectAgent} />
@@ -333,9 +376,9 @@ export default function Home() {
           />
         )}
 
-        {currentView === 'users' && <UserManagementView />}
+        {currentView === 'users' && userRole === 'admin' && <UserManagementView />}
 
-        {currentView === 'api-keys' && <ApiKeysView />}
+        {currentView === 'api-keys' && userRole === 'admin' && <ApiKeysView />}
 
         {currentView === 'settings' && (
           <SettingsView
@@ -346,6 +389,7 @@ export default function Home() {
             refreshMs={refreshMs}
             onRefreshMsChange={updateRefreshMs}
             initialTab={settingsInitialTab}
+            userRole={userRole}
           />
         )}
       </main>

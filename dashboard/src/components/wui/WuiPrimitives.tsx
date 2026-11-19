@@ -255,17 +255,31 @@ export function WuiModal({
   footer?: React.ReactNode;
   maxWidth?: string;
 }) {
+  const titleId = React.useId();
+
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1C21]/40 p-4"
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
         className={`bg-white border border-[#D3DAE6] rounded-[4px] shadow-[0_6px_24px_rgba(0,0,0,0.14)] w-full ${maxWidth} overflow-hidden`}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#D3DAE6]">
-          <h3 className="text-[14px] font-semibold text-[#1A1C21] flex items-center gap-2">
+          <h3 id={titleId} className="text-[14px] font-semibold text-[#1A1C21] flex items-center gap-2">
             {title}
           </h3>
           <button

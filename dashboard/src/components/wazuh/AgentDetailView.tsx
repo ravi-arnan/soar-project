@@ -6,6 +6,7 @@ import { agentStatus, formatWazuhTime, formatClock, severityLevel } from '@/lib/
 import { postCommand } from '@/lib/commands';
 import { ExpandableCard } from './ExpandableCard';
 import { PeriodFilter } from './PeriodFilter';
+import { useAuth } from '../AuthContext';
 import { WuiHealth } from '../wui/WuiPrimitives';
 import { useEventHistory, periodToWindow } from '@/lib/fleet';
 import type { FleetAgent, FleetEvent, FleetScanResult, PeriodValue } from '@/lib/fleet';
@@ -31,14 +32,28 @@ function ResourceChart({ agentId }: { agentId: string }) {
   const [points, setPoints] = useState<MetricPoint[]>([]);
   useEffect(() => {
     let alive = true;
-    fetch(`/api/metrics?agent_id=${encodeURIComponent(agentId)}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (alive) setPoints(d.points || []);
-      })
-      .catch(() => {});
+    let authBlocked = false;
+    const pull = () => {
+      if (authBlocked) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      fetch(`/api/metrics?agent_id=${encodeURIComponent(agentId)}`, { cache: 'no-store' })
+        .then((r) => {
+          if (r.status === 401 || r.status === 403) {
+            authBlocked = true;
+            return null;
+          }
+          return r.ok ? r.json() : null;
+        })
+        .then((d) => {
+          if (alive && d) setPoints(d.points || []);
+        })
+        .catch(() => {});
+    };
+    pull();
+    const id = setInterval(pull, 30000);
     return () => {
       alive = false;
+      clearInterval(id);
     };
   }, [agentId]);
 
@@ -186,6 +201,12 @@ function QuarantinePanel({ agentId, canQuarantine, events }: { agentId: string; 
       setState('pilih file dulu');
       return;
     }
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(`Kirim perintah karantina untuk "${pick}" pada agent ${agentId}?`)
+    ) {
+      return;
+    }
     setState('mengirim...');
     try {
       const r = await postCommand({ agent_id: agentId, action: 'quarantine', target: pick });
@@ -299,11 +320,11 @@ function ScanPanel({ agentId, canScan, watchPaths }: { agentId: string; canScan:
         )}
         <button
           onClick={runScan}
-          disabled={!canScan || (!!watchPaths?.length && !pick)}
+          disabled={!canScan || !pick.trim()}
           title={
             canScan
               ? 'Antre scan folder on-demand ke agent ini'
-              : 'Hanya agent Rust (soar-agent) yang mendukung scan on-demand'
+              : 'Membutuhkan agent Rust (soar-agent) dan role Analyst/Admin'
           }
           className={`px-3 py-1.5 rounded border text-[11px] font-medium transition-colors ${
             canScan
@@ -321,6 +342,12 @@ function ScanPanel({ agentId, canScan, watchPaths }: { agentId: string; canScan:
         </button>
         {state && <span className="text-[11px] text-[#5A626F]">{state}</span>}
       </div>
+      <input
+        value={pick}
+        onChange={(e) => setPick(e.target.value)}
+        placeholder="/path/lengkap/folder atau C:\Users\...\Downloads"
+        className="w-full px-2 py-1.5 rounded border border-[#D3DAE6] text-[11px] bg-white font-mono"
+      />
 
       {!scan ? (
         <div className="text-[12px] text-[#8A94A6] py-4 text-center">
@@ -417,6 +444,8 @@ export function AgentDetailView({
   agent,
   onNavigateTab,
 }: AgentDetailViewProps) {
+  const { user } = useAuth();
+  const canWrite = user?.role === 'admin' || user?.role === 'analyst';
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
 
@@ -690,12 +719,12 @@ export function AgentDetailView({
       {/* On-demand scan: tutup blind spot file yang sudah ada di disk
           sebelum agent dipasang (agent reaktif hanya lihat create/modify). */}
       <ExpandableCard title="On-demand scan">
-        <ScanPanel agentId={agentId} canScan={agent?.type === 'rust'} watchPaths={agent?.watch_paths} />
+        <ScanPanel agentId={agentId} canScan={canWrite && agent?.type === 'rust'} watchPaths={agent?.watch_paths} />
       </ExpandableCard>
 
       {/* Karantina manual: pindahkan file mencurigakan ke folder karantina. */}
       <ExpandableCard title="Karantina file">
-        <QuarantinePanel agentId={agentId} canQuarantine={agent?.type === 'rust'} events={events} />
+        <QuarantinePanel agentId={agentId} canQuarantine={canWrite && agent?.type === 'rust'} events={events} />
       </ExpandableCard>
     </div>
   );

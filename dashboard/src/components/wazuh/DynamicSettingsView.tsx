@@ -271,7 +271,7 @@ function ProviderConfigFields({
   );
 }
 
-export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewProps) {
+export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsViewProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1495,22 +1495,26 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <WuiIcon type="database" size="m" className="text-[#006BB4]" />
-                <span className="font-semibold text-[#1A1C21] text-[13px]">4. Cache &amp; Quota Optimization</span>
+                <span className="font-semibold text-[#1A1C21] text-[13px]">4. MISP OSINT &amp; Cache TTL Policy</span>
               </div>
-              <input
-                type="checkbox"
-                checked={tiConfig.sources.misp.enabled}
-                onChange={(e) =>
-                  setTiConfig({
-                    ...tiConfig,
-                    sources: {
-                      ...tiConfig.sources,
-                      misp: { ...tiConfig.sources.misp, enabled: e.target.checked },
-                    },
-                  })
-                }
-                className="rounded-[2px] text-[#006BB4] focus:ring-0"
-              />
+              <label className="inline-flex items-center gap-1.5 text-[11px] text-[#535966] cursor-pointer">
+                <span>MISP Feed</span>
+                <input
+                  type="checkbox"
+                  checked={tiConfig.sources.misp.enabled}
+                  onChange={(e) => {
+                    setTiConfig({
+                      ...tiConfig,
+                      sources: {
+                        ...tiConfig.sources,
+                        misp: { ...tiConfig.sources.misp, enabled: e.target.checked },
+                      },
+                    });
+                    setHasUnsavedChanges(true);
+                  }}
+                  className="rounded-[2px] text-[#006BB4] focus:ring-0"
+                />
+              </label>
             </div>
             <div className="grid grid-cols-3 gap-2 text-[12px]">
               <div>
@@ -1520,12 +1524,13 @@ export function DynamicSettingsView({ userRole = 'admin' }: DynamicSettingsViewP
                   min="1"
                   max="30"
                   value={tiConfig.cache_ttl.malicious_days}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setTiConfig({
                       ...tiConfig,
                       cache_ttl: { ...tiConfig.cache_ttl, malicious_days: parseInt(e.target.value, 10) || 7 },
-                    })
-                  }
+                    });
+                    setHasUnsavedChanges(true);
+                  }}
                   className="w-full h-8 px-2 border border-[#D3DAE6] rounded-[4px] bg-white text-[11px]"
                 />
                 <span className="text-[10px] text-[#69707D]">Hari</span>

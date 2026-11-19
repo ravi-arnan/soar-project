@@ -3,17 +3,18 @@ $ErrorActionPreference = "Stop"
 
 $AGENT_ID = $env:AGENT_ID
 $AGENT_NAME = $env:AGENT_NAME
-# Hormati $env:SERVER (bare IP/host, tanpa scheme/port). Default: Tailscale ravi-debian.
-$SERVER = if ($env:SERVER) { $env:SERVER } else { "100.73.91.17" }
+# Wajib set $env:SERVER (bare IP/host server SOAR, tanpa scheme/port).
+$SERVER = $env:SERVER
 $BINARY_URL = $env:BINARY_URL
+$BINARY_SHA256 = $env:BINARY_SHA256
 $POLL_TOKEN = $env:SOAR_FLEET_POLL_TOKEN
 $LOCAL_PATH = "$env:ProgramFiles\soar-agent\soar-agent.exe"
 $TOKEN_DIR = "$env:ProgramData\soar-agent"
 $TOKEN_FILE = "$TOKEN_DIR\fleet.token"
 $TASK_NAME = "SOAR Agent"
 
-if (-not $AGENT_ID) {
-    Write-Host "Gunakan: `$env:AGENT_ID=`"005`" `$env:AGENT_NAME=`"laptop-bapak`" powershell -File install-agent-windows.ps1"
+if (-not $AGENT_ID -or -not $SERVER) {
+    Write-Host 'Gunakan: $env:AGENT_ID="005" $env:SERVER="192.0.2.10" $env:AGENT_NAME="workstation-01" powershell -File install-agent-windows.ps1'
     exit 1
 }
 if (-not $AGENT_NAME) {
@@ -46,6 +47,14 @@ $SCAN_INTERVAL = if ($env:SOAR_SCAN_INTERVAL_SECS) { $env:SOAR_SCAN_INTERVAL_SEC
 
 Write-Host "[2/5] Download binary dari $BINARY_URL"
 Invoke-WebRequest -Uri $BINARY_URL -OutFile $LOCAL_PATH -UseBasicParsing
+if ($BINARY_SHA256) {
+    $actual = (Get-FileHash -Path $LOCAL_PATH -Algorithm SHA256).Hash.ToLower()
+    if ($actual -ne $BINARY_SHA256.Trim().ToLower()) {
+        Remove-Item $LOCAL_PATH -Force -ErrorAction SilentlyContinue
+        Write-Host "ERROR: Verifikasi SHA-256 binary gagal (got $actual)."
+        exit 1
+    }
+}
 
 # NOTE: binary Rust ini console app tanpa windows-service handler, jadi
 # New-Service gagal start (error 1053). Pakai Scheduled Task (SYSTEM) yang terbukti jalan.

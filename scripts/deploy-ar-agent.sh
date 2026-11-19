@@ -3,7 +3,8 @@
 # Jalankan dengan sudo:  sudo bash scripts/deploy-ar-agent.sh
 set -u
 
-SRC="/home/ravi/Projects/soar-project/scripts/quarantine-file"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC="$SCRIPT_DIR/quarantine-file"
 DST="/var/ossec/active-response/bin/quarantine-file"
 ARLOG="/var/ossec/logs/active-responses.log"
 

@@ -13,7 +13,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-SCRIPT_DIR="/home/ravi/Projects/soar-project/scripts"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$SCRIPT_DIR/block-domain"
 DST="/var/ossec/active-response/bin/block-domain"
 CONTAINER="single-node-wazuh.manager-1"

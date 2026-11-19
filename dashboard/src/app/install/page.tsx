@@ -1,21 +1,32 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { WuiIcon } from '@/components/wui/WuiIcon';
 import { WazuhLogo } from '@/components/wazuh/WazuhLogo';
 import { AgentInstallerPanel } from '@/components/wazuh/AgentInstallerPanel';
 
 export default function PublicAgentInstallPage() {
-  const [origin] = useState(() => {
-    if (typeof window !== 'undefined' && window.location.origin) {
-      return window.location.origin;
-    }
-    return 'https://soar-agent.raviarnan.dev';
-  });
+  const [origin, setOrigin] = useState('https://soar-agent.example.com');
+  const [dashboardUrl, setDashboardUrl] = useState('/');
+
+  useEffect(() => {
+    const fallbackOrigin =
+      typeof window !== 'undefined' && window.location.origin
+        ? window.location.origin
+        : 'https://soar-agent.example.com';
+    fetch('/api/config/public', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        setOrigin(d?.publicEnrollUrl ? String(d.publicEnrollUrl) : fallbackOrigin);
+        if (d?.publicSoarUrl) setDashboardUrl(String(d.publicSoarUrl));
+      })
+      .catch(() => {
+        setOrigin(fallbackOrigin);
+      });
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#FAFBFD] text-[#1A1C21] flex flex-col">
-      {/* Wazuh UI Top Bar */}
       <header className="h-12 bg-white border-b border-[#D3DAE6] flex items-center justify-between px-4 sticky top-0 z-40">
         <div className="flex items-center gap-3 min-w-0">
           <WazuhLogo className="h-[18px] text-[#1A1C21] shrink-0" width={88} height={21} />
@@ -28,7 +39,7 @@ export default function PublicAgentInstallPage() {
         </div>
 
         <a
-          href="https://soar.raviarnan.dev"
+          href={dashboardUrl}
           className="text-[12px] font-medium text-[#006BB4] hover:underline inline-flex items-center gap-1 shrink-0"
         >
           <span>Dashboard Admin</span>

@@ -1,19 +1,35 @@
-# Varian PRODUKSI-HARDENED (kategori D). Beda dari compose demo root:
-#   - Caddy reverse-proxy + TLS + basic-auth di depan editor n8n
-#   - n8n TIDAK publish 5678 ke host (hanya di network internal)
-#   - segmentasi jaringan: `edge` (Caddy<->publik) vs `backend` (n8n<->poller)
-#   - N8N_ENCRYPTION_KEY dari secret, secure cookie, protocol https
-#   - NODE_TLS_REJECT_UNAUTHORIZED dihapus (lihat catatan Wazuh CA di bawah)
+# Varian PRODUKSI-HARDENED. Beda dari compose root:
+#   - Caddy reverse-proxy + TLS + basic-auth di depan editor n8n & dashboard
+#   - Layanan internal tidak publish port publik (terisolasi pada network backend)
+#   - Segmentasi jaringan: `edge` (Caddy <-> publik) vs `backend` (stack internal)
+#   - Security hardening: no-new-privileges, cap_drop ALL, log rotation, mem_limit, healthcheck
+#   - Tanpa NODE_TLS_REJECT_UNAUTHORIZED=0 (gunakan NODE_EXTRA_CA_CERTS bila pakai CA internal)
 #
-# Jalankan dari root repo:  docker compose -f deploy/hardened/docker-compose.yml up -d
-# Isi .env dulu (lihat .env.example): N8N_ENCRYPTION_KEY, N8N_HOSTNAME,
-# CADDY_BASIC_AUTH_USER, CADDY_BASIC_AUTH_HASH (caddy hash-password).
+# Jalankan dari root repo:
+#   docker compose -f deploy/hardened/docker-compose.yml up -d
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-security: &default-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
 
 services:
   caddy:
     image: caddy:2-alpine
     container_name: caddy
     restart: unless-stopped
+    <<: *default-security
+    cap_add:
+      - NET_BIND_SERVICE
+    logging: *default-logging
+    mem_limit: 256m
     env_file: [../../.env]
     ports:
       - "443:443"
@@ -23,48 +39,62 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     networks: [edge, backend]
-    depends_on: [n8n]
+    depends_on: [n8n, dashboard]
 
   n8n:
     image: n8nio/n8n:2.42.5
     container_name: n8n
     restart: unless-stopped
+    <<: *default-security
+    logging: *default-logging
+    mem_limit: 1536m
     dns: ["8.8.8.8", "1.1.1.1"]
-    # Tidak ada `ports:` — n8n hanya reachable via Caddy (edge) & internal (backend).
     env_file: [../../.env]
     environment:
-      - N8N_HOST=${N8N_HOSTNAME}
+      - N8N_HOST=${N8N_HOSTNAME:-localhost}
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - N8N_SECURE_COOKIE=true
-      - WEBHOOK_URL=https://${N8N_HOSTNAME}/
-      - GENERIC_TIMEZONE=Asia/Makassar
+      - WEBHOOK_URL=https://${N8N_HOSTNAME:-localhost}/
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Asia/Makassar}
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - N8N_RUNNERS_TASK_TIMEOUT=300
       - N8N_RUNNERS_MAX_CONCURRENCY=10
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
-
-      # ponytail: Wazuh API 55000 self-signed. Fix bersih = mount CA Wazuh ke
-      # /etc/ssl/certs & set NODE_EXTRA_CA_CERTS, bukan matikan verifikasi global.
+      - ALERT_LOG_TOKEN=${ALERT_LOG_TOKEN}
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-}
+      # Untuk TLS verifikasi penuh ke Wazuh Manager API self-signed, mount root CA lalu aktifkan:
       # - NODE_EXTRA_CA_CERTS=/run/secrets/wazuh-ca.pem
     volumes:
       - n8n_data:/home/node/.n8n
-      - ../../scripts:/scripts
+      - ../../scripts:/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks: [backend]
 
   tg-callback-poller:
     image: python:3.12-alpine
     container_name: tg-callback-poller
     restart: unless-stopped
+    <<: *default-security
+    logging: *default-logging
+    mem_limit: 128m
     dns: ["8.8.8.8", "1.1.1.1"]
     env_file: [../../.env]
     environment:
       - N8N_WEBHOOK=http://n8n:5678/webhook/tg-callback
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-}
+      - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
+      - POLLER_STATE_FILE=/state/tg-poller-offset.json
     volumes:
       - ../../scripts:/scripts:ro
+      - ../../state:/state
     command: ["python3", "/scripts/tg-callback-poller.py"]
     networks: [backend]
     depends_on: [n8n]
@@ -73,8 +103,17 @@ services:
     image: python:3.12-alpine
     container_name: health-monitor
     restart: unless-stopped
+    <<: *default-security
+    logging: *default-logging
+    mem_limit: 128m
     dns: ["8.8.8.8", "1.1.1.1"]
     env_file: [../../.env]
+    environment:
+      - N8N_HEALTH_URL=http://n8n:5678/healthz
+      - FLEET_URL=http://fleet-monitor:8080
+      - DASHBOARD_URL=http://dashboard:3000
+      - MISP_URL=http://misp-index:8090
+      - ALERT_LOG_URL=http://alert-log:8091
     volumes:
       - ../../scripts:/scripts:ro
       - health_state:/state
@@ -82,12 +121,115 @@ services:
       - "host.docker.internal:host-gateway"
     command: ["python3", "/scripts/health-monitor.py"]
     networks: [backend]
-    depends_on: [n8n]
+    depends_on: [n8n, fleet-monitor]
+
+  fleet-monitor:
+    image: python:3.12-alpine
+    container_name: fleet-monitor
+    restart: unless-stopped
+    <<: *default-security
+    logging: *default-logging
+    mem_limit: 512m
+    env_file: [../../.env]
+    environment:
+      - FLEET_PORT=8080
+      - FLEET_BIND=0.0.0.0
+      - N8N_HEALTH_URL=http://n8n:5678/healthz
+      - MISP_URL=http://misp-index:8090
+      - ALERT_LOG_URL=http://alert-log:8091
+      - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
+      - SOAR_SETTINGS_ENCRYPTION_KEY=${SOAR_SETTINGS_ENCRYPTION_KEY:-}
+    volumes:
+      - ../../scripts:/scripts:ro
+      - ../../state:/state
+      - ../../deploy/bundle:/bundle:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python3", "/scripts/fleet-monitor.py"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/healthz\", timeout=3)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [backend]
+
+  dashboard:
+    build: ../../dashboard
+    container_name: soar-dashboard
+    restart: unless-stopped
+    <<: *default-security
+    logging: *default-logging
+    mem_limit: 512m
+    env_file: [../../.env]
+    environment:
+      - FLEET_API_URL=http://fleet-monitor:8080
+      - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
+      - DASHBOARD_AUTH_TOKEN=${DASHBOARD_AUTH_TOKEN}
+      - DASHBOARD_ALLOWED_ORIGINS=${DASHBOARD_ALLOWED_ORIGINS}
+      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN:-}
+      - CF_ACCESS_AUD=${CF_ACCESS_AUD:-}
+      - PUBLIC_SOAR_URL=${PUBLIC_SOAR_URL:-}
+      - PUBLIC_ENROLL_URL=${PUBLIC_ENROLL_URL:-}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/config/public >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [backend]
+    depends_on: [fleet-monitor]
+
+  misp-index:
+    image: python:3.12-alpine
+    container_name: misp-index
+    restart: unless-stopped
+    <<: *default-security
+    logging: *default-logging
+    mem_limit: 256m
+    dns: ["8.8.8.8", "1.1.1.1"]
+    env_file: [../../.env]
+    environment:
+      - MISP_PORT=8090
+      - MISP_BIND=0.0.0.0
+      - MISP_DB=/state/misp.db
+    volumes:
+      - ../../scripts:/scripts:ro
+      - ../../state:/state
+    command: ["python3", "/scripts/misp-feed-sync.py", "--serve"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8090/healthz\", timeout=3)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [backend]
+
+  alert-log:
+    image: python:3.12-alpine
+    container_name: alert-log
+    restart: unless-stopped
+    <<: *default-security
+    logging: *default-logging
+    mem_limit: 128m
+    env_file: [../../.env]
+    environment:
+      - ALERT_LOG_PORT=8091
+      - ALERT_LOG_BIND=0.0.0.0
+      - ALERT_LOG_TOKEN=${ALERT_LOG_TOKEN}
+      - ALERT_LOG_FILE=/state/telegram-alerts.jsonl
+    volumes:
+      - ../../scripts:/scripts:ro
+      - ../../state:/state
+    command: ["python3", "/scripts/alert-log.py"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8091/healthz\", timeout=3)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [backend]
 
 networks:
-  edge:      # hanya Caddy yang menyentuh dunia luar
-  backend:   # n8n + worker; tidak ada port publish langsung
-    internal: false  # butuh egress DNS/Telegram/VT; set true kalau egress via proxy
+  edge:
+  backend:
+    internal: false
 
 volumes:
   n8n_data:

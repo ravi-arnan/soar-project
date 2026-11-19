@@ -45,9 +45,12 @@ export function AgentsManagement({
     setPage(0);
   };
 
-  /** Unduh tabel agent sebagai CSV (data live yang tampil). */
+  /** Unduh tabel agent sebagai CSV (dengan proteksi CSV formula injection). */
   const exportCsv = () => {
-    const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const cell = (v: string) => {
+      const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
     const lines = agents.map((a) =>
       [a.id, a.name, a.ip, a.groups.join(';'), a.os, a.version, a.lastKeepAlive, a.status]
         .map(cell)
@@ -94,13 +97,8 @@ export function AgentsManagement({
   const arcNever = arc(neverCount);
   const arcActive = arc(activeCount);
   const arcDisconnected = arc(disconnectedCount);
-  /** User SSH per agent (konfirmasi board #47; fallback = tebak dari OS).
-   *  ponytail: peta kecil ini cukup untuk fleet belasan; kalau membesar,
-   *  pindahkan ke field agent (fleet-monitor) supaya jadi data, bukan kode. */
-  const SSH_USER_BY_AGENT: Record<string, string> = { '006': 'microsoft', '008': 'macbook' };
-  const sshUser = (a: { id: string; os?: string }) =>
-    SSH_USER_BY_AGENT[a.id] ||
-    (a.os?.toLowerCase().includes('windows') ? 'Administrator' : 'ravi');
+  const sshUser = (a: { os?: string }) =>
+    a.os?.toLowerCase().includes('windows') ? 'Administrator' : 'root';
 
   const lastRegistered = agents.length ? agents[agents.length - 1] : null;
   const mostActive = agents.find((a) => a.status === 'active') || null;

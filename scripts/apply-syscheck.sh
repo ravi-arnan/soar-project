@@ -4,8 +4,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OSSEC_CONF="/var/ossec/etc/ossec.conf"
-RECOMMENDED="/home/ravi/Projects/soar-project/scripts/syscheck-recommended.xml"
+RECOMMENDED="$SCRIPT_DIR/syscheck-recommended.xml"
 BACKUP="/var/ossec/etc/ossec.conf.bak-$(date +%Y%m%d-%H%M%S)"
 
 if [[ $EUID -ne 0 ]]; then

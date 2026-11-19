@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { WuiIcon, type WuiIconType } from '../wui/WuiIcon';
 import { WuiCodeBlock } from '../wui/WuiPrimitives';
 
@@ -23,41 +23,43 @@ const OS_CARDS: Array<{
   { id: 'universal', label: 'Wazuh / OS Lain', sub: 'Official Agent 4.14 (BSD, PKG, MSI)', icon: 'node' },
 ];
 
-const UNIVERSAL_COMMANDS: Record<
-  UniversalTarget,
-  { label: string; code: string; verify: string; note: string }
-> = {
-  debian: {
-    label: 'Debian / Ubuntu / Mint (APT)',
-    code: `curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && chmod 644 /usr/share/keyrings/wazuh.gpg && echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | sudo tee /etc/apt/sources.list.d/wazuh.list && sudo apt-get update && sudo WAZUH_MANAGER="100.73.91.17" apt-get install -y wazuh-agent && sudo systemctl daemon-reload && sudo systemctl enable --now wazuh-agent`,
-    verify: 'sudo systemctl status wazuh-agent',
-    note: 'Terhubung langsung ke Wazuh Manager 100.73.91.17 (:1514 / :1515).',
-  },
-  rhel: {
-    label: 'RHEL / Rocky / Alma / Fedora (RPM)',
-    code: `sudo rpm --import https://packages.wazuh.com/key/GPG-KEY-WAZUH && sudo bash -c 'cat > /etc/yum.repos.d/wazuh.repo <<EOF\n[wazuh]\ngpgcheck=1\ngpgkey=https://packages.wazuh.com/key/GPG-KEY-WAZUH\nenabled=1\nname=Wazuh repository\nbaseurl=https://packages.wazuh.com/4.x/yum/\nprotect=1\nEOF' && sudo WAZUH_MANAGER="100.73.91.17" yum install -y wazuh-agent && sudo systemctl daemon-reload && sudo systemctl enable --now wazuh-agent`,
-    verify: 'sudo systemctl status wazuh-agent',
-    note: 'Untuk CentOS, Rocky Linux, AlmaLinux, dan Fedora.',
-  },
-  'macos-pkg': {
-    label: 'macOS Official Wazuh PKG (arm64 / Intel)',
-    code: `ARCH=$(uname -m | sed 's/x86_64/intel64/') && curl -so wazuh-agent.pkg "https://packages.wazuh.com/4.x/macos/wazuh-agent-4.14.8-1.\${ARCH}.pkg" && echo "WAZUH_MANAGER='100.73.91.17'" | sudo tee /tmp/wazuh_envs && sudo installer -pkg wazuh-agent.pkg -target / && sudo /Library/Ossec/bin/wazuh-control start`,
-    verify: 'sudo /Library/Ossec/bin/wazuh-control status',
-    note: 'Alternatif Wazuh Agent resmi untuk macOS.',
-  },
-  'windows-msi': {
-    label: 'Windows Official Wazuh MSI',
-    code: `Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.8-1.msi -OutFile $env:TEMP\\wazuh-agent.msi; msiexec.exe /i $env:TEMP\\wazuh-agent.msi /q WAZUH_MANAGER="100.73.91.17"; NET START WazuhSvc`,
-    verify: 'Get-Service WazuhSvc',
-    note: 'Alternatif Wazuh Agent resmi untuk Windows Server dan workstation.',
-  },
-  freebsd: {
-    label: 'FreeBSD / Solaris / AIX / Source',
-    code: `pkg install -y wazuh-agent && sudo sed -i '' 's/MANAGER_IP/100.73.91.17/' /var/ossec/etc/ossec.conf && sudo service wazuh-agent onestart`,
-    verify: 'sudo service wazuh-agent status',
-    note: 'Untuk BSD/Unix lain atau kompilasi agent-rs dengan cargo build --release.',
-  },
-};
+function buildUniversalCommands(
+  managerHost: string,
+): Record<UniversalTarget, { label: string; code: string; verify: string; note: string }> {
+  const host = managerHost || 'WAZUH_MANAGER_IP';
+  return {
+    debian: {
+      label: 'Debian / Ubuntu / Mint (APT)',
+      code: `curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && chmod 644 /usr/share/keyrings/wazuh.gpg && echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | sudo tee /etc/apt/sources.list.d/wazuh.list && sudo apt-get update && sudo WAZUH_MANAGER="${host}" apt-get install -y wazuh-agent && sudo systemctl daemon-reload && sudo systemctl enable --now wazuh-agent`,
+      verify: 'sudo systemctl status wazuh-agent',
+      note: `Terhubung langsung ke Wazuh Manager ${host} (:1514 / :1515).`,
+    },
+    rhel: {
+      label: 'RHEL / Rocky / Alma / Fedora (RPM)',
+      code: `sudo rpm --import https://packages.wazuh.com/key/GPG-KEY-WAZUH && sudo bash -c 'cat > /etc/yum.repos.d/wazuh.repo <<EOF\n[wazuh]\ngpgcheck=1\ngpgkey=https://packages.wazuh.com/key/GPG-KEY-WAZUH\nenabled=1\nname=Wazuh repository\nbaseurl=https://packages.wazuh.com/4.x/yum/\nprotect=1\nEOF' && sudo WAZUH_MANAGER="${host}" yum install -y wazuh-agent && sudo systemctl daemon-reload && sudo systemctl enable --now wazuh-agent`,
+      verify: 'sudo systemctl status wazuh-agent',
+      note: 'Untuk CentOS, Rocky Linux, AlmaLinux, dan Fedora.',
+    },
+    'macos-pkg': {
+      label: 'macOS Official Wazuh PKG (arm64 / Intel)',
+      code: `ARCH=$(uname -m | sed 's/x86_64/intel64/') && curl -so wazuh-agent.pkg "https://packages.wazuh.com/4.x/macos/wazuh-agent-4.14.8-1.\${ARCH}.pkg" && echo "WAZUH_MANAGER='${host}'" | sudo tee /tmp/wazuh_envs && sudo installer -pkg wazuh-agent.pkg -target / && sudo /Library/Ossec/bin/wazuh-control start`,
+      verify: 'sudo /Library/Ossec/bin/wazuh-control status',
+      note: 'Alternatif Wazuh Agent resmi untuk macOS.',
+    },
+    'windows-msi': {
+      label: 'Windows Official Wazuh MSI',
+      code: `Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.8-1.msi -OutFile $env:TEMP\\wazuh-agent.msi; msiexec.exe /i $env:TEMP\\wazuh-agent.msi /q WAZUH_MANAGER="${host}"; NET START WazuhSvc`,
+      verify: 'Get-Service WazuhSvc',
+      note: 'Alternatif Wazuh Agent resmi untuk Windows Server dan workstation.',
+    },
+    freebsd: {
+      label: 'FreeBSD / Solaris / AIX / Source',
+      code: `pkg install -y wazuh-agent && sudo sed -i '' 's/MANAGER_IP/${host}/' /var/ossec/etc/ossec.conf && sudo service wazuh-agent onestart`,
+      verify: 'sudo service wazuh-agent status',
+      note: 'Untuk BSD/Unix lain atau kompilasi agent-rs dengan cargo build --release.',
+    },
+  };
+}
 
 function StepNumber({ num }: { num: number }) {
   return (
@@ -67,16 +69,21 @@ function StepNumber({ num }: { num: number }) {
   );
 }
 
-/**
- * Wizard pemasangan agent bergaya Wazuh UI (OuiSteps vertikal dalam 1 panel flat):
- * 1. Pilih sistem operasi
- * 2. Alamat server & mode enrollment
- * 3. Jalankan perintah instalasi
- * 4. Verifikasi & approval
- */
 export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProps) {
   const [targetOs, setTargetOs] = useState<InstallerTarget>('linux');
   const [universalTarget, setUniversalTarget] = useState<UniversalTarget>('debian');
+  const [managerHost, setManagerHost] = useState<string>('WAZUH_MANAGER_IP');
+
+  useEffect(() => {
+    fetch('/api/config/public', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.wazuhManagerHost) setManagerHost(String(d.wazuhManagerHost));
+      })
+      .catch(() => {});
+  }, []);
+
+  const UNIVERSAL_COMMANDS = useMemo(() => buildUniversalCommands(managerHost), [managerHost]);
 
   const commandsByOs: Record<
     Exclude<InstallerTarget, 'universal'>,
@@ -108,7 +115,7 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
     macos: {
       code: `curl -sSL ${installerOrigin}/api/enroll/script?os=macos | sudo bash`,
       helper: 'Jalankan di Terminal dengan sudo. Mendukung Apple Silicon (arm64) dan Intel (x86_64) melalui LaunchDaemon launchd.',
-      verify: 'sudo launchctl print system/dev.raviarnan.soar-agent',
+      verify: 'sudo launchctl print system/io.soar.agent',
       scriptLabel: 'install-soar-agent-macos.sh',
       binHref: '/api/installer/download/soar-agent-macos',
       binLabel: 'soar-agent (macOS)',
@@ -117,7 +124,7 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
 
   const serverDisplay =
     targetOs === 'universal'
-      ? '100.73.91.17 (TCP :1514 / :1515)'
+      ? `${managerHost} (TCP :1514 / :1515)`
       : installerOrigin.replace(/^https?:\/\//, '');
 
   const activeVerify =

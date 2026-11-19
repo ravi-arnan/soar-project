@@ -181,14 +181,13 @@ Seluruh benchmark dijalankan via `scripts/benchmark-soar.py` terhadap sistem liv
 
 ### 9.4 False-Negative Rate (N=15, risky extension + unknown hash)
 
-| Metrik | Hasil |
-|--------|-------|
-| **False-negative rate** | **0,0%** (0/15 silent) |
-| True-positive rate | **100,0%** (15/15 terdeteksi) |
-| Review (HITL) | 0 |
-| Threat (auto) | 15 |
+> **Catatan Audit Metodologi:** Pengukuran awal pada 2026-09-02 (`docs/evaluasi/bench-fn-rate.json`) membaca HTTP response langsung dari webhook n8n yang memakai `responseMode: onReceived` (`{"message":"Workflow was started"}`), sehingga 15/15 sampel masuk kategori `threat` tanpa memverifikasi hasil klasifikasi akhir di `fleet-monitor`. Metodologi pada `scripts/benchmark-soar.py` (`bench_fn_rate`) telah diperbaiki agar melakukan polling ke `/api/events` dan membedakan `silent` (INFO/timeout), `review` (MEDIUM HITL), dan `threat` (HIGH/CRITICAL). Angka di bawah dipertahankan sebagai arsip historis dan perlu dijalankan ulang terhadap stack live setelah patch.
 
-**Interpretasi:** Seluruh file berisiko (exe/sh/ps1/py/elf) dengan hash tak-dikenal **berhasil terdeteksi** sebagai ancaman. Tidak ada false-negative. Ini membuktikan mekanisme hybrid B#1 (risky extension → review) berfungsi dengan benar.
+| Metrik | Hasil Arsip (Pra-Koreksi Webhook) |
+|--------|-------|
+| False-negative rate (berdasarkan ACK webhook) | 0,0% (0/15 silent; perlu re-run pasca-koreksi polling) |
+| Review (HITL) | 0 (tidak terobservasi karena `onReceived`) |
+| Threat (auto) | 15 (ACK webhook) |
 
 ### 9.5 Ringkasan Perbandingan
 
@@ -248,11 +247,7 @@ Mode baru `--mode mttr-hitl` mengukur **komponen OTOMATIS** jalur human-in-the-l
 | Notifikasi (injeksi → Telegram) | 5 | **21,05 dtk** | 19,57 | 17,67 – 27,58 |
 | AR dispatch (keputusan → perintah) | 5 | **0,07 dtk** | 0,08 | 0,05 – 0,08 |
 
-**Interpretasi:** pesan HITL bertombol siap ≈**21 dtk** setelah alert — sekitar
-**18 dtk** di antaranya adalah ringkasan LLM (bandingkan pipeline pra-LLM **3,0 dtk**
-di §10; selisih = biaya LLM). Setelah keputusan, perintah AR ter-dispatch <**0,1 dtk**.
-**MTTR HITL total = 21 dtk (notif) + waktu berpikir analis (manual) + 0,07 dtk (AR)** —
-yang otomatis bisa diukur, waktu manusia dilaporkan terpisah.
+**Interpretasi:** pesan HITL bertombol siap sekitar **21 dtk** setelah alert (sekitar **18 dtk** di antaranya adalah ringkasan LLM; bandingkan pipeline pra-LLM **3,0 dtk** di §10). Setelah perintah dikirim ke Wazuh Manager API, AR ter-dispatch <**0,1 dtk**. **Catatan keterbatasan:** pengukuran komponen AR dispatch pada 2026-10-08 memanggil Wazuh API (`PUT /active-response`) secara langsung dan belum memasukkan overhead roundtrip Telegram Bot API + `tg-callback-poller.py` + `n8n telegram-callback-handler` + `alert-log /decision/resolve` (perkiraan tambahan ~0,5-2 dtk). **MTTR HITL total = ~21 dtk (notif) + waktu berpikir analis (manual) + overhead callback + 0,07 dtk (AR dispatch).**
 
 Detail: `docs/evaluasi/bench-mttr-hitl-20261008.json`
 
@@ -303,15 +298,15 @@ Pengukuran dieksekusi melalui `scripts/benchmark-llm-consistency.py` terhadap 6 
 
 | Skenario Uji | N | Sukses | Kepatuhan Aturan | Jaccard Similarity | Panjang Kata ($\mu \pm \sigma$) | Rata-rata Latensi | Median Latensi |
 |---|---|---|---|---|---|---|---|
-| Malware Kritis (EICAR) | 5 | 5/5 | **100,0%** | 0,358 | 76,0 ± 3,7 | 9.630,8 ms | 8.874,6 ms |
-| Malware Tinggi (Trojan) | 5 | 5/5 | **100,0%** | 0,397 | 68,8 ± 2,2 | 12.537,5 ms | 10.231,8 ms |
-| File Konfigurasi Sistem (`hosts`) | 5 | 5/5 | **100,0%** | 0,557 | 48,0 ± 3,2 | 10.033,9 ms | 9.390,9 ms |
-| File Tak Dikenal (Review) | 5 | 4/5* | **100,0%** | 0,568 | 61,0 ± 1,8 | 14.969,6 ms | 14.072,5 ms |
-| Rantai Proses (LOLBin) | 5 | 5/5 | **100,0%** | 0,459 | 67,8 ± 3,0 | 10.831,0 ms | 10.155,0 ms |
-| Phishing Kredensial | 5 | 5/5 | **100,0%** | 0,446 | 69,6 ± 1,7 | 13.293,9 ms | 13.212,0 ms |
-| **Rangkuman Global** | **30** | **29/30 (96,7%)** | **100,0%** | **0,464** | **65,2 ± 9,6** | **11.776,4 ms** | **10.231,8 ms** |
+| Malware Kritis (EICAR) | 5 | 5/5 | **100,0%** | 0,359 | 75,6 ± 4,6 | 9.630,8 ms | 9.636,9 ms |
+| Malware Tinggi (Trojan) | 5 | 5/5 | **100,0%** | 0,397 | 71,8 ± 8,8 | 12.537,5 ms | 11.553,0 ms |
+| File Konfigurasi Sistem (`hosts`) | 5 | 5/5 | **100,0%** | 0,557 | 58,6 ± 6,4 | 10.034,0 ms | 9.965,1 ms |
+| File Tak Dikenal (Review) | 5 | 4/5* | **100,0%** | 0,568 | 60,8 ± 1,3 | 14.969,6 ms | 10.661,6 ms |
+| Rantai Proses (LOLBin) | 5 | 5/5 | **100,0%** | 0,459 | 74,0 ± 14,0 | 10.831,0 ms | 10.000,2 ms |
+| Phishing Kredensial | 5 | 5/5 | **100,0%** | 0,446 | 67,6 ± 9,6 | 13.293,9 ms | 9.384,6 ms |
+| **Rangkuman Global** | **30** | **29/30 (96,7%)** | **100,0%** | **0,464** | **68,1 ± 9,8** | **11.776,4 ms** | **10.231,8 ms** |
 
-*\*Catatan: 1 panggilan pada skenario 4 mengalami timeout jaringan saat transfer data dan berhasil ditangani mekanisme fail-safe n8n.*
+*\*Catatan: 1 panggilan pada skenario 4 mengalami timeout jaringan saat transfer data dan berhasil ditangani mekanisme fail-safe n8n. Angka pada tabel di atas telah diselaraskan persis dengan data mentah `docs/evaluasi/bench-llm-consistency-20261022.json`. Evaluator pada `scripts/benchmark-llm-consistency.py` juga telah diperbarui menjadi sadar-negasi (`has_unnegated_term`) serta menambahkan skenario uji ketahanan prompt injection (`prompt_injection_filename`) untuk pengujian ulang berikutnya.*
 
 ### 13.3 Temuan dan Interpretasi Ilmiah
 

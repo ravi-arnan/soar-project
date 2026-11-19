@@ -39,7 +39,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 WAZUH_DIR="$REPO_ROOT/wazuh-docker"
-WAZUH_VERSION="v4.10.5"
+WAZUH_VERSION="v4.14.8"
 ENV_FILE="$REPO_ROOT/.env"
 ASSUME_YES=0
 SKIP_WAZUH=0
@@ -93,7 +93,7 @@ else
 fi
 
 : > "$ENV_FILE.tmp"
-grep -vE '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|GSB_API_KEY|URLSCAN_API_KEY|MALWAREBAZAAR_API_KEY|OTX_API_KEY|GEMINI_API_KEY|WAZUH_API_PASS|N8N_ENCRYPTION_KEY|CADDY_BASIC_AUTH_USER|CADDY_BASIC_AUTH_HASH|FLEET_COMMAND_TOKEN|FLEET_AGENT_POLL_TOKENS_JSON|DASHBOARD_LOGIN_TOKEN|DASHBOARD_ALLOWED_ORIGINS)=' "$ENV_FILE" >> "$ENV_FILE.tmp" 2>/dev/null || true
+grep -vE '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|GSB_API_KEY|URLSCAN_API_KEY|MALWAREBAZAAR_API_KEY|OTX_API_KEY|GEMINI_API_KEY|WAZUH_API_PASS|N8N_ENCRYPTION_KEY|CADDY_BASIC_AUTH_USER|CADDY_BASIC_AUTH_HASH|FLEET_COMMAND_TOKEN|FLEET_AGENT_POLL_TOKENS_JSON|DASHBOARD_LOGIN_TOKEN|DASHBOARD_ALLOWED_ORIGINS|ALERT_LOG_TOKEN|N8N_WEBHOOK_SECRET|SOAR_SETTINGS_ENCRYPTION_KEY)=' "$ENV_FILE" >> "$ENV_FILE.tmp" 2>/dev/null || true
 
 ask TELEGRAM_BOT_TOKEN "Token bot Telegram (dari @BotFather, format 123456:ABC-...)" ""
 ask TELEGRAM_CHAT_ID   "Chat ID tujuan alert (dari @get_id_bot; grup = -100...)" ""
@@ -138,6 +138,9 @@ ensure_secret() {
 }
 ensure_secret FLEET_COMMAND_TOKEN
 ensure_secret DASHBOARD_LOGIN_TOKEN
+ensure_secret ALERT_LOG_TOKEN
+ensure_secret N8N_WEBHOOK_SECRET
+ensure_secret SOAR_SETTINGS_ENCRYPTION_KEY
 ensure_agent_tokens() {
   local current ids
   current="$(grep -E '^FLEET_AGENT_POLL_TOKENS_JSON=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
@@ -160,7 +163,7 @@ ensure_agent_tokens() {
 ensure_agent_tokens
 CUR_DASHBOARD_ORIGINS="$(grep -E '^DASHBOARD_ALLOWED_ORIGINS=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
 if [ -z "$CUR_DASHBOARD_ORIGINS" ]; then
-  CUR_DASHBOARD_ORIGINS="http://localhost:3000,http://127.0.0.1:3000,https://soar.raviarnan.dev"
+  CUR_DASHBOARD_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
 fi
 printf 'DASHBOARD_ALLOWED_ORIGINS=%s\n' "$CUR_DASHBOARD_ORIGINS" >> "$ENV_FILE.tmp"
 mv "$ENV_FILE.tmp" "$ENV_FILE"
@@ -192,14 +195,7 @@ else
 fi
 
 # ----------------------------------------------------------- 5. stack inti SOAR
-log "Step 5/7 — start stack inti (n8n + tg-callback-poller + health-monitor + fleet-monitor)"
-REPO_DIR_NAME="$(basename "$REPO_ROOT")"
-if [ "$REPO_DIR_NAME" != "soar-project" ]; then
-  warn "docker-compose.yml memakai bind-mount /home/ravi/Projects/soar-project/scripts."
-  warn "Repo kamu ada di: $REPO_ROOT — sesuaikan volume compose atau symlink:"
-  warn "  sudo mkdir -p /home/ravi/Projects && sudo ln -s \"$REPO_ROOT\" /home/ravi/Projects/soar-project"
-  warn "(jangan di-sed — file compose ter-track git)"
-fi
+log "Step 5/7 - start stack inti (n8n + tg-callback-poller + health-monitor + fleet-monitor + dashboard + misp-index + alert-log)"
 docker compose up -d
 
 # ------------------------------------------------ 6. integrasi Wazuh (Ansible)

@@ -74,7 +74,7 @@ mkdir -p ~/Projects/soar-project
 cd ~/Projects/soar-project
 git clone https://github.com/wazuh/wazuh-docker.git
 cd wazuh-docker
-git checkout v4.9.2  # match dengan agent version target
+git checkout v4.14.8  # match dengan agent version target
 ```
 
 ### 1.3 Generate SSL Certificates
@@ -224,7 +224,7 @@ Pertama kali akan minta create owner account (admin).
 | Credential Type | Name | Value |
 |-----------------|------|-------|
 | Header Auth | VirusTotal API Key | Name: `x-apikey`, Value: `<VT_API_KEY>` |
-| Basic Auth | Wazuh Basic Auth | Username: `wazuh-wui`, Password: `MyS3cr37P450r.*-` |
+| Basic Auth | Wazuh Creds | Username: `wazuh-wui`, Password: `<WAZUH_API_PASS dari .env>` |
 | Telegram | Telegram Bot | Access Token: `<BOT_TOKEN>` |
 
 ### 3.3 Import Workflow
@@ -260,7 +260,7 @@ sudo apt update
 sudo WAZUH_MANAGER="$LAPTOP_IP" \
      WAZUH_REGISTRATION_SERVER="$LAPTOP_IP" \
      WAZUH_AGENT_NAME="$(hostname)" \
-     apt install -y wazuh-agent=4.9.2-1
+     apt install -y wazuh-agent=4.14.8-1
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now wazuh-agent
@@ -285,7 +285,7 @@ EOF
 sudo WAZUH_MANAGER="$LAPTOP_IP" \
      WAZUH_REGISTRATION_SERVER="$LAPTOP_IP" \
      WAZUH_AGENT_NAME="$(hostname)" \
-     dnf install -y wazuh-agent-4.9.2
+     dnf install -y wazuh-agent-4.14.8
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now wazuh-agent
@@ -295,7 +295,7 @@ sudo systemctl enable --now wazuh-agent
 
 PowerShell as Admin:
 ```powershell
-Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.9.2-1.msi `
+Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.8-1.msi `
   -OutFile $env:tmp\wazuh-agent.msi
 msiexec.exe /i $env:tmp\wazuh-agent.msi /q `
   WAZUH_MANAGER='192.168.18.45' `
@@ -450,7 +450,7 @@ docker exec single-node-wazuh.manager-1 \
 ERROR: Incompatible version for new agent from: <ip>
 ```
 
-Cause: agent version > manager version. Fix: pin agent version match manager (4.9.2).
+Cause: agent version > manager version. Fix: pin agent version match manager (4.14.8).
 
 ### Issue: webhook Connection refused
 

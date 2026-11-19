@@ -54,19 +54,22 @@ N8N_WEBHOOK_PHISHING = os.getenv(
     "N8N_WEBHOOK_PHISHING", "http://localhost:5678/webhook/wazuh-phishing"
 )
 FLEET_EVENTS_URL = os.getenv("FLEET_EVENTS_URL", "http://localhost:8080/api/events")
-WAZUH_API = os.getenv("WAZUH_API", "https://172.17.0.1:55000")
+FLEET_COMMAND_TOKEN = os.getenv("FLEET_COMMAND_TOKEN", "")
+N8N_WEBHOOK_SECRET = os.getenv("N8N_WEBHOOK_SECRET", "")
+N8N_WEBHOOK_CALLBACK = os.getenv("N8N_WEBHOOK_CALLBACK", "")
+WAZUH_API = os.getenv("WAZUH_API", "https://127.0.0.1:55000")
 AGENT_ID = os.getenv("AGENT_ID", "001")
-AGENT_NAME = os.getenv("AGENT_NAME", "ravi-zorin")
+AGENT_NAME = os.getenv("AGENT_NAME", "bench-workstation")
 TIMEOUT = int(os.getenv("BENCH_TIMEOUT", "120"))  # detik per alert
 
 # Endpoint tambahan untuk mode HITL & VT cold-vs-cache (end-to-end)
 N8N_API = os.getenv("N8N_API", "http://localhost:5678")
 N8N_API_KEY_FILE = os.getenv("N8N_API_KEY_FILE", "/tmp/n8n_api_key.txt")
-MALWARE_WORKFLOW_ID = os.getenv("MALWARE_WORKFLOW_ID", "1MVcpL7ZKfBhR2tc")
+MALWARE_WORKFLOW_ID = os.getenv("MALWARE_WORKFLOW_ID", "")
 VT_CACHE_URL = os.getenv("VT_CACHE_URL", "http://localhost:8080/api/vt-cache")
 WAZUH_API_BASE = os.getenv("WAZUH_API_BASE", "https://127.0.0.1:55000")
 WAZUH_API_USER = os.getenv("WAZUH_API_USER", "wazuh-wui")
-WAZUH_API_PASS = os.getenv("WAZUH_API_PASS", "MyS3cr37P450r.*-")
+WAZUH_API_PASS = os.getenv("WAZUH_API_PASS", "")
 HITL_AGENT_ID = os.getenv("HITL_AGENT_ID", "001")  # agent Wazuh untuk uji AR aman
 
 # EICAR test file (dikenal VT → isolasi otomatis)
@@ -92,9 +95,10 @@ def ts_now():
 def http_post(url, payload, timeout=TIMEOUT):
     """POST JSON, return (response_json, elapsed_ms)."""
     data = json.dumps(payload).encode()
-    req = Request(
-        url, data=data, headers={"Content-Type": "application/json"}, method="POST"
-    )
+    headers = {"Content-Type": "application/json"}
+    if N8N_WEBHOOK_SECRET:
+        headers["X-SOAR-Webhook-Secret"] = N8N_WEBHOOK_SECRET
+    req = Request(url, data=data, headers=headers, method="POST")
     t0 = time.monotonic()
     try:
         with urlopen(req, timeout=timeout) as resp:
@@ -111,8 +115,12 @@ def http_post(url, payload, timeout=TIMEOUT):
 
 def http_get(url, timeout=10):
     """GET JSON, return dict ({} jika gagal)."""
+    headers = {}
+    if FLEET_COMMAND_TOKEN:
+        headers["Authorization"] = f"Bearer {FLEET_COMMAND_TOKEN}"
     try:
-        with urlopen(url, timeout=timeout) as resp:
+        req = Request(url, headers=headers)
+        with urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode())
     except (URLError, OSError, ValueError):
         return {}
@@ -645,13 +653,19 @@ def bench_mttr_hitl(n, delay=3):
 # ─── Mode: False-Negative Rate ────────────────────────────────────────
 
 
-def bench_fn_rate(n):
-    """Ukur false-negative rate: kirim file yang SEHARUSNYA terdeteksi
-    (hash random = zero-day / unknown) dengan ekstensi berisiko.
-    Nanti = berapa yang jatuh ke review (benar) vs sunyi (salah).
+def bench_fn_rate(n, poll_timeout=60):
+    """Ukur false-negative rate secara jujur: kirim file dengan ekstensi berisiko
+    dan hash acak (unknown/zero-day), lalu POLL /api/events di fleet-monitor
+    untuk membaca hasil klasifikasi AKTUAL (bukan ACK onReceived webhook).
+
+    Klasifikasi hasil:
+      - silent  : event tidak tercatat (timeout) atau severity == INFO (terlewat)
+      - review  : severity == MEDIUM (jalur HITL unknown-executable review)
+      - threat  : severity in (HIGH, CRITICAL)
     """
-    print(f"[fn-rate] N={n} risky-extension + unknown hash", file=sys.stderr)
+    print(f"[fn-rate] N={n} risky-extension + unknown hash (verifikasi via fleet-events)", file=sys.stderr)
     risky_exts = ["sh", "exe", "ps1", "bat", "py", "elf"]
+    tag = "fn" + "".join(random.choices(string.ascii_lowercase + string.digits, k=4))
     results = []
     silent_count = 0
     review_count = 0
@@ -660,31 +674,37 @@ def bench_fn_rate(n):
     for i in range(n):
         ext = random.choice(risky_exts)
         h = random_hash()
-        fname = f"bench-fn-{i:03d}.{ext}"
+        fname = f"bench-{tag}-{i:03d}.{ext}"
         fpath = f"/home/{AGENT_NAME}/Downloads/{fname}"
         payload = fake_fim_alert(fname, fpath, h, rule_level=10)
 
-        resp, elapsed_ms = http_post(N8N_WEBHOOK_MALWARE, payload)
+        t0 = time.monotonic()
+        resp, _ = http_post(N8N_WEBHOOK_MALWARE, payload)
+        observed = None
+        if not (isinstance(resp, dict) and resp.get("error")):
+            deadline = t0 + poll_timeout
+            while time.monotonic() < deadline:
+                time.sleep(1.5)
+                data = http_get(FLEET_EVENTS_URL)
+                evs = data.get("events", data) if isinstance(data, dict) else data
+                if isinstance(evs, list):
+                    for ev in evs:
+                        if isinstance(ev, dict) and (ev.get("path") == fpath or ev.get("hash") == h):
+                            observed = ev
+                            break
+                if observed is not None:
+                    break
 
-        # Interpretasi: response kosong = bersih (sunyi) → false negative!
-        is_silent = not resp or resp == [] or resp == {} or resp.get("error")
-        # Cek apakah ada tombol review (review_unknown path)
-        has_review = False
-        if isinstance(resp, dict):
-            has_review = resp.get("review_unknown", False)
-        elif isinstance(resp, list) and resp:
-            has_review = (
-                resp[0].get("review_unknown", False)
-                if isinstance(resp[0], dict)
-                else False
-            )
-
-        status = "silent" if is_silent else ("review" if has_review else "threat")
-        if status == "silent":
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        sev = str((observed or {}).get("severity") or "").upper()
+        if not observed or sev in ("", "INFO", "LOW"):
+            status = "silent"
             silent_count += 1
-        elif status == "review":
+        elif sev == "MEDIUM":
+            status = "review"
             review_count += 1
         else:
+            status = "threat"
             threat_count += 1
 
         results.append(
@@ -693,12 +713,14 @@ def bench_fn_rate(n):
                 "hash": h,
                 "filename": fname,
                 "ext": ext,
+                "observed_severity": sev or "NONE",
                 "status": status,
                 "elapsed_ms": round(elapsed_ms, 2),
             }
         )
         print(
-            f"  [{i + 1:3d}/{n}] {status:8s}  {fname}  hash={h[:12]}…", file=sys.stderr
+            f"  [{i + 1:3d}/{n}] {status:8s} sev={sev or 'NONE':8s} {fname}  hash={h[:12]}",
+            file=sys.stderr,
         )
         time.sleep(2)
 
@@ -707,6 +729,7 @@ def bench_fn_rate(n):
 
     summary = {
         "mode": "fn_rate",
+        "method": "fleet_events_polling",
         "n": total,
         "silent_count": silent_count,
         "review_count": review_count,
@@ -715,6 +738,7 @@ def bench_fn_rate(n):
         "true_positive_rate_pct": round((review_count + threat_count) / total * 100, 2)
         if total > 0
         else 0,
+        "runs": results,
     }
     print(f"\n  Total: {total}", file=sys.stderr)
     print(f"  Silent (FN): {silent_count} ({fn_rate}%)", file=sys.stderr)

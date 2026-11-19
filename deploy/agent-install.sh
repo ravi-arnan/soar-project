@@ -3,7 +3,7 @@
 # agent-install.sh — pasang soar-agent Rust di 1 workstation (tanpa Docker)
 #
 # Pemakaian di workstation target (butuh binary soar-agent, cara dapat di bawah):
-#   sudo AGENT_ID=004 AGENT_NAME=laptop-budi SERVER=100.95.198.108 bash agent-install.sh
+#   sudo AGENT_ID=004 AGENT_NAME=laptop-budi SERVER=soar.example.com FLEET_AGENT_POLL_TOKEN=... bash agent-install.sh
 #
 # Cara dapat binary (pilih satu):
 #   a) build di mesin ini:      agent-rs/build-deb.sh  (butuh rustc/cargo)
@@ -15,27 +15,29 @@
 # Env yang dipahami:
 #   AGENT_ID    id unik agent (004..100+)            [wajib untuk fleet rapi]
 #   AGENT_NAME  nama tampil di dashboard             [default: rust-agent-$HOSTNAME]
-#   SERVER      IP server SOAR (Tailscale/LAN)       [default: 100.95.198.108]
+#   SERVER      IP/host server SOAR (Tailscale/LAN)  [wajib]
 #   WATCH       path dipantau, dipisah koma          [default: ~/Downloads,~/Desktop,/run/media]
 #   FLEET_AGENT_POLL_TOKEN  token polling dari server [wajib]
-#   BIN_URL     URL binary jika tidak ada BIN_SRC    [opsional]
+#   BIN_URL     URL HTTPS binary jika tidak ada lokal [opsional]
+#   BIN_SHA256  SHA-256 hex binary (wajib bila pakai BIN_URL) [opsional]
 #
-# ponytail: satu binary musl statis + satu unit systemd, tanpa enroll/key/manager —
-# inilah klaim "setup lintas-device dipermudah" untuk 100 workstation.
+# satu binary musl statis + satu unit systemd, tanpa enroll/key/manager.
 # =============================================================================
 set -euo pipefail
 
 AGENT_ID="${AGENT_ID:-}"
 AGENT_NAME="${AGENT_NAME:-rust-agent-$(hostname | tr 'A-Z' 'a-z' | cut -c1-20)}"
-SERVER="${SERVER:-100.73.91.17}"
+SERVER="${SERVER:-}"
 WATCH="${WATCH:-}"
 POLL_TOKEN="${FLEET_AGENT_POLL_TOKEN:-}"
 BIN_SRC="${BIN_SRC:-/tmp/soar-agent}"
 BIN_URL="${BIN_URL:-}"
+BIN_SHA256="${BIN_SHA256:-}"
 REPO_HINT="(clone repo SOAR, lihat agent-rs/README.md)"
 
 [ "$(id -u)" = 0 ] || { echo "[x] jalankan sebagai root (sudo)"; exit 1; }
-[ -n "$AGENT_ID" ] || { echo "[x] AGENT_ID wajib. Contoh: sudo AGENT_ID=004 SERVER=100.95.198.108 bash agent-install.sh"; exit 1; }
+[ -n "$AGENT_ID" ] || { echo "[x] AGENT_ID wajib. Contoh: sudo AGENT_ID=004 SERVER=192.0.2.10 FLEET_AGENT_POLL_TOKEN=... bash agent-install.sh"; exit 1; }
+[ -n "$SERVER" ] || { echo "[x] SERVER wajib diisi (IP/hostname server SOAR)"; exit 1; }
 [ "${#POLL_TOKEN}" -ge 32 ] || { echo "[x] FLEET_AGENT_POLL_TOKEN wajib diisi (minimal 32 karakter)"; exit 1; }
 [[ "$POLL_TOKEN" != *[[:space:]]* ]] || { echo "[x] FLEET_AGENT_POLL_TOKEN tidak boleh berisi whitespace"; exit 1; }
 
@@ -46,11 +48,20 @@ if [ ! -f "$BIN_SRC" ]; then
     [ -f "$c" ] && BIN_SRC="$c" && break
   done
 fi
-# Kalau binary belum ada, hanya download dari URL yang ditentukan operator.
+# Kalau binary belum ada, hanya download dari URL HTTPS yang ditentukan operator.
 if [ ! -f "$BIN_SRC" ] && [ -n "$BIN_URL" ] && command -v curl >/dev/null 2>&1; then
+  case "$BIN_URL" in
+    https://*) ;;
+    *) echo "[x] BIN_URL wajib memakai HTTPS."; exit 1 ;;
+  esac
+  TMP_BIN="$(mktemp /tmp/soar-agent.XXXXXX)"
+  trap 'rm -f "$TMP_BIN"' EXIT
   echo "      tidak ada di lokal, download dari BIN_URL..."
-  curl -fSL -o /tmp/soar-agent "$BIN_URL" \
-    && BIN_SRC=/tmp/soar-agent
+  curl -fSL -o "$TMP_BIN" "$BIN_URL"
+  if [ -n "$BIN_SHA256" ]; then
+    echo "${BIN_SHA256}  ${TMP_BIN}" | sha256sum -c - || { echo "[x] Verifikasi SHA-256 binary gagal"; exit 1; }
+  fi
+  BIN_SRC="$TMP_BIN"
 fi
 if [ ! -f "$BIN_SRC" ]; then
   echo "[x] binary tidak ditemukan ($BIN_SRC). Dapatkan dulu: build $REPO_HINT, atau scp, atau pakai .deb."

@@ -1,0 +1,81 @@
+name: SOAR CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    name: Python Backend & Deploy Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run scripts unit tests
+        run: python3 -m unittest discover -s scripts -v
+      - name: Run deploy unit tests
+        run: python3 -m unittest discover -s deploy -v
+      - name: Validate XML & JSON configs
+        run: |
+          python3 -c "import json, glob, xml.etree.ElementTree as ET; [json.load(open(p)) for p in glob.glob('n8n-workflows/*.json')]; [ET.parse(p) for p in ('scripts/process-chain-rules.xml', 'deploy/sysmon-minimal.xml')]; print('Configs valid')"
+
+  dashboard-checks:
+    name: Next.js Dashboard Check (Tests, Lint, Typecheck, Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm run check
+
+  rust-agent-tests:
+    name: Rust soar-agent Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent-rs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test
+
+  shell-and-compose:
+    name: Shell Syntax & Docker Compose Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bash syntax check
+        run: |
+          for f in scripts/*.sh deploy/*.sh deploy/nixos/*.sh agent-rs/*.sh scripts/quarantine-file scripts/block-domain; do
+            [ -f "$f" ] && bash -n "$f"
+          done
+      - name: Docker Compose config validation
+        run: |
+          cp .env.example .env
+          docker compose config -q
+          docker compose -f deploy/hardened/docker-compose.yml config -q
+
+  secret-scan:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

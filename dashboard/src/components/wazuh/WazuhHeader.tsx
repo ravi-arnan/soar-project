@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WuiIcon } from '../wui/WuiIcon';
 import { WazuhLogo } from './WazuhLogo';
+import { useAuth } from '../AuthContext';
 import type {
   FleetHealth,
   FleetStats,
@@ -56,28 +57,13 @@ export const WazuhHeader = React.memo(function WazuhHeader({
   onRefresh,
 }: WazuhHeaderProps) {
   const [activeMenu, setActiveMenu] = useState<
-    'api' | 'tenant' | 'user' | 'help' | 'notifications' | 'more' | null
+    'api' | 'user' | 'help' | 'notifications' | 'more' | null
   >(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [currentUser, setCurrentUser] = useState<{
-    username: string;
-    role: 'admin' | 'analyst' | 'viewer';
-    email?: string;
-    name?: string;
-  } | null>(null);
+  const { user: currentUser, logout } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
   const menuContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.authenticated && data.user) {
-          setCurrentUser(data.user);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   const totalThreats =
     (stats?.severity?.CRITICAL || 0) + (stats?.severity?.HIGH || 0);
@@ -106,7 +92,7 @@ export const WazuhHeader = React.memo(function WazuhHeader({
     };
   }, []);
 
-  const toggleMenu = (menu: 'api' | 'tenant' | 'user' | 'help' | 'notifications' | 'more') => {
+  const toggleMenu = (menu: 'api' | 'user' | 'help' | 'notifications' | 'more') => {
     setActiveMenu((prev) => (prev === menu ? null : menu));
   };
 
@@ -254,50 +240,6 @@ export const WazuhHeader = React.memo(function WazuhHeader({
             )}
           </div>
 
-          {/* 2. Workspace / Tenant Selector (default) */}
-          <div className="relative">
-            <button
-              onClick={() => toggleMenu('tenant')}
-              className={`flex items-center gap-1 text-[13px] text-[#1A1C21] px-2 py-1 rounded transition-colors ${
-                activeMenu === 'tenant' ? 'bg-[#E1E6EB]' : 'hover:bg-[#F5F7FA]'
-              }`}
-              title="Pilih Workspace"
-              aria-expanded={activeMenu === 'tenant'}
-            >
-              <span>default</span>
-              <WuiIcon type="arrowDown" size="s" className="text-[#69707D]" />
-            </button>
-
-            {/* Tenant Dropdown */}
-            {activeMenu === 'tenant' && (
-              <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-[#D3DAE6] rounded-[4px] shadow-lg z-50 py-1">
-                <div className="px-3 py-1.5 border-b border-[#E1E6EB]">
-                  <div className="text-[12px] font-semibold text-[#343741]">
-                    Workspace
-                  </div>
-                </div>
-                <div className="py-1">
-                  <div className="px-3 py-2 bg-[#F5F7FA] flex items-center justify-between text-[12px]">
-                    <div>
-                      <div className="font-semibold text-[#1A1C21]">default</div>
-                      <div className="text-[11px] text-[#535966]">
-                        Global Environment (Aktif)
-                      </div>
-                    </div>
-                    <WuiIcon type="checkInCircleFilled" size="m" className="text-[#017D73]" />
-                  </div>
-                  <div className="px-3 py-2 text-[12px] text-[#8A94A6] cursor-not-allowed">
-                    <div className="font-medium">SOC Lab / Sandbox</div>
-                    <div className="text-[11px]">Tersedia pada kluster multi-tenant</div>
-                  </div>
-                </div>
-                <div className="px-3 py-1.5 border-t border-[#E1E6EB] text-[11px] text-[#5A626F]">
-                  Mengawasi {stats?.total || 7} endpoint dalam sistem fleet saat ini.
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* User Profile & Role Selector (OuiAvatar style) */}
           <div className="relative">
             <button
@@ -309,10 +251,10 @@ export const WazuhHeader = React.memo(function WazuhHeader({
               aria-expanded={activeMenu === 'user'}
             >
               <span className="w-6 h-6 rounded-full bg-[#006BB4] text-white text-[11px] font-semibold flex items-center justify-center uppercase shrink-0">
-                {(currentUser?.username || 'A').slice(0, 1)}
+                {(currentUser?.username || 'U').slice(0, 1)}
               </span>
               <span className="font-medium text-[#1A1C21] max-w-[90px] truncate hidden sm:inline">
-                {currentUser?.username || 'admin'}
+                {currentUser?.username || '-'}
               </span>
               <WuiIcon type="arrowDown" size="xs" className="text-[#535966]" />
             </button>
@@ -322,21 +264,21 @@ export const WazuhHeader = React.memo(function WazuhHeader({
               <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-[#D3DAE6] rounded-[4px] shadow-lg z-50 py-1">
                 <div className="px-3 py-2 border-b border-[#E1E6EB]">
                   <div className="text-[12px] font-semibold text-[#1A1C21]">
-                    {currentUser?.name || currentUser?.username || 'Administrator'}
+                    {currentUser?.name || currentUser?.username || '-'}
                   </div>
                   <div className="text-[11px] text-[#5A626F] truncate">
-                    {currentUser?.email || 'admin@soar.local'}
+                    {currentUser?.email || '-'}
                   </div>
                   <div className="mt-1 flex items-center gap-1">
                     <span className="text-[11px] text-[#69707D]">Role:</span>
                     <span className="text-[11px] font-mono font-semibold text-[#1A1C21] uppercase">
-                      {currentUser?.role || 'admin'}
+                      {currentUser?.role || 'viewer'}
                     </span>
                   </div>
                 </div>
 
                 <div className="py-1 text-[12px]">
-                  {onNavigate && (
+                  {onNavigate && isAdmin && (
                     <button
                       onClick={() => {
                         onNavigate('users');
@@ -348,7 +290,7 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                       <span>Kelola Pengguna (RBAC)</span>
                     </button>
                   )}
-                  {onNavigate && (
+                  {onNavigate && isAdmin && (
                     <button
                       onClick={() => {
                         onNavigate('api-keys');
@@ -366,20 +308,8 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                     onClick={async () => {
                       try {
                         setLoggingOut(true);
-                        const res = await fetch('/api/auth/logout', {
-                          method: 'POST',
-                          credentials: 'same-origin',
-                        });
-                        const data = await res.json().catch(() => null);
-                        setCurrentUser(null);
                         setActiveMenu(null);
-                        if (data && typeof data.logoutUrl === 'string' && data.logoutUrl) {
-                          window.location.assign(data.logoutUrl);
-                          return;
-                        }
-                        window.location.reload();
-                      } catch {
-                        window.location.reload();
+                        await logout();
                       } finally {
                         setLoggingOut(false);
                       }
@@ -607,14 +537,19 @@ export const WazuhHeader = React.memo(function WazuhHeader({
                     {/* Item 3: SOAR Workflow */}
                     <div className="p-3">
                       <div className="flex items-start gap-2.5">
-                        <WuiIcon type="checkInCircleFilled" size="m" className="text-[#006BB4] mt-0.5" />
+                        <WuiIcon
+                          type={health?.n8n ? 'checkInCircleFilled' : 'alert'}
+                          size="m"
+                          className={health?.n8n ? 'text-[#006BB4] mt-0.5' : 'text-[#BD271E] mt-0.5'}
+                        />
                         <div>
                           <div className="font-semibold text-[#1A1C21]">
-                            Pipeline SOAR n8n Siap
+                            {health?.n8n ? 'Pipeline SOAR n8n Siap' : 'Pipeline SOAR n8n Terputus'}
                           </div>
                           <div className="text-[11px] text-[#5A626F] mt-0.5 leading-snug">
-                            Playbook respons otomatis (Block Domain &amp; Karantina File)
-                            beroperasi normal.
+                            {health?.n8n
+                              ? 'Playbook respons otomatis (Block Domain & Karantina File) beroperasi normal.'
+                              : 'Layanan n8n tidak merespons healthcheck. Periksa container n8n pada server.'}
                           </div>
                         </div>
                       </div>
@@ -743,7 +678,7 @@ export const WazuhHeader = React.memo(function WazuhHeader({
           aria-label="Wazuh modules navigation"
           className="bg-white border-b border-[#D3DAE6] px-4 flex items-center gap-1 overflow-x-auto select-none"
         >
-          {WZ_TOP_NAV.map((item) => {
+          {WZ_TOP_NAV.filter((item) => isAdmin || (item.id !== 'users' && item.id !== 'api-keys')).map((item) => {
             const isActive =
               activeView === item.id ||
               (item.id === 'agents' && activeView === 'agent-detail');

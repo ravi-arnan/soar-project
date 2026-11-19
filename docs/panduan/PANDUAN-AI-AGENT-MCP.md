@@ -32,7 +32,7 @@ Agen AI berkomunikasi dengan SOAR menggunakan protokol JSON-RPC 2.0 melalui STDI
                               v
 +-------------------------------------------------------------+
 |              SOAR Backend (fleet-monitor & Wazuh)           |
-|      http://100.73.91.17:8080 / https://soar.raviarnan.dev  |
+|      http://<SOAR_SERVER_IP>:8080 / https://soar.example.com|
 +-------------------------------------------------------------+
 ```
 
@@ -61,11 +61,11 @@ Konfigurasi tersimpan pada file `~/.gemini/config/mcp_config.json`:
     "soar": {
       "command": "python3",
       "args": [
-        "/home/ravi/Projects/soar-project/scripts/soar_mcp_server.py"
+        "/path/to/soar-project/scripts/soar_mcp_server.py"
       ],
       "env": {
-        "SOAR_API_URL": "http://100.73.91.17:8080",
-        "SOAR_API_KEY": "REDACTED_SECRET"
+        "SOAR_API_URL": "http://<SOAR_SERVER_IP>:8080",
+        "SOAR_API_KEY": "soar_live_replace_with_your_api_key"
       },
       "description": "SOAR Threat Intelligence, Incident Telemetry, and Active Response System"
     }
@@ -74,7 +74,7 @@ Konfigurasi tersimpan pada file `~/.gemini/config/mcp_config.json`:
 ```
 
 ### B. Claude Code
-Claude Code membaca file `.mcp.json` di root proyek secara otomatis:
+Claude Code membaca file `.mcp.json` di root proyek secara otomatis (salin dari `.mcp.json.example`, jangan commit `.mcp.json`):
 ```json
 {
   "mcpServers": {
@@ -82,8 +82,8 @@ Claude Code membaca file `.mcp.json` di root proyek secara otomatis:
       "command": "python3",
       "args": ["scripts/soar_mcp_server.py"],
       "env": {
-        "SOAR_API_URL": "http://100.73.91.17:8080",
-        "SOAR_API_KEY": "REDACTED_SECRET"
+        "SOAR_API_URL": "http://<SOAR_SERVER_IP>:8080",
+        "SOAR_API_KEY": "soar_live_replace_with_your_api_key"
       }
     }
   }
@@ -93,9 +93,9 @@ Claude Code membaca file `.mcp.json` di root proyek secara otomatis:
 ### C. Cursor / Windsurf / Codex / Freebuff
 Tambahkan pada konfigurasi MCP di settings aplikasi masing-masing:
 * **Command:** `python3`
-* **Args:** `/home/ravi/Projects/soar-project/scripts/soar_mcp_server.py`
+* **Args:** `/path/to/soar-project/scripts/soar_mcp_server.py`
 * **Environment Variables:**
-  * `SOAR_API_URL`: `http://100.73.91.17:8080` (Tailscale) atau `https://soar.raviarnan.dev`
+  * `SOAR_API_URL`: `http://<SOAR_SERVER_IP>:8080` (Tailscale/LAN) atau `https://soar.example.com`
   * `SOAR_API_KEY`: token Bearer `soar_live_...`
 
 ---

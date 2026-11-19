@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { WuiIcon } from '../wui/WuiIcon';
 import { WuiBadge, WuiPanel } from '../wui/WuiPrimitives';
+import { useEventHistory } from '@/lib/fleet';
 
 interface TechniqueItem {
   id: string;
@@ -188,12 +189,38 @@ const PLAYBOOK_MAP: Array<{
   },
 ];
 
-export function MitreAttackView() {
+export function MitreAttackView({
+  onSelectTechnique,
+}: {
+  onSelectTechnique?: (techniqueId: string) => void;
+} = {}) {
   const [activeTab, setActiveTab] = useState<'matrix' | 'playbooks'>('matrix');
+
+  // Hit teknik live dari riwayat 30 hari terakhir (bukan angka statis)
+  const [sinceIso] = useState(() => new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString());
+  const historyQuery = useMemo(
+    () => ({ since: sinceIso, limit: 500, source: 'all' as const }),
+    [sinceIso]
+  );
+  const { events: liveEvents } = useEventHistory(historyQuery, 60_000);
+
+  const liveCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const techRe = /\bT1\d{3}(?:\.\d{3})?\b/gi;
+    for (const ev of liveEvents) {
+      const text = `${ev.mitre || ''} ${ev.rule_desc || ''} ${ev.ai || ''}`;
+      const matched = new Set((text.match(techRe) || []).map((m) => m.toUpperCase()));
+      for (const id of matched) {
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [liveEvents]);
 
   const totalTech = new Set(
     PLAYBOOK_MAP.flatMap((p) => p.techniques.map((t) => t.id))
   ).size;
+  const totalLiveHits = Array.from(liveCounts.values()).reduce((a, b) => a + b, 0);
 
   return (
     <div className="space-y-4">
@@ -284,41 +311,46 @@ export function MitreAttackView() {
                 </div>
 
                 <div className="p-2.5 space-y-2 flex-1">
-                  {tac.techniques.map((t) => (
-                    <div
-                      key={t.id}
-                      className="bg-white border border-[#D3DAE6] rounded-[4px] p-2.5 hover:border-[#006BB4] transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="font-mono text-[11px] font-bold text-[#006BB4]">
-                          {t.id}
-                        </span>
-                        <WuiBadge tone="primary" className="font-mono text-[10px]">
-                          {t.count}x
-                        </WuiBadge>
-                      </div>
-                      <div className="text-[11px] font-semibold text-[#1A1C21] mt-1 leading-snug">
-                        {t.name}
-                      </div>
-                      <div className="mt-2 pt-1.5 border-t border-[#E9EDF3] flex flex-wrap gap-1">
-                        {t.playbooks.map((pb) => (
-                          <span
-                            key={pb}
-                            className="text-[9.5px] px-1.5 py-0.5 rounded-[2px] bg-[#FAFBFD] text-[#535966] border border-[#E9EDF3]"
-                          >
-                            {pb}
+                  {tac.techniques.map((t) => {
+                    const hits = liveCounts.get(t.id.toUpperCase()) || 0;
+                    return (
+                      <button
+                        type="button"
+                        key={t.id}
+                        onClick={() => onSelectTechnique?.(t.id)}
+                        className="w-full text-left bg-white border border-[#D3DAE6] rounded-[4px] p-2.5 hover:border-[#006BB4] transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-mono text-[11px] font-bold text-[#006BB4]">
+                            {t.id}
                           </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                          <WuiBadge tone={hits > 0 ? 'danger' : 'default'} className="font-mono text-[10px]">
+                            {hits} hits (30d)
+                          </WuiBadge>
+                        </div>
+                        <div className="text-[11px] font-semibold text-[#1A1C21] mt-1 leading-snug">
+                          {t.name}
+                        </div>
+                        <div className="mt-2 pt-1.5 border-t border-[#E9EDF3] flex flex-wrap gap-1">
+                          {t.playbooks.map((pb) => (
+                            <span
+                              key={pb}
+                              className="text-[9.5px] px-1.5 py-0.5 rounded-[2px] bg-[#FAFBFD] text-[#535966] border border-[#E9EDF3]"
+                            >
+                              {pb}
+                            </span>
+                          ))}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}
           </div>
 
           <div className="flex items-center justify-between border-t border-[#E9EDF3] mt-4 pt-3 text-[11px] text-[#535966]">
-            <span>Heatmap intensitas didasarkan pada jumlah playbook yang mengimplementasikan deteksi.</span>
+            <span>Hit live 30 hari terakhir: {totalLiveHits} deteksi terpetakan (klik teknik untuk drill-down ke Security Events).</span>
             <span className="text-[#69707D] font-mono">MITRE ATT&amp;CK v14.1 Enterprise Matrix</span>
           </div>
         </WuiPanel>

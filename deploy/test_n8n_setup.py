@@ -114,6 +114,21 @@ class WorkflowSetupTests(unittest.TestCase):
         self.assertEqual(name_to_id["OTX API Key"], ("httpHeaderAuth", "DRY"))
         self.assertEqual(name_to_id["OTX Header Auth"], ("httpHeaderAuth", "DRY"))
 
+    def test_build_data_includes_gsb_query_auth_value(self):
+        gsb_cred = next(c for c in n8n_setup.CREDENTIALS if c["name"] == "GSB Query Auth")
+        data = n8n_setup.build_data(gsb_cred, {"GSB_API_KEY": "real-gsb-key"}, None)
+        self.assertEqual(data, {"name": "key", "value": "real-gsb-key"})
+
+    def test_all_default_workflows_exist_and_parse(self):
+        n8n_setup.REPO = self.original_repo
+        n8n_setup.WORKFLOWS = self.original_workflows
+        self.assertIn("sla-eskalasi-hitl", n8n_setup.WORKFLOWS)
+        for wf in n8n_setup.WORKFLOWS:
+            body, _, _ = n8n_setup.load_workflow_plan(wf, {})
+            self.assertTrue(body["name"])
+            self.assertIsInstance(body["nodes"], list)
+            self.assertGreater(len(body["nodes"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

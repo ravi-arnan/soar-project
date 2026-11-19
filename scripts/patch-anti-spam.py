@@ -21,14 +21,8 @@ import os
 import sys
 import urllib.request
 
-API_KEY_DEFAULT = (
-    "REDACTED_JWT_PART"
-    "REDACTED_JWT_PART"
-    "du0al6ShsHYc6le8ACttmxWSsOl0fOdyQ1QgovIwgvM"
-)
-
-MALWARE_WF_ID = "1MVcpL7ZKfBhR2tc"
-PHISHING_WF_ID = "ELhIxkr2uJ43IACs"
+MALWARE_WF_ID = os.environ.get("N8N_MALWARE_WF_ID", "")
+PHISHING_WF_ID = os.environ.get("N8N_PHISHING_WF_ID", "")
 BACKUP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backups")
 
 
@@ -98,17 +92,24 @@ def patch_phishing_wf(wf: dict) -> bool:
 
 def main():
     ap = argparse.ArgumentParser(description="Patch anti-spam untuk n8n SOAR")
-    ap.add_argument("--n8n-url", default="http://100.73.91.17:5678")
-    ap.add_argument("--api-key", default=API_KEY_DEFAULT)
+    ap.add_argument("--n8n-url", default=os.environ.get("N8N_URL", "http://127.0.0.1:5678"))
+    ap.add_argument("--api-key", default=os.environ.get("N8N_API_KEY", ""))
+    ap.add_argument("--malware-wf-id", default=MALWARE_WF_ID)
+    ap.add_argument("--phishing-wf-id", default=PHISHING_WF_ID)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
+
+    if not args.api_key:
+        sys.exit("ERROR: N8N_API_KEY env var atau --api-key wajib diisi.")
+    if not args.malware_wf_id or not args.phishing_wf_id:
+        sys.exit("ERROR: --malware-wf-id dan --phishing-wf-id (atau N8N_*_WF_ID) wajib diisi.")
 
     os.makedirs(BACKUP_DIR, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     print(f"Mengambil workflow dari n8n ({args.n8n_url}) ...")
-    mw = get_wf(args.n8n_url, MALWARE_WF_ID, args.api_key)
-    ph = get_wf(args.n8n_url, PHISHING_WF_ID, args.api_key)
+    mw = get_wf(args.n8n_url, args.malware_wf_id, args.api_key)
+    ph = get_wf(args.n8n_url, args.phishing_wf_id, args.api_key)
 
     mw_backup = os.path.join(BACKUP_DIR, f"deteksi-malware-before-anti-spam-{ts}.json")
     ph_backup = os.path.join(BACKUP_DIR, f"deteksi-phishing-before-anti-spam-{ts}.json")
@@ -130,13 +131,13 @@ def main():
         return
 
     if mw_changed:
-        print(f"Mengirim update Deteksi Malware ({MALWARE_WF_ID}) ...")
-        put_wf(args.n8n_url, MALWARE_WF_ID, mw, args.api_key)
+        print(f"Mengirim update Deteksi Malware ({args.malware_wf_id}) ...")
+        put_wf(args.n8n_url, args.malware_wf_id, mw, args.api_key)
         print("  Deteksi Malware OK.")
 
     if ph_changed:
-        print(f"Mengirim update Deteksi Phishing ({PHISHING_WF_ID}) ...")
-        put_wf(args.n8n_url, PHISHING_WF_ID, ph, args.api_key)
+        print(f"Mengirim update Deteksi Phishing ({args.phishing_wf_id}) ...")
+        put_wf(args.n8n_url, args.phishing_wf_id, ph, args.api_key)
         print("  Deteksi Phishing OK.")
 
     print("\nPatch anti-spam berhasil diterapkan ke server live.")

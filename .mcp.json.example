@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "soar": {
+      "command": "python3",
+      "args": ["scripts/soar_mcp_server.py"],
+      "env": {
+        "SOAR_API_URL": "https://soar.example.com",
+        "SOAR_API_KEY": "replace-with-soar-live-api-key"
+      }
+    }
+  }
+}

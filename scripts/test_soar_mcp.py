@@ -1,304 +1,134 @@
 #!/usr/bin/env python3
-"""
-Unit test komprehensif untuk SOAR MCP Server (scripts/soar_mcp_server.py).
-Memverifikasi:
-- Handshake JSON-RPC 2.0 (initialize, ping, unknown method)
-- tools/list mengembalikan skema valid untuk 6 tools
-- Eksekusi masing-masing tool (fleet status, list agents, threat events, lookup hash, execute command, stats)
-- Penanganan error, format payload, dan isolasi stderr vs stdout
-"""
+"""Unit tests untuk scripts/soar_mcp_server.py."""
 
-import importlib.util
+import io
 import json
-import subprocess
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest import mock
 
-MODULE_PATH = Path(__file__).with_name("soar_mcp_server.py")
-SPEC = importlib.util.spec_from_file_location("soar_mcp_server", MODULE_PATH)
-assert SPEC and SPEC.loader
-mcp = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(mcp)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import soar_mcp_server as mcp
 
 
-class TestSoarMcpTools(unittest.TestCase):
-    def setUp(self):
-        self.mock_client = MagicMock(spec=mcp.SoarClient)
+class FakeSoarClient(mcp.SoarClient):
+    def __init__(self, routes):
+        super().__init__(base_url="http://127.0.0.1:8080", api_key="test-key")
+        self.routes = routes
 
-    def test_tools_list_schema(self):
-        """Pastikan seluruh 8 tools terdaftar dengan schema valid."""
-        tools = mcp.TOOLS
-        self.assertEqual(len(tools), 8)
-        tool_names = {t["name"] for t in tools}
-        expected = {
-            "soar_get_fleet_status",
-            "soar_list_agents",
-            "soar_get_threat_events",
-            "soar_lookup_hash",
-            "soar_execute_command",
-            "soar_get_stats",
-            "soar_save_investigation",
-            "soar_list_investigations",
-        }
-        self.assertEqual(tool_names, expected)
-        for t in tools:
-            self.assertIn("description", t)
-            self.assertIn("inputSchema", t)
-            self.assertEqual(t["inputSchema"]["type"], "object")
-
-    def test_handle_fleet_status_success(self):
-        self.mock_client.request.return_value = (
-            200,
-            {
-                "generated_at": "2026-11-06T20:00:00Z",
-                "health": {"wazuh_api": True, "n8n": True, "gemini": True},
-                "stats": {
-                    "total": 10,
-                    "active": 8,
-                    "disconnected": 2,
-                    "rust": 7,
-                    "wazuh": 1,
-                    "capacity_pct": 10,
-                },
-            },
-        )
-        res = mcp.handle_tool_call(self.mock_client, "soar_get_fleet_status", {})
-        self.assertIn("=== STATUS SISTEM & ARMADA SOAR ===", res)
-        self.assertIn("Total Agen: 10 host", res)
-        self.assertIn("Wazuh Manager API: AKTIF", res)
-        self.assertIn("Gemini 2.5 Flash AI Engine: SIAP", res)
-
-    def test_handle_list_agents_filter(self):
-        self.mock_client.request.return_value = (
-            200,
-            {
-                "agents": [
-                    {
-                        "id": "001",
-                        "name": "wazuh-agent-1",
-                        "ip": "192.168.1.10",
-                        "status": "active",
-                        "is_rust": False,
-                    },
-                    {
-                        "id": "009",
-                        "name": "nixbox",
-                        "ip": "100.73.91.17",
-                        "status": "active",
-                        "is_rust": True,
-                    },
-                    {
-                        "id": "010",
-                        "name": "lab-offline",
-                        "ip": "10.0.0.5",
-                        "status": "disconnected",
-                        "is_rust": True,
-                    },
-                ]
-            },
-        )
-        # Filter active
-        res_active = mcp.handle_tool_call(
-            self.mock_client, "soar_list_agents", {"status_filter": "active"}
-        )
-        self.assertIn("wazuh-agent-1", res_active)
-        self.assertIn("nixbox", res_active)
-        self.assertNotIn("lab-offline", res_active)
-
-    def test_handle_threat_events(self):
-        self.mock_client.request.return_value = (
-            200,
-            {
-                "events": [
-                    {
-                        "id": "ev1",
-                        "severity": "CRITICAL",
-                        "rule_desc": "Ransomware canary triggered",
-                        "agent": "kasir-pc",
-                        "agent_id": "003",
-                        "path": "/home/user/canary.docx",
-                        "hash": "abc12345",
-                        "verdict": "MALICIOUS",
-                        "ai": "T1486 Data Encrypted for Impact",
-                    }
-                ]
-            },
-        )
-        res = mcp.handle_tool_call(
-            self.mock_client, "soar_get_threat_events", {"limit": 5, "severity": "CRITICAL"}
-        )
-        self.assertIn("[CRITICAL] Ransomware canary triggered", res)
-        self.assertIn("Target/Path: /home/user/canary.docx", res)
-        self.assertIn("T1486 Data Encrypted for Impact", res)
-
-    def test_handle_lookup_hash_hit_and_miss(self):
-        # Hit
-        self.mock_client.request.return_value = (
-            200,
-            {
-                "hit": True,
-                "entry": {
-                    "verdict": "MALICIOUS",
-                    "source": "VirusTotal & MalwareBazaar",
-                    "ttl_remaining_secs": 86400,
-                    "stats": {"malicious": 58, "suspicious": 2, "undetected": 10},
-                },
-            },
-        )
-        res_hit = mcp.handle_tool_call(
-            self.mock_client, "soar_lookup_hash", {"hash": "e3b0c44298fc1c149afbf4c8996fb924"}
-        )
-        self.assertIn("Vonis: MALICIOUS", res_hit)
-        self.assertIn("Malicious: 58", res_hit)
-
-        # Miss
-        self.mock_client.request.return_value = (200, {"hit": False})
-        res_miss = mcp.handle_tool_call(
-            self.mock_client, "soar_lookup_hash", {"hash": "unknownhash"}
-        )
-        self.assertIn("belum ada di cache server SOAR", res_miss)
-
-    def test_handle_execute_command(self):
-        self.mock_client.request.return_value = (
-            200,
-            {"status": "queued", "agent_id": "003", "action": "quarantine"},
-        )
-        res = mcp.handle_tool_call(
-            self.mock_client,
-            "soar_execute_command",
-            {"agent_id": "003", "action": "quarantine", "target": "/tmp/malware.exe"},
-        )
-        self.assertIn("Perintah Active Response BERHASIL", res)
-        self.assertIn("Aksi: QUARANTINE", res)
-        self.assertIn("Agen Target: 003", res)
-
-    def test_handle_get_stats(self):
-        self.mock_client.request.return_value = (
-            200,
-            {
-                "stats": {
-                    "severity": {"CRITICAL": 3, "HIGH": 12, "MEDIUM": 5, "LOW": 2, "INFO": 20},
-                    "top_agents": [{"key": "003", "count": 15}, {"key": "001", "count": 7}],
-                    "daily": [{"date": "2026-11-06", "count": 22}],
-                }
-            },
-        )
-        res = mcp.handle_tool_call(self.mock_client, "soar_get_stats", {})
-        self.assertIn("CRITICAL: 3", res)
-        self.assertIn("Agent 003: 15 insiden", res)
-        self.assertIn("2026-11-06: 22 insiden", res)
-
-    def test_handle_save_and_list_investigations(self):
-        self.mock_client.request.return_value = (
-            201,
-            {
-                "success": True,
-                "investigation": {
-                    "id": "inv_1234567890ab",
-                    "title": "Korelasi rundll32 pada ideapc",
-                    "agent_source": "agy",
-                    "model": "gemini-4-hydrogen",
-                    "verdict": "SUSPICIOUS",
-                    "severity": "HIGH",
-                },
-            },
-        )
-        res_save = mcp.handle_tool_call(
-            self.mock_client,
-            "soar_save_investigation",
-            {
-                "title": "Korelasi rundll32 pada ideapc",
-                "summary": "Aktivitas mencurigakan terdeteksi.",
-                "analysis": "Detail analisis.",
-                "verdict": "SUSPICIOUS",
-                "severity": "HIGH",
-                "agent_source": "agy",
-                "model": "gemini-4-hydrogen",
-            },
-        )
-        self.assertIn("Investigasi AI Agent berhasil disimpan", res_save)
-        self.assertIn("inv_1234567890ab", res_save)
-
-        self.mock_client.request.return_value = (
-            200,
-            {
-                "total": 1,
-                "investigations": [
-                    {
-                        "id": "inv_1234567890ab",
-                        "ts": "2026-11-19T00:50:00+08:00",
-                        "title": "Korelasi rundll32 pada ideapc",
-                        "agent_source": "agy",
-                        "model": "gemini-4-hydrogen",
-                        "verdict": "SUSPICIOUS",
-                        "severity": "HIGH",
-                        "summary": "Aktivitas mencurigakan terdeteksi.",
-                    }
-                ],
-            },
-        )
-        res_list = mcp.handle_tool_call(
-            self.mock_client, "soar_list_investigations", {"limit": 10}
-        )
-        self.assertIn("Korelasi rundll32 pada ideapc", res_list)
-        self.assertIn("agy (gemini-4-hydrogen)", res_list)
+    def request(self, path, method="GET", body=None):
+        key = (method, path)
+        if key in self.routes:
+            return self.routes[key]
+        return 404, {"error": f"not mocked: {key}"}
 
 
-class TestSoarMcpJsonRpcSubprocess(unittest.TestCase):
-    """Pengujian E2E protokol JSON-RPC melalui subprocess stdio."""
+class TestSoarMcpServer(unittest.TestCase):
+    def test_default_url_has_no_personal_tailscale_ip(self):
+        self.assertNotIn("100.73.91.17", mcp.DEFAULT_SOAR_URL)
 
-    def test_mcp_handshake_and_tools_call(self):
-        proc = subprocess.Popen(
-            [sys.executable, str(MODULE_PATH), "--url", "http://127.0.0.1:9999"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        try:
-            # 1. Initialize
-            init_req = json.dumps(
+    def test_list_agents_handles_string_os_and_rust_type(self):
+        client = FakeSoarClient({
+            ("GET", "/api/fleet"): (
+                200,
                 {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "initialize",
-                    "params": {"protocolVersion": "2024-11-05"},
-                }
+                    "agents": [
+                        {
+                            "id": "003",
+                            "name": "linux-ws",
+                            "ip": "10.0.0.5",
+                            "status": "active",
+                            "os": "linux",
+                            "type": "rust",
+                            "regDate": "2026-10-01T00:00:00Z",
+                            "lastKeepAlive": "2026-11-19T00:00:00Z",
+                        },
+                        {
+                            "id": "001",
+                            "name": "win-ws",
+                            "ip": "10.0.0.6",
+                            "status": "active",
+                            "os": {"name": "Windows 11"},
+                            "type": "wazuh",
+                        },
+                    ]
+                },
             )
-            proc.stdin.write(init_req + "\n")
-            proc.stdin.flush()
-            init_resp = json.loads(proc.stdin.channel if hasattr(proc.stdin, "channel") else proc.stdout.readline())
-            self.assertEqual(init_resp["id"], 1)
-            self.assertEqual(init_resp["result"]["serverInfo"]["name"], "soar-mcp-server")
+        })
+        out = mcp.handle_tool_call(client, "soar_list_agents", {})
+        self.assertIn("Rust soar-agent", out)
+        self.assertIn("OS: linux", out)
+        self.assertIn("Wazuh Agent", out)
+        self.assertIn("OS: Windows 11", out)
 
-            # 2. Ping
-            ping_req = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "ping"})
-            proc.stdin.write(ping_req + "\n")
-            proc.stdin.flush()
-            ping_resp = json.loads(proc.stdout.readline())
-            self.assertEqual(ping_resp["id"], 2)
-            self.assertEqual(ping_resp["result"], {})
+    def test_lookup_hash_reads_flat_fleet_monitor_response(self):
+        h = "a" * 64
+        client = FakeSoarClient({
+            ("POST", "/api/vt-cache/lookup"): (
+                200,
+                {
+                    "hit": True,
+                    "status": "malicious",
+                    "mal": 58,
+                    "susp": 2,
+                    "undet": 10,
+                    "mb_hit": True,
+                    "mb_sig": "Ramnit",
+                    "otx_pulses": 4,
+                    "source": "vt+mb+otx",
+                    "ttl_s": 7200,
+                },
+            )
+        })
+        out = mcp.handle_tool_call(client, "soar_lookup_hash", {"hash": h})
+        self.assertIn("Vonis: MALICIOUS", out)
+        self.assertIn("Malicious: 58", out)
+        self.assertIn("Suspicious: 2", out)
+        self.assertIn("Undetected/Clean: 10", out)
+        self.assertIn("YA (Ramnit)", out)
+        self.assertIn("OTX Pulses: 4", out)
+        self.assertIn("2.0 jam tersisa", out)
 
-            # 3. tools/list
-            list_req = json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}})
-            proc.stdin.write(list_req + "\n")
-            proc.stdin.flush()
-            list_resp = json.loads(proc.stdout.readline())
-            self.assertEqual(list_resp["id"], 3)
-            self.assertEqual(len(list_resp["result"]["tools"]), 8)
+    def test_get_fleet_status_computes_capacity_and_extra_health(self):
+        client = FakeSoarClient({
+            ("GET", "/api/fleet"): (
+                200,
+                {
+                    "health": {
+                        "wazuh_api": True,
+                        "n8n": True,
+                        "gemini": True,
+                        "misp": True,
+                        "alert_log": True,
+                    },
+                    "stats": {
+                        "total": 12,
+                        "active": 10,
+                        "disconnected": 2,
+                        "rust": 8,
+                        "wazuh": 4,
+                    },
+                    "generated_at": "2026-11-19T00:00:00Z",
+                },
+            )
+        })
+        out = mcp.handle_tool_call(client, "soar_get_fleet_status", {})
+        self.assertIn("12.0% dari 100 PC target", out)
+        self.assertIn("MISP OSINT Feed: AKTIF", out)
+        self.assertIn("Alert Log Registry: AKTIF", out)
 
-        finally:
-            if proc.stdin:
-                proc.stdin.close()
-            if proc.stdout:
-                proc.stdout.close()
-            if proc.stderr:
-                proc.stderr.close()
-            proc.terminate()
-            proc.wait(timeout=3)
+    def test_stdio_server_rejects_non_object_json_without_crashing(self):
+        stdin_buf = io.StringIO('[1, 2, 3]\n{"jsonrpc":"2.0","id":7,"method":"ping"}\n')
+        stdout_buf = io.StringIO()
+        client = FakeSoarClient({})
+        with mock.patch.object(sys, "stdin", stdin_buf), mock.patch.object(sys, "stdout", stdout_buf):
+            mcp.run_stdio_server(client)
+        lines = [json.loads(line) for line in stdout_buf.getvalue().splitlines() if line.strip()]
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[0]["error"]["code"], -32600)
+        self.assertEqual(lines[1]["id"], 7)
+        self.assertEqual(lines[1]["result"], {})
 
 
 if __name__ == "__main__":

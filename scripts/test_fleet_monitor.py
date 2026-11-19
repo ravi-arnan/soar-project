@@ -187,11 +187,14 @@ class CommandApiTests(_ApiTestCase):
         payload = {
             "agent": "009",
             "agent_id": "009",
-            "path": "/home/ravi/Downloads/eicar.com",
+            "path": "/home/user/Downloads/eicar.com",
             "hash": "a" * 64,
         }
-        first = self.request("POST", "/webhook-log", payload)
-        second = self.request("POST", "/webhook-log", payload)
+        # Tanpa token harus ditolak 401
+        unauth = self.request("POST", "/webhook-log", payload)
+        self.assertEqual(unauth[0], 401)
+        first = self.request("POST", "/webhook-log", payload, fleet_monitor.FLEET_COMMAND_TOKEN)
+        second = self.request("POST", "/webhook-log", payload, fleet_monitor.FLEET_COMMAND_TOKEN)
         first_event = fleet_monitor.EVENTS[-2]
         second_event = fleet_monitor.EVENTS[-1]
 
@@ -264,18 +267,24 @@ class RegistrationDateTests(_ApiTestCase):
 
     def test_heartbeat_sets_and_preserves_first_seen(self):
         payload = {"id": "009", "name": "agent-009", "os": "linux"}
-        self.request("POST", "/api/heartbeat", payload)
+        # Tanpa token agent harus ditolak 401
+        st_unauth, _, _ = self.request("POST", "/api/heartbeat", payload)
+        self.assertEqual(st_unauth, 401)
+
+        tok = fleet_monitor.FLEET_AGENT_POLL_TOKENS["009"]
+        self.request("POST", "/api/heartbeat", payload, tok)
         first = fleet_monitor.HEARTBEATS["009"]["first_seen"]
 
-        self.request("POST", "/api/heartbeat", payload)
+        self.request("POST", "/api/heartbeat", payload, tok)
         entry = fleet_monitor.HEARTBEATS["009"]
 
         self.assertEqual(entry["first_seen"], first)
         self.assertGreaterEqual(entry["last_seen"], entry["first_seen"])
 
     def test_build_fleet_emits_regdate_from_first_seen(self):
+        tok = fleet_monitor.FLEET_AGENT_POLL_TOKENS["009"]
         self.request(
-            "POST", "/api/heartbeat", {"id": "009", "name": "agent-009", "os": "linux"}
+            "POST", "/api/heartbeat", {"id": "009", "name": "agent-009", "os": "linux"}, tok
         )
 
         original_fetch = fleet_monitor.fetch_wazuh_agents
@@ -504,15 +513,16 @@ class HistoryEndpointTests(_ApiTestCase):
         _clear_events()
 
     def test_endpoint_history_kembalikan_event_dan_stats(self):
+        tok = fleet_monitor.FLEET_COMMAND_TOKEN
         payload = {
             "agent": "agent-009", "agent_id": "009",
-            "path": "/home/ravi/Downloads/eicar.com", "hash": "a" * 64,
+            "path": "/home/user/Downloads/eicar.com", "hash": "a" * 64,
             "severity": "CRITICAL",
             "ts": datetime.now(fleet_monitor.WITA).isoformat(),
         }
-        self.request("POST", "/webhook-log", payload)
+        self.request("POST", "/webhook-log", payload, tok)
 
-        status, _, body = self.request("GET", "/api/events/history?source=soar&limit=10")
+        status, _, body = self.request("GET", "/api/events/history?source=soar&limit=10", token=tok)
 
         self.assertEqual(status, 200)
         self.assertEqual(body["total"], 1)
@@ -521,31 +531,35 @@ class HistoryEndpointTests(_ApiTestCase):
         self.assertEqual(body["sources"]["wazuh"], 0)
 
     def test_endpoint_history_filter_since_dan_severity(self):
+        tok = fleet_monitor.FLEET_COMMAND_TOKEN
         now = datetime.now(fleet_monitor.WITA)
         self.request("POST", "/webhook-log", {
             "agent_id": "009", "path": "/old", "severity": "HIGH",
             "ts": (now - timedelta(days=40)).isoformat(),
-        })
+        }, tok)
         self.request("POST", "/webhook-log", {
             "agent_id": "009", "path": "/new", "severity": "CRITICAL",
             "ts": now.isoformat(),
-        })
+        }, tok)
 
         status, _, body = self.request(
-            "GET", "/api/events/history?since=" + (now - timedelta(days=1)).isoformat()
+            "GET", "/api/events/history?since=" + (now - timedelta(days=1)).isoformat(), token=tok
         )
         self.assertEqual(status, 200)
         self.assertEqual([e["path"] for e in body["events"]], ["/new"])
 
-        _, _, body = self.request("GET", "/api/events/history?severity=CRITICAL")
+        _, _, body = self.request("GET", "/api/events/history?severity=CRITICAL", token=tok)
         self.assertEqual([e["path"] for e in body["events"]], ["/new"])
 
     def test_endpoint_degradasi_tanpa_indexer(self):
-        status, _, body = self.request("GET", "/api/events/history")
+        status, _, body = self.request(
+            "GET", "/api/events/history", token=fleet_monitor.FLEET_COMMAND_TOKEN
+        )
         self.assertEqual(status, 200)
         self.assertIsNone(body["indexer_ok"])
 
     def test_fim_metadata_persistence(self):
+        tok = fleet_monitor.FLEET_COMMAND_TOKEN
         payload = {
             "agent_id": "003",
             "path": "/home/e2e/Downloads/test.bin",
@@ -563,10 +577,10 @@ class HistoryEndpointTests(_ApiTestCase):
             "md5": "d41d8cd98f00b204e9800998ecf8427e",
             "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
         }
-        status, _, _ = self.request("POST", "/webhook-log", payload)
+        status, _, _ = self.request("POST", "/webhook-log", payload, tok)
         self.assertEqual(status, 200)
 
-        status, _, body = self.request("GET", "/api/events/history?limit=10")
+        status, _, body = self.request("GET", "/api/events/history?limit=10", token=tok)
         self.assertEqual(status, 200)
         matching = [e for e in body["events"] if e.get("path") == "/home/e2e/Downloads/test.bin"]
         self.assertTrue(len(matching) > 0)
@@ -582,11 +596,11 @@ class HistoryEndpointTests(_ApiTestCase):
         self.assertEqual(ev.get("sha1"), "da39a3ee5e6b4b0d3255bfef95601890afd80709")
 
     def test_fleet_stats_events_total_24h(self):
+        tok = fleet_monitor.FLEET_COMMAND_TOKEN
         now = datetime.now(timezone.utc)
         old_ts = (now - timedelta(days=3)).isoformat().replace("+00:00", "Z")
         recent_ts = (now - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
 
-        # Event lama (> 24 jam)
         old_ev = {
             "agent_id": "003",
             "path": "/opt/old-malware.bin",
@@ -595,10 +609,9 @@ class HistoryEndpointTests(_ApiTestCase):
             "ts": old_ts,
             "status": "alerted",
         }
-        status, _, _ = self.request("POST", "/webhook-log", old_ev)
+        status, _, _ = self.request("POST", "/webhook-log", old_ev, tok)
         self.assertEqual(status, 200)
 
-        # Event baru (< 24 jam)
         recent_ev = {
             "agent_id": "003",
             "path": "/opt/recent-eicar.com",
@@ -607,16 +620,18 @@ class HistoryEndpointTests(_ApiTestCase):
             "ts": recent_ts,
             "status": "alerted",
         }
-        status, _, _ = self.request("POST", "/webhook-log", recent_ev)
+        status, _, _ = self.request("POST", "/webhook-log", recent_ev, tok)
         self.assertEqual(status, 200)
 
-        # GET /api/fleet harus menghitung events_total hanya dalam rentang 24 jam
-        status, _, body = self.request("GET", "/api/fleet")
+        # Tanpa token harus ditolak 401
+        st_unauth, _, _ = self.request("GET", "/api/fleet")
+        self.assertEqual(st_unauth, 401)
+
+        status, _, body = self.request("GET", "/api/fleet", token=tok)
         self.assertEqual(status, 200)
         stats = body.get("stats", {})
         self.assertIn("events_total", stats)
         self.assertIn("events_all_time", stats)
-        # events_total (24h) tidak boleh menghitung old_ev
         self.assertGreaterEqual(stats["events_all_time"], 2)
         self.assertEqual(stats["severity"]["CRITICAL"], 1)
 
@@ -627,11 +642,23 @@ class AgentInvestigationApiTests(_ApiTestCase):
         st, _, _ = self.request("GET", "/api/investigations")
         self.assertEqual(st, 401)
 
-        # 2. Buat API Key read:intel untuk agy
-        key = fleet_monitor._api_key_create("agy-mcp-test", ["read:intel"])
+        # 2. API Key read:intel tidak boleh POST /api/investigations dan tidak boleh akses runtime-config
+        ro_key = fleet_monitor._api_key_create("ro-test", ["read:intel"])
+        st_ro_post, _, _ = self.request(
+            "POST",
+            "/api/investigations",
+            {"title": "T", "summary": "S"},
+            token=ro_key["token"],
+        )
+        self.assertEqual(st_ro_post, 401)
+        st_ro_rt, _, _ = self.request("GET", "/api/settings/runtime-config", token=ro_key["token"])
+        self.assertEqual(st_ro_rt, 401)
+
+        # 3. Buat API Key dengan scope read:intel + write:investigations untuk agy
+        key = fleet_monitor._api_key_create("agy-mcp-test", ["read:intel", "write:investigations"])
         api_token = key["token"]
 
-        # 3. Simpan investigasi via API Key
+        # 4. Simpan investigasi via API Key
         st, _, body = self.request(
             "POST",
             "/api/investigations",
@@ -654,13 +681,13 @@ class AgentInvestigationApiTests(_ApiTestCase):
         self.assertEqual(inv["model"], "gemini-4-hydrogen")
         self.assertEqual(inv["created_by"], "api_key:agy-mcp-test")
 
-        # 4. List & filter via API Key
+        # 5. List & filter via API Key
         st, _, listed = self.request("GET", "/api/investigations?verdict=SUSPICIOUS", token=api_token)
         self.assertEqual(st, 200)
         self.assertGreaterEqual(listed["total"], 1)
         self.assertEqual(listed["investigations"][0]["id"], inv["id"])
 
-        # 5. Delete harus pakai FLEET_COMMAND_TOKEN
+        # 6. Delete harus pakai FLEET_COMMAND_TOKEN
         st_unauth, _, _ = self.request(
             "POST", "/api/investigations/delete", {"id": inv["id"]}, token=api_token
         )
@@ -674,6 +701,97 @@ class AgentInvestigationApiTests(_ApiTestCase):
         )
         self.assertEqual(st_del, 200)
         self.assertTrue(del_body["deleted"])
+
+
+class SecurityHardeningTests(_ApiTestCase):
+    def test_protected_path_and_domain_rejected(self):
+        tok = fleet_monitor.FLEET_COMMAND_TOKEN
+        st1, _, _ = self.request(
+            "POST",
+            "/api/commands",
+            {"agent_id": "009", "action": "quarantine", "target": "/etc/passwd"},
+            tok,
+        )
+        self.assertEqual(st1, 400)
+        st2, _, _ = self.request(
+            "POST",
+            "/api/commands",
+            {"agent_id": "009", "action": "sinkhole", "target": "api.telegram.org"},
+            tok,
+        )
+        self.assertEqual(st2, 400)
+        st3, _, _ = self.request(
+            "POST",
+            "/api/commands",
+            {"agent_id": "009", "action": "unsinkhole", "target": "evil.example.com"},
+            tok,
+        )
+        self.assertEqual(st3, 200)
+
+    def test_ssrf_and_stored_key_exfiltration_blocked(self):
+        tok = fleet_monitor.FLEET_COMMAND_TOKEN
+        # SSRF ke loopback harus gagal
+        st, _, body = self.request(
+            "POST",
+            "/api/settings/ai/models",
+            {"provider": "custom", "base_url": "http://127.0.0.1:8080/api"},
+            tok,
+        )
+        self.assertEqual(st, 200)
+        self.assertFalse(body["success"])
+        # Exfiltrasi stored key provider google ke host penyerang harus ditolak
+        st2, _, body2 = self.request(
+            "POST",
+            "/api/settings/ai/models",
+            {"provider": "openai", "slot": "primary", "base_url": "https://attacker.example/v1"},
+            tok,
+        )
+        self.assertEqual(st2, 200)
+        self.assertFalse(body2["success"])
+
+    def test_host_header_injection_sanitized_in_installer(self):
+        req = Request(
+            f"{self.base_url}/api/enroll/script/linux",
+            headers={"X-Forwarded-Host": 'evil.com"; id; echo "'},
+            method="GET",
+        )
+        with urlopen(req, timeout=2) as resp:
+            script = resp.read().decode("utf-8")
+        self.assertNotIn("evil.com", script)
+        self.assertNotIn("; id;", script)
+
+    def test_enrollment_onetime_poll_token_pickup(self):
+        st, _, created = self.request(
+            "POST",
+            "/api/enroll/request",
+            {"hostname": "host-sec-1", "os": "linux", "arch": "x86_64"},
+        )
+        self.assertEqual(st, 201)
+        req_id = created["request_id"]
+        claim_secret = created["claim_secret"]
+        # Status tanpa claim_secret ditolak 403
+        st_bad, _, _ = self.request("GET", f"/api/enroll/status?request_id={req_id}")
+        self.assertEqual(st_bad, 403)
+        # Approve oleh admin
+        st_app, _, _ = self.request(
+            "POST",
+            "/api/enroll/approve",
+            {"request_id": req_id},
+            fleet_monitor.FLEET_COMMAND_TOKEN,
+        )
+        self.assertEqual(st_app, 200)
+        # Pickup pertama dapat poll_token
+        st1, _, d1 = self.request(
+            "GET", f"/api/enroll/status?request_id={req_id}&claim_secret={claim_secret}"
+        )
+        self.assertEqual(st1, 200)
+        self.assertTrue(bool(d1.get("poll_token")))
+        # Pickup kedua tidak lagi mengembalikan poll_token (one-time)
+        st2, _, d2 = self.request(
+            "GET", f"/api/enroll/status?request_id={req_id}&claim_secret={claim_secret}"
+        )
+        self.assertEqual(st2, 200)
+        self.assertIsNone(d2.get("poll_token"))
 
 
 if __name__ == "__main__":

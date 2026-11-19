@@ -790,11 +790,11 @@ def ensure_sla(base, key, chat_id, dry, creds=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n8n-url", default="http://100.73.91.17:5678")
+    ap.add_argument("--n8n-url", default="http://127.0.0.1:5678")
     ap.add_argument("--api-key-file", default="/tmp/n8n_api_key.txt")
     ap.add_argument("--workflow-id", default=WORKFLOW_ID_DEFAULT)
     ap.add_argument("--callback-workflow-id", default=CALLBACK_ID_DEFAULT)
-    ap.add_argument("--chat-id", default="1295213498")
+    ap.add_argument("--chat-id", default=os.environ.get("TELEGRAM_CHAT_ID", ""))
     ap.add_argument("--skip-sla", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()

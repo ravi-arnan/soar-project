@@ -4,18 +4,41 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
+const SECURITY_HEADERS = [
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  {
+    key: "Content-Security-Policy",
+    value: [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; "),
+  },
+];
+
 const nextConfig: NextConfig = {
-  // Standalone: image runtime kecil untuk ravi-debian (ThinkPad X260).
   output: "standalone",
-  // Batasi root ke folder dashboard ini (parent /home/ravi/Projects punya
-  // lockfile lain yang bikin resolusi CSS/package salah).
   turbopack: { root: projectRoot },
-  // Teruskan /api/* ke fleet-monitor.py supaya fetch same-origin (tanpa CORS).
-  // CAVEAT: Next.js memanggil rewrites() SEKALI saat `next build` lalu
-  // meng-serialize destination-nya ke .next/routes-manifest.json (build-time),
-  // BUKAN membaca ulang per request di runtime. Jadi nilai FLEET_API_URL yang
-  // dipakai adalah yang ada di env build. Lihat Dockerfile: ARG FLEET_API_URL
-  // (default host.docker.internal:8080) wajib lolos ke builder lewat ENV/ARG.
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: SECURITY_HEADERS,
+      },
+    ];
+  },
+  // Hanya endpoint enrollment/installer publik & healthz yang di-rewrite langsung ke fleet-monitor;
+  // seluruh endpoint data dashboard (/api/fleet, /api/events*, /api/metrics, /api/scan-results, dll.)
+  // dilayani oleh Route Handler Next.js terautentikasi.
   async rewrites() {
     const rawBase =
       process.env.FLEET_API_URL ||
@@ -24,14 +47,12 @@ const nextConfig: NextConfig = {
         : "http://127.0.0.1:8080");
     const base = rawBase.split("?")[0].replace(/\/$/, "");
     return [
-      {
-        source: "/api/:path*",
-        destination: `${base}/api/:path*`,
-      },
-      {
-        source: "/healthz",
-        destination: `${base}/healthz`,
-      },
+      { source: "/api/enroll/request", destination: `${base}/api/enroll/request` },
+      { source: "/api/enroll/status", destination: `${base}/api/enroll/status` },
+      { source: "/api/enroll/script/:os", destination: `${base}/api/enroll/script/:os` },
+      { source: "/api/installer/:path*", destination: `${base}/api/installer/:path*` },
+      { source: "/api/heartbeat", destination: `${base}/api/heartbeat` },
+      { source: "/healthz", destination: `${base}/healthz` },
     ];
   },
 };

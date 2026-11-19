@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   n8n:
     image: n8nio/n8n:2.42.5
@@ -6,80 +12,105 @@ services:
       - 1.1.1.1
     container_name: n8n
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "5678:5678"
+      - "${N8N_BIND_ADDR:-127.0.0.1}:5678:5678"
     env_file:
       - .env
     environment:
-      - N8N_HOST=100.73.91.17
+      - N8N_HOST=${N8N_HOST:-localhost}
       - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - N8N_SECURE_COOKIE=false
-      - WEBHOOK_URL=http://localhost:5678/
-      - GENERIC_TIMEZONE=Asia/Makassar
-      - NODE_TLS_REJECT_UNAUTHORIZED=0
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - ATRIA_API_KEY=${ATRIA_API_KEY}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-false}
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Asia/Makassar}
+      - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-0}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ATRIA_API_KEY=${ATRIA_API_KEY:-}
       - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
+      - ALERT_LOG_TOKEN=${ALERT_LOG_TOKEN:-}
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-}
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-
-
-      # Cegah Code node (Gemini/VT) mati di tengah lonjakan alert serentak
       - N8N_RUNNERS_TASK_TIMEOUT=300
       - N8N_RUNNERS_MAX_CONCURRENCY=10
     volumes:
       - n8n_data:/home/node/.n8n
-      - /home/ravi/Projects/soar-project/scripts:/scripts
+      - ./scripts:/scripts:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
-  # Jembatan SOAR human-in-the-loop: long-poll Telegram getUpdates (keluar saja,
-  # aman di balik NAT) lalu teruskan klik tombol ke webhook n8n lokal.
-  # Host network digunakan agar resolusi DNS memakai host (menghindari flakiness DNS musl Alpine).
   tg-callback-poller:
     image: python:3.12-alpine
     container_name: tg-callback-poller
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
     network_mode: host
     env_file:
       - .env
     environment:
       - N8N_WEBHOOK=http://127.0.0.1:5678/webhook/tg-callback
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-}
+      - TELEGRAM_ALLOWED_CHAT_IDS=${TELEGRAM_ALLOWED_CHAT_IDS:-}
+      - TELEGRAM_ALLOWED_USER_IDS=${TELEGRAM_ALLOWED_USER_IDS:-}
+      - TG_POLLER_OFFSET_FILE=/state/tg-poller-offset.json
     volumes:
-      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
+      - ./scripts:/scripts:ro
+      - ./state:/state:rw
     command: ["python3", "/scripts/tg-callback-poller.py"]
     depends_on:
       - n8n
 
-  # Self-aware health monitor (kategori F): deteksi agent putus / n8n / LLM API /
-  # Wazuh-API down, alert Telegram HANYA saat status berubah (anti-spam).
-  # Host network wajib agar bisa menjangkau Wazuh Manager API (127.0.0.1:55000)
-  # yang diikat ke loopback host.
   health-monitor:
     image: python:3.12-alpine
     container_name: health-monitor
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
     network_mode: host
     env_file:
       - .env
     environment:
-      - WAZUH_API_URL=https://127.0.0.1:55000
+      - WAZUH_API_URL=${WAZUH_API_URL:-https://127.0.0.1:55000}
+      - WAZUH_INDEXER_URL=${WAZUH_INDEXER_URL:-https://127.0.0.1:9200}
       - N8N_HEALTH_URL=http://127.0.0.1:5678/healthz
+      - FLEET_HEALTH_URL=http://127.0.0.1:8080/healthz
+      - DASHBOARD_HEALTH_URL=http://127.0.0.1:3000/api/auth/me
+      - MISP_HEALTH_URL=http://127.0.0.1:8090/stats
+      - ALERT_LOG_HEALTH_URL=http://127.0.0.1:8091/stats
+      - HEALTHCHECK_PING_URL=${HEALTHCHECK_PING_URL:-}
     volumes:
-      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
+      - ./scripts:/scripts:ro
       - health_state:/state
     command: ["python3", "/scripts/health-monitor.py"]
     depends_on:
       - n8n
 
-  # Fleet Monitor 100 PC — custom monitoring arahan dospem, desain Wazuh (light theme, header #011a2f, aksen #00a9e0)
-  # Poll Wazuh API (30s) + terima heartbeat Rust agent (60s) -> single-pane 100 workstation.
-  # Ringan: stdlib http.server, tanpa DB, bind 0.0.0.0:8080 (host run: python3 scripts/fleet-monitor.py, Tailscale 100.95.198.108:8080 untuk 100 PC).
-  # Docker: butuh host network agar bisa reach Wazuh 127.0.0.1:55000 (manager bind 127.0.0.1). Alternatif: jalankan di host (lebih ringan, tanpa docker).
   fleet-monitor:
     image: python:3.12-alpine
     container_name: fleet-monitor
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -87,38 +118,42 @@ services:
     env_file:
       - .env
     environment:
+      - FLEET_BIND=${FLEET_BIND:-0.0.0.0}
       - FLEET_PORT=8080
-      - WAZUH_API_URL=https://127.0.0.1:55000
+      - PUBLIC_SOAR_URL=${PUBLIC_SOAR_URL:-http://localhost:3000}
+      - PUBLIC_ENROLL_URL=${PUBLIC_ENROLL_URL:-http://localhost:3000}
+      - WAZUH_MANAGER_HOST=${WAZUH_MANAGER_HOST:-127.0.0.1}
+      - WAZUH_API_URL=${WAZUH_API_URL:-https://127.0.0.1:55000}
       - N8N_HEALTH_URL=http://127.0.0.1:5678/healthz
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
       - FLEET_AGENT_POLL_TOKENS_JSON=${FLEET_AGENT_POLL_TOKENS_JSON}
+      - SOAR_SETTINGS_ENCRYPTION_KEY=${SOAR_SETTINGS_ENCRYPTION_KEY:-}
+      - FLEET_BOOTSTRAP_ADMIN_EMAIL=${FLEET_BOOTSTRAP_ADMIN_EMAIL:-}
+      - FLEET_BOOTSTRAP_ADMIN_PASSWORD=${FLEET_BOOTSTRAP_ADMIN_PASSWORD:-}
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
       - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-}
       - CLOUDFLARE_ACCESS_APP_ID=${CLOUDFLARE_ACCESS_APP_ID:-}
       - CLOUDFLARE_ACCESS_POLICY_ID=${CLOUDFLARE_ACCESS_POLICY_ID:-}
-      # Riwayat event durable (SQLite) + Wazuh Indexer untuk view minggu/bulan.
       - FLEET_EVENTS_DB=/state/events.db
       - WAZUH_INDEXER_URL=${WAZUH_INDEXER_URL:-https://127.0.0.1:9200}
       - WAZUH_INDEXER_USER=${WAZUH_INDEXER_USER:-admin}
-      - WAZUH_INDEXER_PASS=${WAZUH_INDEXER_PASS}
-      # Roster heartbeat di-persist supaya agent yang sedang offline tidak
-
-      # hilang dari daftar saat container/restart (scripts mount read-only).
+      - WAZUH_INDEXER_PASS=${WAZUH_INDEXER_PASS:-}
       - FLEET_STATE_FILE=/state/fleet-state.json
     volumes:
-      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
-      - /home/ravi/Projects/soar-project/state:/state:rw
-      - /home/ravi/Projects/soar-project/deploy/bundle:/deploy/bundle:ro
-      - /home/ravi/Projects/soar-project/agent-rs/target/release:/agent-rs/target/release:ro
+      - ./scripts:/scripts:ro
+      - ./state:/state:rw
+      - ./deploy/bundle:/deploy/bundle:ro
+      - ./agent-rs/target/release:/agent-rs/target/release:ro
     command: ["python3", "/scripts/fleet-monitor.py"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/healthz\", timeout=3)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       - n8n
 
-  # Dashboard fleet (UI Wazuh lengkap dari wazuh-dashboard-clone) — menggantikan
-  # tampilan fleet-monitor.py. Backend datanya TETAP fleet-monitor.py: Next
-  # hanya mem-proxy /api/* ke sana (FLEET_API_URL), jadi agent & n8n tidak perlu
-  # diubah. Build: docker build -t soar-fleet-dashboard ./dashboard
   dashboard:
     build:
       context: ./dashboard
@@ -126,32 +161,45 @@ services:
     image: soar-fleet-dashboard:latest
     container_name: fleet-dashboard
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
     ports:
       - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=production
       - NEXT_TELEMETRY_DISABLED=1
       - FLEET_COMMAND_TOKEN=${FLEET_COMMAND_TOKEN}
-      - DASHBOARD_ALLOWED_ORIGINS=${DASHBOARD_ALLOWED_ORIGINS}
+      - DASHBOARD_ALLOWED_ORIGINS=${DASHBOARD_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       - DASHBOARD_LOGIN_TOKEN=${DASHBOARD_LOGIN_TOKEN}
-      - RESEND_API_KEY=${RESEND_API_KEY}
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      # fleet-monitor pakai network_mode: host, jadi dari container harus lewat
-      # gateway host (127.0.0.1 di dalam container bukan host).
+      - PUBLIC_SOAR_URL=${PUBLIC_SOAR_URL:-http://localhost:3000}
+      - PUBLIC_ENROLL_URL=${PUBLIC_ENROLL_URL:-http://localhost:3000}
+      - WAZUH_MANAGER_HOST=${WAZUH_MANAGER_HOST:-127.0.0.1}
+      - CF_ACCESS_TEAM_DOMAIN=${CF_ACCESS_TEAM_DOMAIN:-}
+      - CF_ACCESS_AUD=${CF_ACCESS_AUD:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - FLEET_API_URL=http://host.docker.internal:8080
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - fleet-monitor
 
-  # MISP feed consumer (sumber threat-intel ke-4): index feed CIRCL OSINT MISP
-  # + API lookup. network_mode host agar n8n (container) reach via host.docker.internal:8090.
   misp-index:
     image: python:3.12-alpine
     container_name: misp-index
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -159,22 +207,31 @@ services:
     env_file:
       - .env
     environment:
+      - MISP_BIND=${MISP_BIND:-127.0.0.1}
       - MISP_PORT=8090
       - MISP_DB=/state/misp.db
       - MISP_SYNC_HOURS=12
+      - MISP_API_TOKEN=${MISP_API_TOKEN:-}
     volumes:
-      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
-      - /home/ravi/Projects/soar-project/state:/state:rw
+      - ./scripts:/scripts:ro
+      - ./state:/state:rw
     command: ["python3", "/scripts/misp-feed-sync.py", "--serve", "--db", "/state/misp.db"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8090/healthz\", timeout=3)'"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
 
-  # Pencatat alert Telegram keluar + registry keputusan analis (HITL, M3):
-  # Bot API tak punya histori keluar, jadi n8n POST setiap alert terkirim ke
-  # sini (JSONL durable); service yang sama menyimpan item HITL tertunda
-  # (tenggat + audit trail keputusan) yang dibaca dashboard/eskalasi SLA.
   alert-log:
     image: python:3.12-alpine
     container_name: alert-log
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 256m
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -182,15 +239,22 @@ services:
     env_file:
       - .env
     environment:
+      - ALERT_LOG_BIND=${ALERT_LOG_BIND:-127.0.0.1}
       - ALERT_LOG_PORT=8091
       - ALERT_LOG_FILE=/state/telegram-alerts.jsonl
       - ALERT_DECISION_FILE=/state/decisions.json
       - ALERT_DECISION_AUDIT_FILE=/state/decisions-audit.jsonl
       - ALERT_DECISION_TTL_SECS=21600
+      - ALERT_LOG_TOKEN=${ALERT_LOG_TOKEN}
     volumes:
-      - /home/ravi/Projects/soar-project/scripts:/scripts:ro
-      - /home/ravi/Projects/soar-project/state:/state:rw
+      - ./scripts:/scripts:ro
+      - ./state:/state:rw
     command: ["python3", "/scripts/alert-log.py", "--serve"]
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8091/healthz\", timeout=3)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   n8n_data:

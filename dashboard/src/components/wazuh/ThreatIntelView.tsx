@@ -12,6 +12,7 @@ import {
   type ThreatIntelConfig,
 } from '@/lib/aiConfig';
 import { PeriodFilter } from './PeriodFilter';
+import { useAuth } from '../AuthContext';
 import { WuiBadge, WuiCallOut, WuiHealth, WuiPageHeader, WuiPanel, type WuiTone } from '../wui/WuiPrimitives';
 import type { FleetEvent, PeriodValue } from '@/lib/fleet';
 
@@ -19,6 +20,7 @@ const DEFAULT_PERIOD: PeriodValue = { preset: '7d', since: null, until: null };
 
 interface ThreatAnalysis {
   model: string;
+  isRealAi: boolean;
   verdict: 'MALICIOUS' | 'SUSPICIOUS' | 'BENIGN';
   verdictLabel: string;
   reasoning: string;
@@ -148,6 +150,7 @@ function generateThreatAnalysis(event: FleetEvent, activeAi: AiConfig): ThreatAn
 
   return {
     model: modelName,
+    isRealAi: hasRealAi,
     verdict,
     verdictLabel,
     reasoning,
@@ -179,10 +182,13 @@ interface AgentInvestigation {
 }
 
 export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
+  const { user } = useAuth();
+  const canWrite = user?.role === 'admin' || user?.role === 'analyst';
   const [activeTab, setActiveTab] = useState<'pipeline' | 'agent'>('pipeline');
   const [period, setPeriod] = useState<PeriodValue>(DEFAULT_PERIOD);
   const [filterSeverity, setFilterSeverity] = useState<'ALL' | 'MALICIOUS' | 'SUSPICIOUS' | 'BENIGN'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [visibleLimit, setVisibleLimit] = useState(50);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [quarantineStatus, setQuarantineStatus] = useState<Record<string, string>>({});
   const [isQuarantining, setIsQuarantining] = useState<string | null>(null);
@@ -329,6 +335,13 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
       return;
     }
 
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(`Kirim perintah karantina untuk "${path}" pada agent ${agentId}?`)
+    ) {
+      return;
+    }
+
     try {
       setIsQuarantining(key);
       const res = await postCommand({
@@ -361,6 +374,12 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
   };
 
   const handleDeleteInvestigation = async (invId: string) => {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(`Hapus laporan investigasi ${invId}? Tindakan ini tidak dapat dibatalkan.`)
+    ) {
+      return;
+    }
     try {
       setDeletingInvId(invId);
       const res = await fetch('/api/investigations', {
@@ -476,7 +495,7 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
         title="Status sistem orkestrasi AI agent"
         right={
           <div className="flex items-center gap-3">
-            {onOpenAiSettings && (
+            {onOpenAiSettings && canWrite && (
               <button
                 type="button"
                 onClick={onOpenAiSettings}
@@ -652,7 +671,8 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
             </div>
           </WuiPanel>
         ) : (
-          filteredItems.map(({ event, analysis }, idx) => {
+          <>
+          {filteredItems.slice(0, visibleLimit).map(({ event, analysis }, idx) => {
             const filename = extractFilename(event.path, event.hash);
             const actionKey = `${event.agent_id || '001'}-${event.path}`;
             const actionMessage = quarantineStatus[actionKey];
@@ -718,7 +738,7 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
                 <div className="px-4 py-3 space-y-2.5">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
                     <span className="font-semibold uppercase tracking-wide text-[#535966]">
-                      Analisis AI Agent
+                      {analysis.isRealAi ? 'Analisis AI Agent' : 'Ringkasan Heuristik (Tanpa AI)'}
                     </span>
                     <span className="text-[#69707D] font-mono">
                       Engine: {analysis.model}
@@ -807,7 +827,7 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
                         </div>
                       )}
 
-                      {event.path && event.path !== '-' && (
+                      {canWrite && event.path && event.path !== '-' && (
                         <button
                           type="button"
                           onClick={() => handleQuarantine(event)}
@@ -827,7 +847,19 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
                 </div>
               </div>
             );
-          })
+          })}
+          {filteredItems.length > visibleLimit && (
+            <div className="flex justify-center pt-1">
+              <button
+                type="button"
+                onClick={() => setVisibleLimit((n) => n + 50)}
+                className="px-4 py-1.5 bg-white border border-[#D3DAE6] rounded-[4px] text-[12px] font-medium text-[#006BB4] hover:bg-[#FAFBFD] cursor-pointer"
+              >
+                Tampilkan lebih banyak ({visibleLimit} dari {filteredItems.length})
+              </button>
+            </div>
+          )}
+          </>
         )}
       </div>
 
@@ -1037,15 +1069,17 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
                       <div className="font-mono">
                         ID: {inv.id} · Dicatat oleh: {inv.created_by || inv.agent_source}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteInvestigation(inv.id)}
-                        disabled={deletingInvId === inv.id}
-                        className="inline-flex items-center gap-1 text-[#BD271E] hover:underline disabled:opacity-50 cursor-pointer"
-                      >
-                        <WuiIcon type="trash" size="xs" />
-                        <span>{deletingInvId === inv.id ? 'Menghapus...' : 'Hapus'}</span>
-                      </button>
+                      {canWrite && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteInvestigation(inv.id)}
+                          disabled={deletingInvId === inv.id}
+                          className="inline-flex items-center gap-1 text-[#BD271E] hover:underline disabled:opacity-50 cursor-pointer"
+                        >
+                          <WuiIcon type="trash" size="xs" />
+                          <span>{deletingInvId === inv.id ? 'Menghapus...' : 'Hapus'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

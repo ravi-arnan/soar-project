@@ -3,13 +3,39 @@ $ErrorActionPreference = "Stop"
 
 $AGENT_ID = $env:AGENT_ID
 $AGENT_NAME = $env:AGENT_NAME
-$SERVER = if ($env:SERVER) { $env:SERVER } else { "100.73.91.17" }
+# Wajib set $env:SERVER (bare IP/host server SOAR, tanpa scheme/port).
+$SERVER = $env:SERVER
+$BINARY_URL = $env:BINARY_URL
+$BINARY_SHA256 = $env:BINARY_SHA256
 $POLL_TOKEN = $env:SOAR_FLEET_POLL_TOKEN
-$BINARY_SOURCE = Join-Path $PSScriptRoot "soar-agent.exe"
 $LOCAL_PATH = "$env:ProgramFiles\soar-agent\soar-agent.exe"
 $TOKEN_DIR = "$env:ProgramData\soar-agent"
 $TOKEN_FILE = "$TOKEN_DIR\fleet.token"
 $TASK_NAME = "SOAR Agent"
+
+if (-not $AGENT_ID -or -not $SERVER) {
+    Write-Host 'Gunakan: $env:AGENT_ID="005" $env:SERVER="192.0.2.10" $env:AGENT_NAME="workstation-01" powershell -File install-agent-windows.ps1'
+    exit 1
+}
+if (-not $AGENT_NAME) {
+    $AGENT_NAME = "windows-$($env:COMPUTERNAME.ToLower())"
+}
+if (-not $POLL_TOKEN -or $POLL_TOKEN.Length -lt 32) {
+    Write-Host 'Gunakan: $env:SOAR_FLEET_POLL_TOKEN="token-min-32-karakter" sebelum menjalankan installer.'
+    exit 1
+}
+if (-not $BINARY_URL) {
+    Write-Host 'Set BINARY_URL ke URL HTTPS binary yang sudah diverifikasi.'
+    exit 1
+}
+$BINARY_URI = [Uri]$BINARY_URL
+if (-not $BINARY_URI.IsAbsoluteUri -or $BINARY_URI.Scheme -ne "https") {
+    Write-Host 'BINARY_URL wajib memakai HTTPS.'
+    exit 1
+}
+
+Write-Host "[1/5] Buat direktori $env:ProgramFiles\soar-agent"
+New-Item -ItemType Directory -Force -Path "$env:ProgramFiles\soar-agent" | Out-Null
 
 # Cakupan pantau default (profile installer). Tambah folder via $env:SOAR_WATCH
 # (dipisah koma). Drive non-system (USB/HDD eksternal) di-watch otomatis oleh
@@ -19,31 +45,46 @@ $WATCH = if ($env:SOAR_WATCH) { $env:SOAR_WATCH } else { "$env:USERPROFILE\Downl
 # mati yang tidak terlihat oleh FIM. Default 6 jam.
 $SCAN_INTERVAL = if ($env:SOAR_SCAN_INTERVAL_SECS) { $env:SOAR_SCAN_INTERVAL_SECS } else { "21600" }
 
-if (-not $AGENT_ID) { throw "AGENT_ID wajib diisi" }
-if (-not $POLL_TOKEN -or $POLL_TOKEN.Length -lt 32) { throw "SOAR_FLEET_POLL_TOKEN minimal 32 karakter" }
-if (-not (Test-Path $BINARY_SOURCE)) { throw "Binary bundle tidak ditemukan: $BINARY_SOURCE" }
-if (-not $AGENT_NAME) { $AGENT_NAME = "windows-$($env:COMPUTERNAME.ToLower())" }
+Write-Host "[2/5] Download binary dari $BINARY_URL"
+Invoke-WebRequest -Uri $BINARY_URL -OutFile $LOCAL_PATH -UseBasicParsing
+if ($BINARY_SHA256) {
+    $actual = (Get-FileHash -Path $LOCAL_PATH -Algorithm SHA256).Hash.ToLower()
+    if ($actual -ne $BINARY_SHA256.Trim().ToLower()) {
+        Remove-Item $LOCAL_PATH -Force -ErrorAction SilentlyContinue
+        Write-Host "ERROR: Verifikasi SHA-256 binary gagal (got $actual)."
+        exit 1
+    }
+}
 
-New-Item -ItemType Directory -Force -Path "$env:ProgramFiles\soar-agent" | Out-Null
-Copy-Item $BINARY_SOURCE $LOCAL_PATH -Force
+# NOTE: binary Rust ini console app tanpa windows-service handler, jadi
+# New-Service gagal start (error 1053). Pakai Scheduled Task (SYSTEM) yang terbukti jalan.
+Write-Host "[3/5] Bersihkan service/task lama"
+Stop-Service soar-agent -ErrorAction SilentlyContinue
+sc.exe delete soar-agent | Out-Null
+Unregister-ScheduledTask -TaskName $TASK_NAME -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
 New-Item -ItemType Directory -Force -Path $TOKEN_DIR | Out-Null
 # Token lama bisa terkunci ACL (SYSTEM+Administrators read-only) -> hapus dulu
 # supaya reinstall tidak gagal "Access denied".
 Remove-Item $TOKEN_FILE -Force -ErrorAction SilentlyContinue
 [System.IO.File]::WriteAllText($TOKEN_FILE, $POLL_TOKEN)
 icacls $TOKEN_FILE /inheritance:r /grant:r "*S-1-5-18:(R)" "*S-1-5-32-544:(R)" | Out-Null
+[Environment]::SetEnvironmentVariable("SOAR_FLEET_POLL_TOKEN_FILE", $TOKEN_FILE, "Machine")
+[Environment]::SetEnvironmentVariable("SOAR_FLEET_POLL_TOKEN", $null, "Machine")
 
-Stop-Service soar-agent -ErrorAction SilentlyContinue
-sc.exe delete soar-agent | Out-Null
-Unregister-ScheduledTask -TaskName $TASK_NAME -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+Write-Host "[4/5] Buat Scheduled Task $TASK_NAME (SYSTEM, AtStartup+AtLogOn)"
 $ARGS = "--webhook http://${SERVER}:5678/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name `"$AGENT_NAME`" --fleet-url http://${SERVER}:8080/api/heartbeat --fleet-poll-token-file `"$TOKEN_FILE`" --watch `"$WATCH`" --scan-interval-secs $SCAN_INTERVAL"
 $action = New-ScheduledTaskAction -Execute $LOCAL_PATH -Argument $ARGS
 $triggerStartup = New-ScheduledTaskTrigger -AtStartup
-$triggerLogon = New-ScheduledTaskTrigger -AtLogon
+$triggerLogon = New-ScheduledTaskTrigger -AtLogOn
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
 Register-ScheduledTask -TaskName $TASK_NAME -Action $action -Trigger @($triggerStartup, $triggerLogon) -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName $TASK_NAME
+
+Write-Host "[5/5] Verifikasi"
 Start-Sleep 3
 Get-ScheduledTask -TaskName $TASK_NAME | Format-Table State, TaskName
 Get-Process soar-agent -ErrorAction SilentlyContinue | Format-Table Id, WorkingSet
+
+Write-Host "Selesai. Test: buat file di Downloads, cek n8n execution."
+Write-Host "Uninstall: Unregister-ScheduledTask -TaskName '$TASK_NAME' -Confirm:`$false"

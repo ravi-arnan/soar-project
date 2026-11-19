@@ -17,6 +17,7 @@ interface SettingsViewProps {
   refreshMs: number;
   onRefreshMsChange: (ms: number) => void;
   initialTab?: 'general' | 'keys' | 'dynamic-config';
+  userRole?: 'admin' | 'analyst' | 'viewer';
 }
 
 interface ComponentResource {
@@ -38,6 +39,7 @@ export function SettingsView({
   refreshMs,
   onRefreshMsChange,
   initialTab = 'general',
+  userRole = 'viewer',
 }: SettingsViewProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'keys' | 'dynamic-config'>(initialTab);
   const [prevInitialTab, setPrevInitialTab] = useState(initialTab);
@@ -49,6 +51,7 @@ export function SettingsView({
   }
 
   useEffect(() => {
+    if (userRole === 'viewer') return;
     let ignore = false;
     fetch('/api/settings/threat-intel', { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
@@ -61,17 +64,16 @@ export function SettingsView({
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [userRole]);
 
-  // Data pemakaian resource riil kontainer Docker di server produksi (docker stats)
   const components: ComponentResource[] = [
     {
       name: 'Wazuh Indexer (OpenSearch Cluster)',
       category: 'storage',
       role: 'Penyimpanan event terpusat, pengindeksan telemetri FIM & audit log riwayat',
-      memory: '1.30 GiB',
-      memPercent: '17.0%',
-      status: 'Active (Cluster Green)',
+      memory: 'Managed',
+      memPercent: '-',
+      status: health?.wazuh_api ? 'Online' : 'Offline / Unreachable',
       isOk: !!health?.wazuh_api,
       port: ':9200',
     },
@@ -79,9 +81,9 @@ export function SettingsView({
       name: 'Wazuh Manager Core (Analysisd)',
       category: 'core',
       role: 'Mesin korelasi aturan Sysmon, decoder rantai proses, dan trigger Active Response',
-      memory: '1.02 GiB',
-      memPercent: '13.0%',
-      status: 'Active (v4.14.8)',
+      memory: 'Managed',
+      memPercent: '-',
+      status: health?.wazuh_api ? 'Online' : 'Offline / Unreachable',
       isOk: !!health?.wazuh_api,
       port: ':1514, :55000',
     },
@@ -89,39 +91,29 @@ export function SettingsView({
       name: 'n8n Orchestrator (Otak SOAR)',
       category: 'orchestration',
       role: 'Eksekusi playbook insiden, evaluasi matriks otonomi, koroborasi VT/MB, dan callback Telegram',
-      memory: '454 MiB',
-      memPercent: '5.8%',
-      status: 'Active (v2.42.5)',
+      memory: 'Managed',
+      memPercent: '-',
+      status: health?.n8n ? 'Online' : 'Offline / Unreachable',
       isOk: !!health?.n8n,
       port: ':5678',
-    },
-    {
-      name: 'Wazuh Web Dashboard',
-      category: 'core',
-      role: 'Antarmuka analitik bawaan Wazuh untuk kepatuhan regulasi dan matriks MITRE',
-      memory: '170 MiB',
-      memPercent: '2.2%',
-      status: 'Active (v4.14.8)',
-      isOk: !!health?.wazuh_api,
-      port: ':443',
     },
     {
       name: 'Fleet Web Dashboard (Next.js Standalone)',
       category: 'core',
       role: 'Antarmuka komando pusat armada, session security gate 2FA, dan integrasi MCP',
-      memory: '55 MiB',
-      memPercent: '0.7%',
-      status: 'Active (Next.js 16)',
+      memory: 'Managed',
+      memPercent: '-',
+      status: online ? 'Online' : 'Offline',
       isOk: online,
       port: ':3000',
     },
     {
       name: 'Fleet Monitor & M2M API Engine',
       category: 'microservice',
-      role: 'Poller armada 100 PC, sinkronisasi cache VT/MB server-side, dan SQLite API Key auth',
-      memory: '21 MiB',
-      memPercent: '0.3%',
-      status: 'Active (Python stdlib)',
+      role: 'Control plane API, sinkronisasi cache VT/MB server-side, dan SQLite API Key auth',
+      memory: 'Managed',
+      memPercent: '-',
+      status: online ? 'Online (Python stdlib)' : 'Offline',
       isOk: online,
       port: ':8080',
     },
@@ -129,20 +121,20 @@ export function SettingsView({
       name: 'MISP Threat Intel Cache & OSINT Sync',
       category: 'microservice',
       role: 'Penyedia indeks indikator kompromi lokal dari feed CIRCL OSINT tanpa kuota',
-      memory: '21 MiB',
-      memPercent: '0.3%',
-      status: 'Active (SQLite indexed)',
-      isOk: true,
+      memory: 'Managed',
+      memPercent: '-',
+      status: health?.misp ? 'Online (SQLite indexed)' : 'Offline / Unreachable',
+      isOk: !!health?.misp,
       port: ':8090',
     },
     {
       name: 'Telegram Decision & Health Loggers',
       category: 'microservice',
       role: 'Registry keputusan HITL, audit trail analis ber-SLA 15m, dan self-aware health checker',
-      memory: '23 MiB',
-      memPercent: '0.3%',
-      status: 'Active (Offset Protected)',
-      isOk: true,
+      memory: 'Managed',
+      memPercent: '-',
+      status: health?.alert_log ? 'Online (Authenticated)' : 'Offline / Unreachable',
+      isOk: !!health?.alert_log,
       port: ':8091',
     },
     {
@@ -151,9 +143,9 @@ export function SettingsView({
       role: activeAi.fallback_enabled
         ? `Triage kontekstual dinamis (Fallback: ${activeAi.fallback_model})`
         : 'Triage kontekstual dinamis (Fallback nonaktif)',
-      memory: '0 MiB (Offloaded API)',
-      memPercent: '0.0%',
-      status: activeAi.enabled ? 'Connected / Ready' : 'Disabled',
+      memory: 'Offloaded API',
+      memPercent: '-',
+      status: activeAi.enabled ? (health?.gemini ? 'Configured' : 'Key Missing / Fallback') : 'Disabled',
       isOk: activeAi.enabled ? !!health?.gemini : false,
       port: 'Cloud / Custom API',
     },
@@ -186,73 +178,77 @@ export function SettingsView({
           <WuiIcon type="controlsHorizontal" size="s" />
           <span>General &amp; Diagnostics</span>
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('dynamic-config')}
-          className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
-            activeTab === 'dynamic-config'
-              ? 'border-[#006BB4] text-[#006BB4] font-semibold'
-              : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
-          }`}
-        >
-          <WuiIcon type="machineLearningApp" size="s" className="ouiIcon--mono" />
-          <span>AI Engine &amp; Threat Intel</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('keys')}
-          className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
-            activeTab === 'keys'
-              ? 'border-[#006BB4] text-[#006BB4] font-semibold'
-              : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
-          }`}
-        >
-          <WuiIcon type="lock" size="s" />
-          <span>API Keys &amp; Agent Access</span>
-        </button>
+        {userRole !== 'viewer' && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('dynamic-config')}
+            className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
+              activeTab === 'dynamic-config'
+                ? 'border-[#006BB4] text-[#006BB4] font-semibold'
+                : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
+            }`}
+          >
+            <WuiIcon type="machineLearningApp" size="s" className="ouiIcon--mono" />
+            <span>AI Engine &amp; Threat Intel</span>
+          </button>
+        )}
+        {userRole === 'admin' && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('keys')}
+            className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
+              activeTab === 'keys'
+                ? 'border-[#006BB4] text-[#006BB4] font-semibold'
+                : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
+            }`}
+          >
+            <WuiIcon type="lock" size="s" />
+            <span>API Keys &amp; Agent Access</span>
+          </button>
+        )}
       </div>
 
-      {activeTab === 'dynamic-config' ? (
-        <DynamicSettingsView />
-      ) : activeTab === 'keys' ? (
+      {activeTab === 'dynamic-config' && userRole !== 'viewer' ? (
+        <DynamicSettingsView userRole={userRole} />
+      ) : activeTab === 'keys' && userRole === 'admin' ? (
         <ApiKeysView />
       ) : (
         <div className="space-y-4">
-          {/* Resource Summary Strip */}
+          {/* Live Status Summary Strip */}
           <div className="bg-white border border-[#D3DAE6] rounded-[4px] grid grid-cols-1 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-[#E9EDF3]">
             <div className="px-4 py-3">
               <div className="text-[12px] font-medium text-[#535966]">
-                Server RAM Usage
+                Services Healthy
               </div>
               <div className="text-[20px] font-semibold font-mono tabular-nums text-[#006BB4] mt-0.5">
-                ~3.05 GiB
+                {components.filter((c) => c.isOk).length} / {components.length}
               </div>
-              <div className="text-[11px] text-[#69707D] mt-0.5">dari 7.65 GiB (~40% beban)</div>
+              <div className="text-[11px] text-[#69707D] mt-0.5">Status probe live backend</div>
             </div>
             <div className="px-4 py-3">
               <div className="text-[12px] font-medium text-[#535966]">
-                Rust Endpoint Agent
+                Active Fleet Agents
               </div>
               <div className="text-[20px] font-semibold font-mono tabular-nums text-[#007871] mt-0.5">
-                ~7 - 10 MiB
+                {stats.active} / {stats.total}
               </div>
-              <div className="text-[11px] text-[#69707D] mt-0.5">soar-agent vs ~50-80 MiB Wazuh</div>
+              <div className="text-[11px] text-[#69707D] mt-0.5">Rust: {stats.rust} · Wazuh: {stats.wazuh}</div>
             </div>
             <div className="px-4 py-3">
               <div className="text-[12px] font-medium text-[#535966]">
-                Core Services
+                Events (24h)
               </div>
               <div className="text-[20px] font-semibold font-mono tabular-nums text-[#1A1C21] mt-0.5">
-                {components.length}
+                {stats.events_total}
               </div>
-              <div className="text-[11px] text-[#69707D] mt-0.5">Layanan orkestrasi terkorelasi</div>
+              <div className="text-[11px] text-[#69707D] mt-0.5">All-time: {stats.events_all_time ?? stats.events_total}</div>
             </div>
             <div className="px-4 py-3">
               <div className="text-[12px] font-medium text-[#535966]">
                 Transmission Mode
               </div>
               <div className="text-[14px] font-semibold text-[#1A1C21] mt-1.5">
-                Hash-Only JSON (&lt;1 KB)
+                Hash-Only JSON (&lt;2 KB)
               </div>
               <div className="text-[11px] text-[#69707D] mt-0.5">Tanpa kirim berkas utuh</div>
             </div>

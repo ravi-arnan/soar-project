@@ -1,21 +1,20 @@
+import { isHttpsRequest, originAllowed } from "../../../../lib/requestGuard.ts";
 import { clearCachedEmailSession, SESSION_COOKIE_NAME } from "../../../../lib/session.ts";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request): Promise<Response> {
+  if (!originAllowed(request)) {
+    return Response.json({ error: "Origin tidak diizinkan" }, { status: 403 });
+  }
+
   const cfEmail = request.headers.get("cf-access-authenticated-user-email");
   const hasCfAccess = Boolean(
     cfEmail?.trim() || request.headers.get("cf-access-jwt-assertion")?.trim(),
   );
 
   clearCachedEmailSession(cfEmail);
-
-  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  const secure =
-    new URL(request.url).protocol === "https:" ||
-    request.headers.get("origin")?.startsWith("https://") === true ||
-    forwardedProto === "https";
-
+  const secure = isHttpsRequest(request);
   const cookie = `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure ? "; Secure" : ""}`;
 
   return Response.json(

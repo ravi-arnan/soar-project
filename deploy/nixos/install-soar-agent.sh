@@ -14,21 +14,26 @@
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NIXOS_DIR=/etc/nixos
 CONF="$NIXOS_DIR/configuration.nix"
-MODULE_SRC="/home/ravi/Projects/soar-project/deploy/nixos/soar-agent.nix"
-AGENT_SRC="/home/ravi/Projects/soar-project/agent-rs"
+MODULE_SRC="$REPO_ROOT/deploy/nixos/soar-agent.nix"
+AGENT_SRC="$REPO_ROOT/agent-rs"
 LOCAL="$NIXOS_DIR/soar-agent.nix"
 
 AGENT_ID="${AGENT_ID:-002}"
-AGENT_NAME="${AGENT_NAME:-nixbox}"
-AGENT_USER="${AGENT_USER:-ravi}"
-SERVER="${SERVER:-192.168.1.47}"
-FLAKE_ATTR="${FLAKE_ATTR:-nixbox}"
+AGENT_NAME="${AGENT_NAME:-$(hostname)}"
+AGENT_USER="${AGENT_USER:-${SUDO_USER:-$USER}}"
+SERVER="${SERVER:-}"
+FLAKE_ATTR="${FLAKE_ATTR:-$(hostname)}"
 POLL_TOKEN="${FLEET_AGENT_POLL_TOKEN:-}"
 
 if [[ $EUID -ne 0 ]]; then
   echo "ERROR: jalankan dengan sudo (butuh tulis /etc/nixos + nixos-rebuild)" >&2
+  exit 1
+fi
+if [[ -z "$SERVER" ]]; then
+  echo "ERROR: SERVER wajib diisi (contoh: SERVER=192.0.2.10)" >&2
   exit 1
 fi
 if [[ ${#POLL_TOKEN} -lt 32 ]]; then

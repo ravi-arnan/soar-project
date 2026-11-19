@@ -59,12 +59,58 @@ class TestTgCallbackPoller(unittest.TestCase):
             return upd["update_id"] == 201  # 201 sukses, 202 gagal
 
         with patch.object(poller, "forward", side_effect=side_effect) as mock_fwd:
-            offset, count, failed = poller.process_updates(updates)
+            offset, count, failed = poller.process_updates(updates, failure_counts={})
             # Offset harus tertahan di 202 agar Telegram tidak menghapusnya
             self.assertEqual(offset, 202)
             self.assertEqual(count, 1)
             self.assertTrue(failed)
             self.assertEqual(mock_fwd.call_count, 2)
+
+    def test_process_updates_dead_letters_after_max_retries(self):
+        updates = [
+            {"update_id": 202, "callback_query": {"id": "cq2"}},
+            {"update_id": 203, "callback_query": {"id": "cq3"}},
+        ]
+        counts = {}
+        with patch.object(poller, "forward", side_effect=lambda u, webhook_url=None: u["update_id"] == 203):
+            # Percobaan 1 & 2 menahan offset di 202
+            off1, _, fail1 = poller.process_updates(updates, failure_counts=counts, max_retries=3)
+            self.assertEqual(off1, 202)
+            self.assertTrue(fail1)
+            off2, _, fail2 = poller.process_updates(updates, failure_counts=counts, max_retries=3)
+            self.assertEqual(off2, 202)
+            self.assertTrue(fail2)
+            # Percobaan 3 men-dead-letter 202 dan lanjut memproses 203
+            off3, cnt3, fail3 = poller.process_updates(updates, failure_counts=counts, max_retries=3)
+            self.assertEqual(off3, 204)
+            self.assertEqual(cnt3, 2)
+            self.assertFalse(fail3)
+
+    def test_sender_allowlist_rejects_unauthorized_chat(self):
+        updates = [
+            {
+                "update_id": 401,
+                "callback_query": {"id": "cq1", "from": {"id": 999}, "message": {"chat": {"id": 111}}},
+            },
+            {
+                "update_id": 402,
+                "callback_query": {"id": "cq2", "from": {"id": 777}, "message": {"chat": {"id": 222}}},
+            },
+        ]
+        with patch.object(poller, "forward", return_value=True) as mock_fwd:
+            off, cnt, failed = poller.process_updates(
+                updates,
+                failure_counts={},
+                allowed_chats={"222"},
+                allowed_users={"777"},
+            )
+            self.assertEqual(off, 403)
+            self.assertEqual(cnt, 2)
+            self.assertFalse(failed)
+            self.assertEqual(mock_fwd.call_count, 1)
+
+    def test_sanitize_error_redacts_bot_token(self):
+        self.assertNotIn("123456:SECRET_ABC", poller._sanitize_error("https://api.telegram.org/bot123456:SECRET_ABC/getUpdates"))
 
     def test_process_updates_skips_non_callback(self):
         updates = [

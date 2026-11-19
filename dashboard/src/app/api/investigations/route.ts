@@ -1,32 +1,18 @@
+import { fleetBaseUrl, originAllowed, readBoundedJson } from "../../../lib/requestGuard.ts";
 import { resolveAuthorizedSession } from "../../../lib/session.ts";
 
 export const runtime = "nodejs";
-
 const MAX_BODY_BYTES = 128 * 1024;
 
 function errorResponse(message: string, status: number): Response {
   return Response.json({ error: message }, { status });
 }
 
-function fleetBaseUrl(): string {
-  const rawBase =
-    process.env.FLEET_API_URL ||
-    (process.env.NODE_ENV === "production"
-      ? "http://host.docker.internal:8080"
-      : "http://127.0.0.1:8080");
-  return rawBase.split("?")[0].replace(/\/$/, "");
-}
-
 export async function GET(request: Request): Promise<Response> {
   const user = await resolveAuthorizedSession(request);
-  if (!user) {
-    return errorResponse("Login dashboard diperlukan", 401);
-  }
-
+  if (!user) return errorResponse("Login dashboard diperlukan", 401);
   const commandToken = process.env.FLEET_COMMAND_TOKEN;
-  if (!commandToken) {
-    return errorResponse("FLEET_COMMAND_TOKEN belum dikonfigurasi", 503);
-  }
+  if (!commandToken) return errorResponse("FLEET_COMMAND_TOKEN belum dikonfigurasi", 503);
 
   const url = new URL(request.url);
   const qs = url.searchParams.toString();
@@ -35,47 +21,29 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const upstream = await fetch(upstreamUrl, {
       method: "GET",
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${commandToken}`,
-      },
+      headers: { Accept: "application/json", Authorization: `Bearer ${commandToken}` },
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
     });
-
-    const data = await upstream.json();
-    return Response.json(data, { status: upstream.status });
+    return Response.json(await upstream.json(), { status: upstream.status });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResponse(`Gagal mengambil investigasi AI Agent: ${msg}`, 502);
+    return errorResponse(`Gagal mengambil investigasi AI Agent: ${err instanceof Error ? err.message : String(err)}`, 502);
   }
 }
 
 export async function POST(request: Request): Promise<Response> {
+  if (!originAllowed(request)) return errorResponse("Origin tidak diizinkan", 403);
   const user = await resolveAuthorizedSession(request);
-  if (!user) {
-    return errorResponse("Login dashboard diperlukan", 401);
-  }
-
+  if (!user) return errorResponse("Login dashboard diperlukan", 401);
   const commandToken = process.env.FLEET_COMMAND_TOKEN;
-  if (!commandToken) {
-    return errorResponse("FLEET_COMMAND_TOKEN belum dikonfigurasi", 503);
-  }
+  if (!commandToken) return errorResponse("FLEET_COMMAND_TOKEN belum dikonfigurasi", 503);
 
-  let body: Record<string, unknown>;
-  try {
-    const text = await request.text();
-    if (text.length > MAX_BODY_BYTES) {
-      return errorResponse("Payload investigasi terlalu besar", 413);
-    }
-    const parsed = JSON.parse(text);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return errorResponse("Body harus berupa JSON object", 400);
-    }
-    body = parsed as Record<string, unknown>;
-  } catch {
-    return errorResponse("Format JSON tidak valid", 400);
+  const parsed = await readBoundedJson(request, MAX_BODY_BYTES);
+  if (!parsed.ok) return errorResponse(parsed.error, parsed.status);
+  if (typeof parsed.data !== "object" || parsed.data === null || Array.isArray(parsed.data)) {
+    return errorResponse("Body harus berupa JSON object", 400);
   }
+  const body = parsed.data as Record<string, unknown>;
 
   const action = typeof body.action === "string" ? body.action.trim().toLowerCase() : "create";
   if (action === "delete") {
@@ -94,11 +62,9 @@ export async function POST(request: Request): Promise<Response> {
         cache: "no-store",
         signal: AbortSignal.timeout(8_000),
       });
-      const data = await upstream.json();
-      return Response.json(data, { status: upstream.status });
+      return Response.json(await upstream.json(), { status: upstream.status });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return errorResponse(`Gagal menghapus investigasi: ${msg}`, 502);
+      return errorResponse(`Gagal menghapus investigasi: ${err instanceof Error ? err.message : String(err)}`, 502);
     }
   }
 
@@ -106,6 +72,8 @@ export async function POST(request: Request): Promise<Response> {
     return errorResponse("Akses ditolak: Viewer bersifat read-only", 403);
   }
 
+  // Paksa identitas actor dari sesi terautentikasi (cegah created_by spoofing)
+  const sanitizedBody = { ...body, created_by: `dashboard:${user.username}` };
   try {
     const upstream = await fetch(`${fleetBaseUrl()}/api/investigations`, {
       method: "POST",
@@ -114,17 +82,12 @@ export async function POST(request: Request): Promise<Response> {
         Accept: "application/json",
         Authorization: `Bearer ${commandToken}`,
       },
-      body: JSON.stringify({
-        ...body,
-        created_by: body.created_by || `dashboard:${user.username}`,
-      }),
+      body: JSON.stringify(sanitizedBody),
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
     });
-    const data = await upstream.json();
-    return Response.json(data, { status: upstream.status });
+    return Response.json(await upstream.json(), { status: upstream.status });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorResponse(`Gagal menyimpan investigasi: ${msg}`, 502);
+    return errorResponse(`Gagal menyimpan investigasi: ${err instanceof Error ? err.message : String(err)}`, 502);
   }
 }

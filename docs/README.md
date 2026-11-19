@@ -8,9 +8,8 @@ docs/
   arsitektur/    arsitektur, alur, konsep mitigasi, perbandingan dgn antivirus
   evaluasi/      metrik & data mentah benchmark
   ilmiah/        perbandingan penelitian, n8n vs shuffle, MITRE, relevansi 2026
-  milestone/     deliverable per-milestone bergaya Milestone TA (HTML + PDF)
-  laporan/       draf & ekspor laporan TA
-  bimbingan/     laporan bimbingan, catatan dospem, materi        (+ lampiran/)
+  milestone/     deliverable teknis per-milestone (HTML + PDF)
+  bimbingan/     catatan progres & materi teknis (+ lampiran/)
   demo/          kartu demo & contekan
   panduan/       panduan diagram, deployment, runbook upgrade
   agen-ringan/   spesifikasi & roadmap agen Rust
@@ -45,14 +44,9 @@ docs/
 ## milestone/
 | Dokumen | Isi |
 |---|---|
-| `M3-MATRIKS-CONFIDENCE-OTONOMI.html` / `.pdf` | Deliverable M3 bergaya Milestone TA: matriks confidence → otonomi, playbook berjenjang, jaminan keselamatan, bukti uji |
+| `M3-MATRIKS-CONFIDENCE-OTONOMI.html` / `.pdf` | Deliverable M3: matriks confidence ke otonomi, playbook berjenjang, jaminan keselamatan, bukti uji |
 
-## laporan/
-| Dokumen | Isi |
-|---|---|
-| `Laporan-SOAR.md` / `.docx` | Draf laporan TA |
-| `Laporan TA - SOAR.pdf` | Ekspor laporan TA |
-| `Laporan TA - Topik Khusus Network.pdf` | Laporan mata kuliah terkait (arsip) |
+> Catatan: Naskah akademik pribadi (`proposal/`, `milestone/`, `referensi/`, `docs/laporan/`) dipisahkan dari repositori publik ini.
 
 ## bimbingan/
 | Dokumen | Isi |

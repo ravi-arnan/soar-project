@@ -3,6 +3,7 @@
 import React from 'react';
 import { WuiIcon, type WuiIconType } from '../wui/WuiIcon';
 import { WazuhLogo } from './WazuhLogo';
+import { useAuth } from '../AuthContext';
 import type { FleetHealth } from '@/lib/fleet';
 
 interface WazuhSidebarProps {
@@ -24,7 +25,20 @@ export const WazuhSidebar = React.memo(function WazuhSidebar({
   agentCount = 0,
   health,
 }: WazuhSidebarProps) {
+  const { user } = useAuth();
   if (!isOpen) return null;
+
+  const isAdmin = user?.role === 'admin';
+  const opsItems: Array<{ id: string; label: string; icon: WuiIconType; badge?: string }> = [
+    { id: 'network-map', label: 'Network map', icon: 'graphApp' },
+    ...(isAdmin
+      ? [
+          { id: 'users', label: 'User Management', icon: 'usersRolesApp' as WuiIconType },
+          { id: 'api-keys', label: 'API Keys', icon: 'lock' as WuiIconType },
+        ]
+      : []),
+    { id: 'settings', label: 'Settings', icon: 'gear' },
+  ];
 
   const sections: Array<{
     title: string;
@@ -54,12 +68,7 @@ export const WazuhSidebar = React.memo(function WazuhSidebar({
     },
     {
       title: 'Operations & Management',
-      items: [
-        { id: 'network-map', label: 'Network map', icon: 'graphApp' },
-        { id: 'users', label: 'User Management', icon: 'usersRolesApp' },
-        { id: 'api-keys', label: 'API Keys', icon: 'lock' },
-        { id: 'settings', label: 'Settings', icon: 'gear' },
-      ],
+      items: opsItems,
     },
   ];
 

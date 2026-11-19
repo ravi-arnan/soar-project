@@ -1,34 +1,25 @@
 {
-  "updatedAt": "2026-07-02T10:14:31.000Z",
-  "createdAt": "2026-05-21T17:28:18.971Z",
-  "id": "kGzPH0MPHjKvailW",
   "name": "Telegram Callback Handler",
-  "description": null,
-  "active": true,
-  "isArchived": false,
   "nodes": [
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "tg-callback",
-        "responseMode": "onReceived",
-        "options": {}
-      },
+      "id": "86cef16a-ec27-498b-9ad6-0da302e41d38",
       "name": "Webhook",
+      "webhookId": "4291f5dd-ea70-4e8f-b88a-559ed76555c2",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
         0,
         300
       ],
-      "id": "86cef16a-ec27-498b-9ad6-0da302e41d38",
-      "webhookId": "4291f5dd-ea70-4e8f-b88a-559ed76555c2"
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tg-callback",
+        "responseMode": "onReceived",
+        "options": {}
+      }
     },
     {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst cq = body.callback_query || {};\nconst data = cq.data || '';\nconst parts = data.split(':');\nconst action = parts[0] || '';\nconst text = (cq.message && cq.message.text) || '';\n\nconst pathMatch = text.match(/Path:\\s*(.+)/);\nconst fileMatch = text.match(/File:\\s*(.+)/);\nconst hashMatch = text.match(/([a-f0-9]{64})/i);\nconst urlMatch  = text.match(/URL:\\*?\\s*(\\S+)/i);   // dari pesan phishing\n\nconst isPhishing = (action === 'pblk' || action === 'pign');\nconst doBlock    = (action === 'iso'  || action === 'pblk');   // ada tindakan AR\n\nconst decidedAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Makassar' });\n\nreturn [{ json: {\n  decidedAt,\n  action, doBlock, isPhishing,\n  agentId:  parts[1] || '000',\n  filePath: pathMatch ? pathMatch[1].trim() : '',\n  fileName: fileMatch ? fileMatch[1].trim() : '',\n  hash:     hashMatch ? hashMatch[1] : '',\n  url:      urlMatch ? urlMatch[1].trim() : '',\n  chatId:    cq.message ? cq.message.chat.id : '',\n  messageId: cq.message ? cq.message.message_id : '',\n  callbackQueryId: cq.id || '',\n  analyst: (cq.from && (cq.from.first_name || cq.from.username)) || 'analis',\n  origText: text\n}}];"
-      },
+      "id": "1e3c84c8-11b9-4ee4-a13e-7d10c3695dd8",
       "name": "Parse Keputusan",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -36,9 +27,22 @@
         220,
         300
       ],
-      "id": "1e3c84c8-11b9-4ee4-a13e-7d10c3695dd8"
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const headers = $input.first().json.headers || {};\nconst expectedSecret = ($env.N8N_WEBHOOK_SECRET || '').trim();\nif (expectedSecret) {\n  const got = String(headers['x-soar-webhook-secret'] || headers['X-SOAR-Webhook-Secret'] || '').trim();\n  if (got !== expectedSecret) return [];\n}\n// patch:hitl-matrix:v1\n// Aksi tombol (callback_data):\n//   q:<agent_id>:<did>  -> karantina file (HITL disetujui analis)\n//   f:<agent_id>:<did>  -> tandai false positive (audit saja, tanpa AR)\n//   a:<agent_id>:<did>  -> tandai sudah ditinjau (tanpa AR; rantai proses)\n//   iso:/ign:           -> legacy malware (kompatibilitas tombol lama)\n//   pblk:/pign:         -> phishing (block-domain / abaikan)\nconst body = $input.first().json.body || $input.first().json;\nconst cq = body.callback_query || {};\nconst data = String(cq.data || '');\nconst parts = data.split(':');\nconst action = parts[0] || '';\nconst did = parts[2] || '';\nconst text = (cq.message && cq.message.text) || '';\n\n// Fallback legacy: tombol lama tidak membawa did, jadi target dibaca dari teks\n// pesan. Backslash escape Markdown dibersihkan supaya path utuh.\nconst unesc = (s) => String(s || '')\n  .replace(/\\\\([_*\\[\\]()~`>#+\\-=|{}.!])/g, '$1')\n  .replace(/^[*`\\s]+|[*`\\s]+$/g, '')\n  .trim();\nconst pathMatch = text.match(/Path:\\s*(.+)/);\nconst fileMatch = text.match(/File:\\s*(.+)/);\nconst hashMatch = text.match(/([a-f0-9]{64})/i);\nconst urlMatch = text.match(/URL:\\*?\\s*(\\S+)/i);\nconst urlClean = urlMatch ? unesc(urlMatch[1]) : '';\n\nconst isPhishing = (action === 'pblk' || action === 'pign');\nconst doBlock = (action === 'q' || action === 'iso' || action === 'pblk');\nconst registryAction = (action === 'q' || action === 'iso') ? 'quarantine'\n  : (doBlock ? 'acknowledged' : (action === 'a' ? 'acknowledged' : 'false_positive'));\nconst logStatus = doBlock ? 'analyst-quarantine'\n  : (action === 'a' ? 'analyst-ack' : 'analyst-fp');\n\nconst decidedAt = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Makassar' });\n\nreturn [{ json: {\n  decidedAt,\n  action, doBlock, isPhishing, registryAction, logStatus, did,\n  agentId: parts[1] || '000',\n  filePath: pathMatch ? unesc(pathMatch[1]) : '',\n  fileName: fileMatch ? unesc(fileMatch[1]) : '',\n  hash: hashMatch ? hashMatch[1] : '',\n  url: urlClean,\n  chatId: cq.message ? cq.message.chat.id : '',\n  messageId: cq.message ? cq.message.message_id : '',\n  callbackQueryId: cq.id || '',\n  analyst: (cq.from && (cq.from.first_name || cq.from.username)) || 'analis',\n  origText: text\n}}];\n// patch:hitl-matrix:v1"
+      }
     },
     {
+      "id": "8946c4ba-39b2-4be7-a03d-f3cbd06c2783",
+      "name": "Answer Callback",
+      "webhookId": "a6255c99-d206-412f-b333-031013a1d177",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "onError": "continueRegularOutput",
+      "position": [
+        440,
+        300
+      ],
       "parameters": {
         "resource": "callback",
         "operation": "answerQuery",
@@ -47,63 +51,15 @@
           "text": "Diproses..."
         }
       },
-      "name": "Answer Callback",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        440,
-        300
-      ],
-      "id": "8946c4ba-39b2-4be7-a03d-f3cbd06c2783",
       "credentials": {
         "telegramApi": {
-          "id": "DCCZSQ4bTDcFjrWs",
+          "id": "",
           "name": "Telegram account"
         }
       }
     },
     {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "cond-doblock",
-              "leftValue": "={{ $('Parse Keputusan').first().json.doBlock }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "name": "Perlu Tindakan?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        660,
-        300
-      ],
-      "id": "0c708d96-819c-4228-a1f7-98ae427d8ad4"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://172.17.0.1:55000/security/user/authenticate",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpBasicAuth",
-        "options": {
-          "allowUnauthorizedCerts": true
-        }
-      },
+      "id": "6fa04dfb-8ffa-4658-912e-29f413d1a36c",
       "name": "Get Wazuh Token",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
@@ -111,72 +67,76 @@
         880,
         200
       ],
-      "id": "6fa04dfb-8ffa-4658-912e-29f413d1a36c",
+      "parameters": {
+        "method": "POST",
+        "url": "https://host.docker.internal:55000/security/user/authenticate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
       "credentials": {
         "httpBasicAuth": {
-          "id": "z3vHEZdm4EpUDzRE",
+          "id": "",
           "name": "Wazuh Creds"
         }
       }
     },
     {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const token = $('Get Wazuh Token').first().json.data.token;\nconst p = $('Parse Keputusan').first().json;\nconst agentId = p.agentId;\n\n// pilih AR sesuai jenis alert: phishing -> block-domain(url), malware -> quarantine-file(path)\nlet command, arg;\nif (p.action === 'pblk') { command = '!block-domain';    arg = p.url; }\nelse                     { command = '!quarantine-file'; arg = p.filePath; }\n\nconst response = await this.helpers.httpRequest({\n  method: 'PUT',\n  url: `https://172.17.0.1:55000/active-response?agents_list=${agentId}&wait_for_complete=true`,\n  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },\n  body: JSON.stringify({ command, arguments: [arg] }),\n  rejectUnauthorized: false, timeout: 30000\n});\nreturn [{ json: { ar_response: response, command, arg, agentId,\n  status: (response && response.error === 0) ? 'terkirim' : 'gagal' } }];"
-      },
+      "id": "6ab6f8bc-ebed-4ff6-8a26-59e3f07c429a",
       "name": "Jalankan AR",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
+      "onError": "continueRegularOutput",
       "position": [
         1100,
         200
       ],
-      "id": "6ab6f8bc-ebed-4ff6-8a26-59e3f07c429a"
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $('Catat Keputusan').first().json;\nconst decisionAction = String(p.decision_action || '').toLowerCase();\nconst needsAr = decisionAction === 'quarantine' || decisionAction === 'block' || decisionAction === 'sinkhole' || decisionAction === 'isolate';\nif (!needsAr || !p.filePath) {\n  return [{ json: { status: 'diabaikan', command: '', arg: p.filePath || '', agentId: p.agentId, decision_action: decisionAction } }];\n}\n\nconst isDomain = decisionAction === 'block' || decisionAction === 'sinkhole';\nconst command = isDomain ? '!block-domain' : '!quarantine-file';\nconst fleetAction = isDomain ? 'sinkhole' : 'quarantine';\nconst arg = p.filePath;\nconst agentId = String(p.agentId || '001').padStart(3, '0');\n\nlet token = '';\ntry { token = $('Get Wazuh Token').first().json?.data?.token || ''; } catch (e) {}\n\nlet response = null;\nlet ok = false;\nif (token) {\n  try {\n    response = await this.helpers.httpRequest({\n      method: 'PUT',\n      url: 'https://host.docker.internal:55000/active-response?agents_list=' + encodeURIComponent(agentId) + '&wait_for_complete=true',\n      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },\n      body: JSON.stringify({ command, arguments: [arg] }),\n      rejectUnauthorized: false,\n      timeout: 30000,\n    });\n    ok = Boolean(response && (response.error === 0 || (response.error === undefined && (!response.failed_items || response.failed_items.length === 0))));\n  } catch (e) {\n    response = { error: String((e && e.message) || e).slice(0, 200) };\n  }\n}\n\nlet fleetQueued = false;\nif (!ok) {\n  const ftok = ($env.FLEET_COMMAND_TOKEN || '').trim();\n  const headers = { 'Content-Type': 'application/json' };\n  if (ftok) headers['Authorization'] = 'Bearer ' + ftok;\n  try {\n    const fresp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'http://host.docker.internal:8080/api/commands',\n      headers,\n      body: JSON.stringify({ agent_id: agentId, action: fleetAction, target: arg, by: 'telegram-hitl:' + (p.analyst || 'analyst') }),\n      timeout: 10000,\n    });\n    fleetQueued = Boolean(fresp && (fresp.status === 'queued' || fresp.ok));\n    if (fleetQueued) ok = true;\n  } catch (e) {}\n}\n\nreturn [{ json: { status: ok ? (fleetQueued ? 'diantrekan-fleet' : 'terkirim') : 'gagal', command, arg, agentId, decision_action: decisionAction, ar_response: response } }];"
+      }
     },
     {
+      "id": "catat-keputusan",
+      "name": "Catat Keputusan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ],
       "parameters": {
-        "resource": "message",
-        "operation": "editMessageText",
-        "chatId": "={{ $('Parse Keputusan').first().json.chatId }}",
-        "messageId": "={{ $('Parse Keputusan').first().json.messageId }}",
-        "text": "={{ $('Parse Keputusan').first().json.origText + \"\\n\\n----------\\n\" + ($('Parse Keputusan').first().json.isPhishing ? (\"DOMAIN DIBLOKIR (sinkhole 0.0.0.0) oleh \" + $('Parse Keputusan').first().json.analyst) : (\"FILE DIISOLASI oleh \" + $('Parse Keputusan').first().json.analyst)) + \" (status AR: \" + $('Jalankan AR').first().json.status + \") pada \" + $('Parse Keputusan').first().json.decidedAt + \" WITA.\" }}",
-        "additionalFields": {}
-      },
-      "name": "Edit Pesan Isolasi",
+        "mode": "runOnceForAllItems",
+        "jsCode": "// patch:hitl-matrix:v1\n// Analis menekan tombol: klaim keputusan di registry (audit trail + sumber\n// target aksi yang benar). Path dari registry lebih dipercaya daripada teks\n// pesan Telegram (yang di-escape Markdown dan bisa terpotong).\nconst p = $('Parse Keputusan').first().json;\nlet reg = { ok: false, found: false };\nif (p.did) {\n  try {\n    reg = await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'http://host.docker.internal:8091/decision/resolve',\n      headers: Object.assign({ 'Content-Type': 'application/json' }, $env.ALERT_LOG_TOKEN ? { 'Authorization': 'Bearer ' + $env.ALERT_LOG_TOKEN } : {}),\n      body: { hash: p.did, action: p.registryAction, by: p.analyst },\n      timeout: 5000 });\n  } catch (e) {\n    reg = { ok: false, found: false, error: String((e && e.message) || e).slice(0, 200) };\n  }\n}\nconst filePath = (reg && reg.filepath) || p.filePath || '';\nconst agentId = (reg && reg.agent_id) || p.agentId || '000';\n// Keputusan analis juga dicatat ke fleet-monitor -> tampil di dashboard\n// (audit trail yang bisa dilihat, bukan cuma edit teks pesan Telegram).\nlet logged = false;\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'http://host.docker.internal:8080/webhook-log',\n    headers: Object.assign({ 'Content-Type': 'application/json' }, $env.FLEET_COMMAND_TOKEN ? { 'Authorization': 'Bearer ' + $env.FLEET_COMMAND_TOKEN } : {}),\n    body: {\n      agent_id: agentId, agent: (reg && reg.agent_name) || '',\n      path: filePath, hash: (reg && reg.hash) || '',\n      severity: (reg && reg.severity) || 'INFO',\n      status: p.logStatus, by: p.analyst, action: p.registryAction,\n      ai: 'keputusan analis via Telegram (' + p.analyst + ')',\n    },\n    timeout: 5000,\n  });\n  logged = true;\n} catch (e) { /* fail-open */ }\nreturn [{ json: { ...p, filePath: filePath, agentId: agentId,\n  registry: reg, decision_action: p.registryAction, fleet_logged: logged } }];\n// patch:hitl-matrix:v1"
+      }
+    },
+    {
+      "id": "edit-pesan-hasil",
+      "name": "Edit Pesan Hasil",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
+      "onError": "continueRegularOutput",
       "position": [
         1320,
         200
       ],
-      "id": "36ec336f-2770-4b72-be0f-19c09f0aa556",
-      "credentials": {
-        "telegramApi": {
-          "id": "DCCZSQ4bTDcFjrWs",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
       "parameters": {
         "resource": "message",
         "operation": "editMessageText",
         "chatId": "={{ $('Parse Keputusan').first().json.chatId }}",
         "messageId": "={{ $('Parse Keputusan').first().json.messageId }}",
-        "text": "={{ $('Parse Keputusan').first().json.origText + \"\\n\\n----------\\nDitandai FALSE POSITIVE oleh \" + $('Parse Keputusan').first().json.analyst + \" pada \" + $('Parse Keputusan').first().json.decidedAt + \" WITA. Tidak ada aksi (dibiarkan).\" }}",
-        "additionalFields": {}
+        "text": "={{ (() => { const c = $('Catat Keputusan').first().json; const a = $('Jalankan AR').first().json; const r = c.registry || {}; const esc = (s) => String(s ?? '').replace(/([_*\\[\\]()~`>#+\\-=|{}.!\\\\])/g, '\\\\$1'); const head = c.decision_action === 'quarantine'   ? '\\u2705 *KEPUTUSAN ANALIS: KARANTINA FILE*'   : (c.decision_action === 'acknowledged'     ? '\\ud83e\\uddfe *SUDAH DITINJAU (tanpa aksi otomatis)*'     : '\\ud83d\\udeab *DITANDAI FALSE POSITIVE*'); const tgt = c.isPhishing ? c.url : c.filePath; return head + '\\n\\n' + '\\ud83c\\udfaf Target: ' + esc(tgt || '-')   + '\\n\\ud83d\\udda5\\ufe0f Agent: ' + esc(c.agentId)   + (c.decision_action === 'quarantine'      ? '\\n\\ud83d\\udee1\\ufe0f Status AR: ' + esc(a.status || '-') : '')   + '\\n\\ud83e\\udd16 Sumber target: ' + (c.filePath && r.found ? 'registry keputusan' : 'teks pesan')   + '\\n\\ud83d\\udc64 Oleh: ' + esc(c.analyst)   + '\\n\\ud83d\\udd50 ' + esc(c.decidedAt); })() }}",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "appendAttribution": false
+        }
       },
-      "name": "Edit Pesan Abaikan",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [
-        880,
-        420
-      ],
-      "id": "a338acf4-8719-47b3-b023-341b9bdd871f",
+      "webhookId": "0078538e-93bf-4651-b6f2-7729ad3d14c4",
       "credentials": {
         "telegramApi": {
-          "id": "DCCZSQ4bTDcFjrWs",
+          "id": "",
           "name": "Telegram account"
         }
       }
@@ -198,7 +158,7 @@
       "main": [
         [
           {
-            "node": "Answer Callback",
+            "node": "Catat Keputusan",
             "type": "main",
             "index": 0
           }
@@ -209,7 +169,7 @@
       "main": [
         [
           {
-            "node": "Perlu Tindakan?",
+            "node": "Get Wazuh Token",
             "type": "main",
             "index": 0
           }
@@ -227,29 +187,22 @@
         ]
       ]
     },
-    "Perlu Tindakan?": {
+    "Jalankan AR": {
       "main": [
         [
           {
-            "node": "Get Wazuh Token",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Edit Pesan Abaikan",
+            "node": "Edit Pesan Hasil",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Jalankan AR": {
+    "Catat Keputusan": {
       "main": [
         [
           {
-            "node": "Edit Pesan Isolasi",
+            "node": "Answer Callback",
             "type": "main",
             "index": 0
           }
@@ -257,38 +210,11 @@
       ]
     }
   },
+  "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "staticData": null,
-  "meta": null,
-  "pinData": {},
-  "versionId": "35fa45e2-c418-495e-9c25-cd4f66ddb9a8",
-  "activeVersionId": "35fa45e2-c418-495e-9c25-cd4f66ddb9a8",
-  "versionCounter": 64,
-  "triggerCount": 1,
-  "tags": [],
-  "shared": [
-    {
-      "updatedAt": "2026-05-21T17:28:18.983Z",
-      "createdAt": "2026-05-21T17:28:18.983Z",
-      "role": "workflow:owner",
-      "workflowId": "kGzPH0MPHjKvailW",
-      "projectId": "nvpwMZoZStjEx64h",
-      "project": {
-        "updatedAt": "2026-04-09T04:56:53.740Z",
-        "createdAt": "2026-04-09T04:55:58.106Z",
-        "id": "nvpwMZoZStjEx64h",
-        "name": "Ravi Arnan Irianto <raviarnankeren@gmail.com>",
-        "type": "personal",
-        "icon": null,
-        "description": null,
-        "creatorId": "23d22c3c-d51e-476b-98b2-9e2df64b7225"
-      }
-    }
-  ],
-  "versionMetadata": {
-    "name": null,
-    "description": null
+  "meta": {
+    "templateCredsSetupCompleted": true
   }
 }

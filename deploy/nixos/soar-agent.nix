@@ -8,18 +8,18 @@
 #
 # Pakai di /etc/nixos/configuration.nix:
 #
-#   imports = [ /home/ravi/Projects/soar-project/deploy/nixos/soar-agent.nix ];
+#   imports = [ /path/to/soar-project/deploy/nixos/soar-agent.nix ];
 #
 #   services.soar-agent = {
 #     enable = true;
 #     agentId = "002";
-#     agentName = "nixbox";
-#     server = "192.168.1.47";   # LAN ravi-debian (Tailscale 100.x sedang tidak routable dari nixbox)
-#     packageSource = /home/ravi/Projects/soar-project/agent-rs;
+#     agentName = "workstation-nixos";
+#     server = "192.0.2.10";
+#     packageSource = /path/to/soar-project/agent-rs;
 #   };
 #
-# Lalu: sudo nixos-rebuild switch --flake /etc/nixos#nixbox
-# Token polling disimpan di /etc/soar-agent/fleet.token (mode 0600, owner ravi).
+# Lalu: sudo nixos-rebuild switch --flake /etc/nixos#<hostname>
+# Token polling disimpan di /etc/soar-agent/fleet.token (mode 0600).
 
 { config, lib, pkgs, ... }:
 
@@ -57,7 +57,7 @@ in
 
     packageSource = lib.mkOption {
       type = lib.types.path;
-      example = /home/ravi/Projects/soar-project/agent-rs;
+      example = "/opt/soar-project/agent-rs";
       description = "Direktori sumber agent-rs (berisi Cargo.toml + Cargo.lock).";
     };
 
@@ -69,13 +69,13 @@ in
 
     agentName = lib.mkOption {
       type = lib.types.str;
-      default = "nixbox";
+      default = "nixos-endpoint";
       description = "Nama agent yang tampil di dashboard.";
     };
 
     server = lib.mkOption {
       type = lib.types.str;
-      default = "192.168.1.47";
+      default = "127.0.0.1";
       description = "Alamat server SOAR (host yang menjalankan n8n + fleet-monitor).";
     };
 
@@ -120,7 +120,7 @@ in
 
     user = lib.mkOption {
       type = lib.types.str;
-      default = "ravi";
+      default = "soar-agent";
       description = ''
         User yang menjalankan agent. Harus user pemilik file yang dipantau,
         karena default watch path diturunkan dari $HOME.

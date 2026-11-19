@@ -20,37 +20,19 @@ function formatFileSize(bytes: number | string | undefined): string {
   return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function resolveFileMetadata(e: FleetEvent | undefined, path: string) {
-  let inferredUser = 'root';
-  let inferredUid = '0';
-  if (path && path.startsWith('/home/')) {
-    const parts = path.split('/');
-    if (parts.length > 2 && parts[2]) {
-      inferredUser = parts[2];
-      inferredUid = '1000';
-    }
-  }
-
+function resolveFileMetadata(e: FleetEvent | undefined) {
   const lastAnalysis = e?.ts ? formatWazuhTime(e.ts) : '-';
   const lastModified = e?.mtime
     ? formatWazuhTime(e.mtime)
     : e?.ts
     ? formatWazuhTime(e.ts)
     : '-';
-  const user = e?.uname || (path !== '-' ? inferredUser : '-');
+  const user = e?.uname || 'N/A';
   const userId =
-    e?.uid !== undefined && e?.uid !== '' && e?.uid !== null
-      ? String(e.uid)
-      : path !== '-'
-      ? inferredUid
-      : '-';
-  const group = e?.gname || (path !== '-' ? inferredUser : '-');
+    e?.uid !== undefined && e?.uid !== '' && e?.uid !== null ? String(e.uid) : 'N/A';
+  const group = e?.gname || 'N/A';
   const groupId =
-    e?.gid !== undefined && e?.gid !== '' && e?.gid !== null
-      ? String(e.gid)
-      : path !== '-'
-      ? inferredUid
-      : '-';
+    e?.gid !== undefined && e?.gid !== '' && e?.gid !== null ? String(e.gid) : 'N/A';
   const size = formatFileSize(e?.size);
   const inode = e?.inode ? String(e.inode) : '-';
 
@@ -138,12 +120,14 @@ export function FimDashboard() {
     }
   }
 
-  // Satu baris per path unik, event terakhir disimpan untuk metadata penuh.
+  // Satu baris per kombinasi (agent_id, path) unik agar path sama di agent berbeda tidak saling menimpa.
   const files = useMemo(() => {
     const seen = new Map<string, FleetEvent>();
     events.forEach((e) => {
-      if (e.path && !seen.has(e.path)) {
-        seen.set(e.path, e);
+      if (!e.path) return;
+      const key = `${e.agent_id || e.agent || '-'}:${e.path}`;
+      if (!seen.has(key)) {
+        seen.set(key, e);
       }
     });
     return [...seen.values()];
@@ -158,7 +142,7 @@ export function FimDashboard() {
   const fileHash = latestEvent?.hash || currentFile?.hash || '';
   const agentId = latestEvent?.agent_id || latestEvent?.agent || '001';
 
-  const metadata = resolveFileMetadata(latestEvent, currentPath);
+  const metadata = resolveFileMetadata(latestEvent);
 
   const filteredFiles = files.filter((f) =>
     f.path.toLowerCase().includes(searchTerm.toLowerCase())
@@ -264,7 +248,7 @@ export function FimDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EBEFF5]">
-                {[...events].reverse().map((e, i) => {
+                {events.slice(0, 100).map((e, i) => {
                   const level = severityLevel(e.severity);
                   return (
                     <tr key={`${e.ts}-${i}`} className="hover:bg-[#FAFBFD]">

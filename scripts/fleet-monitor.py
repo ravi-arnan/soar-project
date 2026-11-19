@@ -28,6 +28,8 @@ import re
 import secrets
 import sqlite3
 import ssl
+import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -37,6 +39,22 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import PurePosixPath, PureWindowsPath
 from urllib.parse import parse_qs, urlparse
+
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+
+from fleet import installers as _fleet_installers  # noqa: E402
+from fleet import locks as _fleet_locks  # noqa: E402
+from fleet import security as _fleet_sec  # noqa: E402
+
+AI_CIRCUIT_BREAKER = _fleet_sec.AiCircuitBreaker()
+_STATE_LAST_SAVE = 0.0
+_STATE_SAVE_MIN_INTERVAL = 5.0
+_API_KEY_LAST_TOUCH = {}
+_LOGIN_ATTEMPTS = {}
+_LOGIN_LOCK = threading.Lock()
+_CF_SYNC_THREAD = None
 
 
 # Load .env jika ada (untuk jalan di host tanpa docker env_file)
@@ -204,9 +222,10 @@ def _load_state():
     cutoff = time.time() - STATE_MAX_AGE
     hbs = data.get("heartbeats", {})
     if isinstance(hbs, dict):
-        for k, v in hbs.items():
-            if isinstance(v, dict) and v.get("last_seen", 0) >= cutoff:
-                HEARTBEATS[str(k)] = v
+        with _fleet_locks.STATE_LOCK:
+            for k, v in hbs.items():
+                if isinstance(v, dict) and v.get("last_seen", 0) >= cutoff:
+                    HEARTBEATS[str(k)] = v
     print(f"state dimuat: {len(HEARTBEATS)} heartbeat dari {STATE_FILE}", flush=True)
 
 
@@ -316,22 +335,30 @@ def _validate_command(value):
     if action in ("quarantine", "scan", "restore"):
         if not _valid_path_target(target):
             raise ValueError(f"target {action} harus path absolut tanpa traversal")
-    elif action == "sinkhole":
+        if action == "quarantine" and _fleet_sec.is_protected_path(target):
+            raise ValueError("target quarantine tidak boleh menyentuh path sistem/agen")
+    elif action in ("sinkhole", "unsinkhole"):
         if not _valid_domain_target(target):
-            raise ValueError("target sinkhole harus domain valid")
+            raise ValueError(f"target {action} harus domain valid")
+        if action == "sinkhole" and _fleet_sec.is_protected_domain(target):
+            raise ValueError("target sinkhole tidak boleh memblokir domain kritis/infrastruktur")
     else:
-        raise ValueError("action harus quarantine|sinkhole|scan|restore")
+        raise ValueError("action harus quarantine|sinkhole|unsinkhole|scan|restore")
     if len(actor) > 64 or any(ord(char) < 32 for char in actor):
         raise ValueError("by tidak valid")
     return {"agent_id": agent_id, "action": action, "target": target, "by": actor}
 
 
-def _save_state():
+def _save_state(force=False):
+    global _STATE_LAST_SAVE
+    now = time.time()
+    with _fleet_locks.STATE_LOCK:
+        if not force and (now - _STATE_LAST_SAVE < _STATE_SAVE_MIN_INTERVAL):
+            return
+        _STATE_LAST_SAVE = now
+        snapshot = {"heartbeats": dict(HEARTBEATS)}
     try:
-        tmp = STATE_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"heartbeats": HEARTBEATS}, f)
-        os.replace(tmp, STATE_FILE)
+        _fleet_locks.atomic_write_json(STATE_FILE, snapshot)
     except Exception as e:
         print(f"gagal simpan state: {e}", flush=True)
 
@@ -361,9 +388,10 @@ def _vt_cache_load():
     now = time.time()
     entries = data.get("entries", {})
     if isinstance(entries, dict):
-        for h, v in entries.items():
-            if isinstance(v, dict) and now - v.get("stored_at", 0) < v.get("ttl", 0):
-                VT_CACHE[str(h)] = v
+        with _fleet_locks.VT_CACHE_LOCK:
+            for h, v in entries.items():
+                if isinstance(v, dict) and now - v.get("stored_at", 0) < v.get("ttl", 0):
+                    VT_CACHE[str(h)] = v
     print(
         f"vt-cache dimuat: {len(VT_CACHE)} entri dari {VT_CACHE_FILE}",
         flush=True,
@@ -371,31 +399,30 @@ def _vt_cache_load():
 
 
 def _vt_cache_save():
-    """Persist cache (di-throttle) supaya restart container tidak menghapus
-    verdict yang masih berlaku."""
+    """Persist cache (di-throttle) secara atomic dan thread-safe."""
     global _vt_last_save
     now = time.time()
-    if now - _vt_last_save < VT_SAVE_MIN_INTERVAL:
-        return
-    _vt_last_save = now
+    with _fleet_locks.VT_CACHE_LOCK:
+        if now - _vt_last_save < VT_SAVE_MIN_INTERVAL:
+            return
+        _vt_last_save = now
+        snapshot = {"entries": dict(VT_CACHE)}
     try:
-        tmp = VT_CACHE_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"entries": VT_CACHE}, f)
-        os.replace(tmp, VT_CACHE_FILE)
+        _fleet_locks.atomic_write_json(VT_CACHE_FILE, snapshot)
     except Exception as e:
         print(f"gagal simpan vt-cache: {e}", flush=True)
 
 
 def _vt_cache_prune(now):
-    for h in [
-        h for h, v in VT_CACHE.items() if now - v.get("stored_at", 0) >= v.get("ttl", 0)
-    ]:
-        del VT_CACHE[h]
-    if len(VT_CACHE) > VT_CACHE_MAX:
-        oldest = sorted(VT_CACHE.items(), key=lambda kv: kv[1].get("stored_at", 0))
-        for h, _ in oldest[: len(VT_CACHE) - VT_CACHE_MAX]:
+    with _fleet_locks.VT_CACHE_LOCK:
+        for h in [
+            h for h, v in list(VT_CACHE.items()) if now - v.get("stored_at", 0) >= v.get("ttl", 0)
+        ]:
             VT_CACHE.pop(h, None)
+        if len(VT_CACHE) > VT_CACHE_MAX:
+            oldest = sorted(VT_CACHE.items(), key=lambda kv: kv[1].get("stored_at", 0))
+            for h, _ in oldest[: len(VT_CACHE) - VT_CACHE_MAX]:
+                VT_CACHE.pop(h, None)
 
 
 def _cfg():
@@ -465,8 +492,10 @@ def _short_os(a):
 
 def fetch_wazuh_agents(cfg):
     now = time.time()
-    if now - WAZUH_CACHE["fetched_at"] < WAZUH_TTL and WAZUH_CACHE["data"]:
-        return WAZUH_CACHE["data"]
+    with _fleet_locks.WAZUH_LOCK:
+        if now - WAZUH_CACHE["fetched_at"] < WAZUH_TTL and WAZUH_CACHE["data"]:
+            return list(WAZUH_CACHE["data"])
+        cached_fallback = list(WAZUH_CACHE["data"])
     urls = [cfg["wazuh_url"]]
     if "127.0.0.1" in cfg["wazuh_url"]:
         urls.append(cfg["wazuh_url"].replace("127.0.0.1", "host.docker.internal"))
@@ -476,26 +505,21 @@ def fetch_wazuh_agents(cfg):
     for url in urls:
         try:
             agents = _fetch_wazuh_once(url, cfg)
-            # ponytail: Wazuh single-node punya agent 001 (Wazuh manager
-            # self) yang memang ada di API. Kalau API balik 0 item, berarti
-            # agent Wazuh belum enroll / API belum siap, jangan cache 0
-            # (biar tidak bikin dashboard nampilin "0 wazuh agent" sementara
-            # manager-nya sendiri masih hidup). Biarin cache lama, fallback
-            # heartbeat Rust yang nampilin. Upgrade path: poll berkala.
             if not agents:
                 print(
-                    f"wazuh API {url} balik 0 agent, keep cache {len(WAZUH_CACHE['data'])}",
+                    f"wazuh API {url} balik 0 agent, keep cache {len(cached_fallback)}",
                     flush=True,
                 )
                 continue
-            WAZUH_CACHE["data"] = agents
-            WAZUH_CACHE["fetched_at"] = now
-            return agents
+            with _fleet_locks.WAZUH_LOCK:
+                WAZUH_CACHE["data"] = agents
+                WAZUH_CACHE["fetched_at"] = now
+            return list(agents)
         except Exception as e:
             last_err = e
             continue
     print(f"wazuh fetch error: {last_err}", flush=True)
-    return WAZUH_CACHE["data"]
+    return cached_fallback
 
 
 def build_fleet(cfg):
@@ -504,7 +528,6 @@ def build_fleet(cfg):
     now_wita = datetime.now(WITA).isoformat()
 
     fleet = []
-    # Wazuh agents
     for a in wazuh_agents:
         fleet.append(
             {
@@ -522,11 +545,11 @@ def build_fleet(cfg):
             }
         )
 
-    # Rust heartbeats (id 003..N) — merge, kalau id sama dengan Wazuh, tampilkan Rust sebagai type ringan
-    for hid, hb in list(HEARTBEATS.items()):
+    with _fleet_locks.STATE_LOCK:
+        hb_items = list(HEARTBEATS.items())
+    for hid, hb in hb_items:
         age = now - hb["last_seen"]
         status = "active" if age < HEARTBEAT_TTL else "disconnected"
-        # Jika sudah ada di Wazuh dengan id sama, timpa dengan data Rust (lebih ringan)
         existing = next((x for x in fleet if x["id"] == hid), None)
         entry = {
             "id": hid,
@@ -551,19 +574,21 @@ def build_fleet(cfg):
             "ram_gb": hb.get("ram_gb", {}),
         }
         if existing:
-            # ganti entry Wazuh dengan Rust jika heartbeat lebih fresh
             fleet = [e for e in fleet if e["id"] != hid]
         fleet.append(entry)
 
-    # Sort by id
     fleet.sort(key=lambda x: x["id"])
 
-    # Modul analisis LLM via API — cek GEMINI_API_KEY ada atau coba endpoint Gemini (tanpa quota hit)
     has_gemini = bool(cfg.get("gemini_key"))
+    misp_url = os.environ.get("MISP_HEALTH_URL", "http://127.0.0.1:8090/healthz")
+    alert_log_url = os.environ.get("ALERT_LOG_HEALTH_URL", "http://127.0.0.1:8091/healthz")
     health = {
         "n8n": check_http(cfg["n8n_url"]),
         "gemini": has_gemini,
         "wazuh_api": len(wazuh_agents) > 0,
+        "misp": check_http(misp_url),
+        "alert_log": check_http(alert_log_url),
+        "ai_circuit_breaker": AI_CIRCUIT_BREAKER.snapshot(),
     }
 
     # Severity summary dan total event 24 jam terakhir (selaras dengan status operasional realtime)
@@ -636,435 +661,16 @@ def build_fleet(cfg):
     }
 
 
-HTML = r"""<!doctype html>
-<html lang="id">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Wazuh — Fleet Monitor</title>
-<script>
-/* Inline SVG icons (offline-proof, tanpa CDN). Path dari lucide (ISC license). */
-const ICONS={
-'clock':'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
-'layout-dashboard':'<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
-'monitor-smartphone':'<path d="M18 8h1a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-1"/><path d="M4 16V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v12"/><path d="M2 19h10" /><path d="m5 22 3-3-3-3"/>',
-'shield-alert':'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
-'activity':'<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.4 4.497a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.64 12H2"/>',
-'chevrons-right':'<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>',
-'gauge':'<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
-'newspaper':'<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/>',
-'refresh-cw':'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
-'users':'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
-};
-function ic(name,w){w=w||16;return `<svg viewBox="0 0 24 24" width="${w}" height="${w}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none">${ICONS[name]||''}</svg>`}
-</script>
-<style>
-  /* ===== Wazuh Dashboard asli (OpenSearch Dashboards light + Wazuh plugin) ===== */
-  *{box-sizing:border-box}
-  body{font-family:"Open Sans",Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;margin:0;background:#fafbfd;color:#1a1c21;font-size:14px}
-  a{color:#00a9e0;text-decoration:none} a:hover{text-decoration:underline}
-
-  /* Top bar Wazuh: navy #011a2f, aksen biru #00a9e0 */
-  .topbar{background:#011a2f;height:48px;display:flex;align-items:center;padding:0 18px;position:sticky;top:0;z-index:50}
-  .topbar .logo{display:flex;align-items:center;gap:10px;color:#fff;font-size:19px;font-weight:700}
-  .topbar .logo b{color:#00a9e0;font-weight:700}
-  .topbar .logo .app{font-weight:400;font-size:13px;color:#8ea9c1;margin-left:2px}
-  .topbar .badge100{background:#00a9e0;color:#fff;font-size:10px;letter-spacing:.08em;padding:2px 8px;border-radius:3px;font-weight:700}
-  .topbar .right{margin-left:auto;display:flex;gap:16px;color:#8ea9c1;font-size:11.5px;align-items:center}
-  .topbar .right .live{display:inline-flex;align-items:center;gap:5px;color:#7fd4a0}
-  .topbar .right .live .pulse{width:7px;height:7px;border-radius:50%;background:#7fd4a0;animation:pl 1.5s infinite}
-  @keyframes pl{0%{opacity:1}50%{opacity:.3}100%{opacity:1}}
-
-  /* Sidebar kiri ala OpenSearch Dashboards: toggle statis, TIDAK overlay hover */
-  .side{position:fixed;top:48px;left:0;bottom:0;width:64px;background:#011a2f;padding-top:12px;display:flex;flex-direction:column;gap:4px;z-index:40;transition:width .15s}
-  body.x .side{width:200px}
-  .side a.item{display:flex;align-items:center;gap:12px;color:#8ea9c1;padding:10px 20px;font-size:12.5px;white-space:nowrap;overflow:hidden;border-left:3px solid transparent}
-  .side a.item:hover{color:#fff;background:#0d2b47}
-  .side a.item.active{color:#fff;border-left-color:#00a9e0;background:#0d2b47}
-  .side a.item i{width:16px;height:16px;flex:none}
-  .side .lbl{opacity:0;transition:.15s}
-  body.x .side .lbl{opacity:1}
-  .side .tog{margin-top:auto;color:#8ea9c1;background:none;border:0;border-top:1px solid #0d2b47;padding:12px 24px;cursor:pointer;font-size:12px;display:flex;gap:12px;align-items:center;white-space:nowrap}
-  .side .tog:hover{color:#fff}
-  .side .tog i{width:16px;height:16px;flex:none}
-
-  .main{margin-left:64px;padding:20px 24px 40px;transition:margin-left .15s}
-  body.x .main{margin-left:200px}
-  @media(max-width:900px){.side{width:64px}body.x .side{width:64px}body.x .side .lbl{opacity:0}.main{margin-left:64px}body.x .main{margin-left:64px}}
-  .crumbs{font-size:12.5px;color:#69707d;margin-bottom:14px}
-  .crumbs b{color:#00618a}
-
-  h1.pv{font-size:20px;font-weight:600;margin:0 0 4px;color:#011a2f}
-  .pvsub{font-size:12.5px;color:#69707d;margin-bottom:16px}
-
-  /* KPI cards ala Wazuh overview */
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:18px}
-  .kpi{background:#fff;border:1px solid #d3dae6;border-radius:4px;padding:14px 16px;box-shadow:0 1px 2px rgba(0,26,47,.06)}
-  .kpi .t{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#69707d;font-weight:700}
-  .kpi .v{font-size:26px;font-weight:700;color:#011a2f;margin-top:4px}
-  .kpi .v.ok{color:#0b8a4b}.kpi .v.warn{color:#b26b00}.kpi .v.bad{color:#bd2719}
-  .kpi .h{font-size:11px;color:#6b7078;margin-top:3px}
-
-  .row{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:18px}
-  @media(max-width:1100px){.row{grid-template-columns:1fr}}
-
-  .panel{background:#fff;border:1px solid #d3dae6;border-radius:4px;box-shadow:0 1px 2px rgba(0,26,47,.06)}
-  .panel .hd{padding:12px 16px;border-bottom:1px solid #d3dae6;display:flex;align-items:center;gap:8px}
-  .panel .hd h2{margin:0;font-size:14px;font-weight:600;color:#011a2f;display:flex;gap:8px;align-items:center}
-  .panel .hd .sub{font-size:11.5px;color:#69707d}
-  .panel .bd{padding:14px 16px}
-
-  /* Donut severity ala Wazuh (pure CSS conic-gradient) */
-  .donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
-  .donut{width:150px;height:150px;border-radius:50%;position:relative;flex:none}
-  .donut::after{content:attr(data-total);position:absolute;inset:26px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#011a2f}
-  .lg{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
-  .lg .li{display:flex;align-items:center;gap:8px}
-  .lg .sw{width:10px;height:10px;border-radius:2px;flex:none}
-  .lg .n{color:#4c525b;margin-left:auto;font-weight:600}
-
-  /* Bar chart threat ala Wazuh */
-  .bars{display:flex;flex-direction:column;gap:10px}
-  .bar-row{display:grid;grid-template-columns:120px 1fr 46px;gap:10px;align-items:center;font-size:12.5px}
-  .bar-track{background:#eef1f6;border-radius:3px;height:16px;overflow:hidden}
-  .bar-fill{height:100%;border-radius:3px;transition:width .4s}
-
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{background:#f5f7fa;color:#565d66;text-align:left;padding:9px 12px;border-bottom:1px solid #d3dae6;font-size:11px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;white-space:nowrap}
-  td{padding:9px 12px;border-bottom:1px solid #edf0f4;color:#26292e}
-  tbody tr:hover td{background:#f2f9ff}
-  .tbl-scroll{max-height:560px;overflow:auto}
-
-  .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:11px;font-size:11.5px;font-weight:600;border:1px solid}
-  .c-ok{background:#e6f4ea;color:#0b8a4b;border-color:#b7e1c5}
-  .c-no{background:#fce8e6;color:#a50e0e;border-color:#f5c6c2}
-  .c-rust{background:#e8f0fe;color:#1a5dc8;border-color:#c2d6ff}
-  .c-wz{background:#f1f3f4;color:#3c4043;border-color:#dadce0}
-  .c-crit{background:#fce8e6;color:#a50e0e;border-color:#f5c6c2}
-  .c-high{background:#fef3e2;color:#a65c00;border-color:#f8d9a8}
-  .c-med{background:#fdf4d0;color:#8a6d00;border-color:#eee3a3}
-  .c-unv{background:#ede7fe;color:#5b21b6;border-color:#d8ccf7}
-  .c-info{background:#e8f0fe;color:#1a5dc8;border-color:#c2d6ff}
-
-  .mono{font-family:ui-monospace,"Cascadia Code",Menlo,monospace;font-size:11.5px}
-  .muted{color:#69707d}
-  .modal{display:none;position:fixed;inset:0;z-index:100;background:rgba(1,26,47,.5);align-items:center;justify-content:center}
-  .modal.on{display:flex}
-  .modal-bd{background:#fff;border-radius:6px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,.2)}
-  .modal-bd h2{margin:0 0 16px;font-size:16px;color:#011a2f}
-  .modal-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf0f4;font-size:13px}
-  .modal-row .l{color:#69707d}
-  .modal-row .r{color:#26292e;font-weight:500}
-  .modal-close{float:right;background:none;border:0;cursor:pointer;color:#69707d;font-size:20px;padding:0;line-height:1}
-  .modal-close:hover{color:#011a2f}
-
-  /* News feed ala Wazuh dashboard */
-  .feed{display:flex;flex-direction:column;gap:0}
-  .feed .fi{display:grid;grid-template-columns:64px 1fr auto;gap:10px;padding:10px 4px;border-bottom:1px solid #edf0f4;font-size:12.5px;align-items:start}
-  .feed .fi:last-child{border-bottom:0}
-  .feed .tm{color:#69707d;font-size:11px;white-space:nowrap}
-  .feed .msg{color:#26292e}
-  .feed .msg .f{color:#0b6b9e;font-weight:600}
-
-  .btn{appearance:none;border:1px solid transparent;background:#00a9e0;color:#fff;padding:7px 13px;border-radius:4px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
-  .btn:hover{background:#0294cb}
-  .btn.sec{background:#fff;color:#00618a;border-color:#00a9e0}
-  .btn.sec:hover{background:#e6f7ff}
-  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
-  .toolbar .sp{flex:1}
-
-  /* Views */
-  .view{display:none}
-  .view.on{display:block}
-
-  .legend-foot{font-size:11px;color:#6b7078;margin-top:10px;border-top:1px solid #edf0f4;padding-top:8px}
-</style>
-</head>
-<body>
-
-<div class="topbar">
-  <div class="logo"><span>wazuh<b>.</b></span><span class="app">Fleet Monitor</span></div>
-  <span class="badge100" id="badge100">100 WORKSTATION</span>
-  <div class="right">
-    <span class="live"><span class="pulse"></span> live</span>
-    <span><i data-lucide="clock" style="width:12px;height:12px;vertical-align:-2px"></i> <span id="generated">-</span></span>
-    <span>refresh <span id="countdown">5</span>s</span>
-  </div>
-</div>
-
-<nav class="side">
-  <a class="item active" data-view="overview" href="#overview"><i data-lucide="layout-dashboard"></i><span class="lbl">Overview</span></a>
-  <a class="item" data-view="agents" href="#agents"><i data-lucide="monitor-smartphone"></i><span class="lbl">Agents</span></a>
-  <a class="item" data-view="threat" href="#threat"><i data-lucide="shield-alert"></i><span class="lbl">Threat Events</span></a>
-  <a class="item" data-view="health" href="#health"><i data-lucide="activity"></i><span class="lbl">Health</span></a>
-  <button class="tog" id="togbtn" onclick="tog()" aria-expanded="false" title="Buka/tutup menu"><i data-lucide="chevrons-left" style="transform:rotate(180deg)"></i><span class="lbl">Buka menu</span></button>
-</nav>
-
-<div class="main">
-  <div class="crumbs">Server management / <b id="crumb">Overview</b></div>
-
-  <!-- ================= OVERVIEW ================= -->
-  <section class="view on" id="v-overview">
-    <h1 class="pv">Overview</h1>
-    <div class="pvsub">Ringkasan fleet 100 workstation: agen ringan Rust hash-only ke n8n (otak), arahan dospem.</div>
-    <div class="kpis" id="kpis"></div>
-
-    <div class="row">
-      <div class="panel">
-        <div class="hd"><h2><i data-lucide="shield-alert" style="color:#00a9e0"></i> Threat severity</h2><span class="sub">dari event feed</span></div>
-        <div class="bd">
-          <div class="donut-wrap">
-            <div class="donut" id="donut" data-total="0"></div>
-            <div class="lg" id="lg"></div>
-          </div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="hd"><h2><i data-lucide="gauge" style="color:#00a9e0"></i> Efisiensi agen</h2><span class="sub">Rust vs Wazuh</span></div>
-        <div class="bd">
-          <div class="bars" id="eff"></div>
-          <div class="legend-foot">Wazuh Agent ~50 MB RAM + enroll 1514/1515 · soar-agent 5.3 MB binary, RSS 5.2 MB, hash-only 1-2 KB/event, scp + systemd tanpa enroll.</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="hd"><h2><i data-lucide="newspaper" style="color:#00a9e0"></i> Latest events</h2><span class="sub">news feed</span>
-        <span style="margin-left:auto" class="sub">lihat semua di tab Threat Events</span></div>
-      <div class="bd"><div class="feed" id="feed5"></div></div>
-    </div>
-  </section>
-
-  <!-- ================= AGENTS ================= -->
-  <section class="view" id="v-agents">
-    <h1 class="pv">Agents</h1>
-    <div class="pvsub">Polling Wazuh API 30s + heartbeat Rust 60s. Klik baris untuk detail agent.</div>
-    <div class="toolbar">
-      <input id="q" placeholder="Cari nama / IP / ID..." oninput="renderAgents()" style="padding:7px 10px;border:1px solid #d3dae6;border-radius:4px;font-size:12.5px;width:180px">
-      <select id="sf" onchange="renderAgents()" style="padding:7px 10px;border:1px solid #d3dae6;border-radius:4px;font-size:12.5px">
-        <option value="">Semua status</option>
-        <option>active</option>
-        <option>disconnected</option>
-      </select>
-      <button class="btn sec" onclick="load()"><i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh</button>
-      <button class="btn" onclick="simulate()"><i data-lucide="users" style="width:12px;height:12px"></i> Simulasi 100 PC</button>
-      <span class="sp"></span>
-      <a href="#" onclick="exportCSV();return false" style="font-size:12px;color:#00618a"><i data-lucide="download" style="width:12px;height:12px;vertical-align:-2px"></i> CSV</a>
-      <span class="sub muted" id="acount" style="font-size:11.5px"></span>
-    </div>
-    <div class="panel">
-      <div class="tbl-scroll">
-      <table>
-        <thead><tr><th>ID</th><th>Nama</th><th>Tipe</th><th>OS</th><th>Status</th><th>IP</th><th>Versi</th><th>Last keep alive</th><th>Binary</th><th>RAM</th></tr></thead>
-        <tbody id="tbody"></tbody>
-      </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= THREAT EVENTS ================= -->
-  <section class="view" id="v-threat">
-    <h1 class="pv">Threat Events</h1>
-    <div class="pvsub">Feed event file (hash) dari agen + pipeline n8n: VT ensemble + Gemini 2.5 + HITL Telegram.</div>
-    <div class="toolbar">
-      <select id="sevf" onchange="renderEvents()" style="padding:7px 10px;border:1px solid #d3dae6;border-radius:4px;font-size:12.5px">
-        <option value="">Semua severity</option><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>UNVERIFIED</option><option>INFO</option>
-      </select>
-      <span class="sp"></span>
-      <span class="muted" style="font-size:11.5px" id="evcount"></span>
-    </div>
-    <div class="panel">
-      <div class="tbl-scroll">
-      <table>
-        <thead><tr><th>Waktu</th><th>Agent</th><th>File</th><th>Hash</th><th>Severity</th><th>Status</th></tr></thead>
-        <tbody id="evbody"></tbody>
-      </table>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= HEALTH ================= -->
-  <section class="view" id="v-health">
-    <h1 class="pv">Health</h1>
-    <div class="pvsub">Self-aware monitoring (kategori F): n8n otak, Gemini API, Wazuh API.</div>
-    <div class="kpis" id="hkpis"></div>
-    <div class="panel">
-      <div class="bd" style="display:flex;gap:22px;flex-wrap:wrap;font-size:13px" id="hlist"></div>
-    </div>
-  </section>
-</div>
-
-<div class="modal" id="modal"><div class="modal-bd">
-  <button class="modal-close" onclick="closeModal()">&times;</button>
-  <h2 id="modal-title">Agent Details</h2>
-  <div id="modal-body"></div>
-</div></div>
-
-<script>
-let DATA=null, timer=5;
-
-const SEV_META={CRITICAL:['#bd2719','c-crit'],HIGH:['#d97706','c-high'],MEDIUM:['#eab308','c-med'],UNVERIFIED:['#7c3aed','c-unv'],INFO:['#00a9e0','c-info']};
-
-async function load(){
-  try{
-    const [f,e]=await Promise.all([fetch('/api/fleet').then(r=>r.json()),fetch('/api/events').then(r=>r.json())]);
-    DATA={...f,events:(e.events||[])};
-    document.getElementById('generated').textContent=new Date(f.generated_at).toLocaleTimeString('id-ID');
-    document.getElementById('badge100').textContent=f.stats.total+' AGENTS';
-    renderOverview();renderAgents();renderEvents();renderHealth();
-    renderIcons();
-  }catch(err){console.error(err)}
-  timer=5;
-}
-
-function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-
-function renderIcons(){
-  document.querySelectorAll('i[data-lucide]').forEach(el=>{
-    const name=el.getAttribute('data-lucide');
-    const w=parseInt(el.style.width)||16;
-    const span=document.createElement('span');
-    span.style.display='inline-flex';
-    span.style.verticalAlign=el.style.verticalAlign||'middle';
-    if(el.style.color)span.style.color=el.style.color; // pertahankan warna ikon (aksen #00a9e0)
-    span.innerHTML=ic(name,w);
-    el.replaceWith(span);
-  });
-}
-
-function renderOverview(){
-  const s=DATA.stats,h=DATA.health;
-  document.getElementById('kpis').innerHTML=`
-    <div class="kpi"><div class="t">Total agents</div><div class="v">${s.total}</div><div class="h">${s.rust} Rust ringan + ${s.wazuh} Wazuh</div></div>
-    <div class="kpi"><div class="t">Active</div><div class="v ok">${s.active}</div><div class="h">${s.disconnected} disconnected</div></div>
-    <div class="kpi"><div class="t">Events (24h)</div><div class="v">${s.events_total}</div><div class="h">file hash 24 jam terakhir</div></div>
-    <div class="kpi"><div class="t">Efisiensi</div><div class="v">90%</div><div class="h">5.3 MB vs 50 MB per agen</div></div>`;
-
-  // Donut severity
-  const sev=DATA.stats.severity||{};const keys=Object.keys(sev);
-  let acc=0;const total=keys.reduce((a,k)=>a+sev[k],0);
-  const parts=keys.map(k=>{const c=SEV_META[k][0];const v=sev[k];const st=acc;acc+=v;return `${c} ${st/total*360}deg ${(st+v)/total*360}deg`}).filter((x,i)=>sev[keys[i]]>0);
-  const donut=document.getElementById('donut');
-  donut.style.background=total>0?`conic-gradient(${parts.join(',')})`:'#eef1f6';
-  donut.dataset.total=total;
-  document.getElementById('lg').innerHTML=keys.map(k=>`<div class="li"><span class="sw" style="background:${SEV_META[k][0]}"></span>${k}<span class="n">${sev[k]}</span></div>`).join('');
-
-  // Efisiensi bars
-  document.getElementById('eff').innerHTML=`
-    <div class="bar-row"><span>Wazuh Agent</span><div class="bar-track"><div class="bar-fill" style="width:100%;background:#bd2719"></div></div><span>50 MB</span></div>
-    <div class="bar-row"><span>soar-agent</span><div class="bar-track"><div class="bar-fill" style="width:10.6%;background:#0b8a4b"></div></div><span>5.3 MB</span></div>
-    <div class="bar-row"><span>RSS Rust</span><div class="bar-track"><div class="bar-fill" style="width:10.4%;background:#00a9e0"></div></div><span>5.2 MB</span></div>`;
-
-  // Feed 5 terakhir
-  const ev=DATA.events.slice(0,5);
-  document.getElementById('feed5').innerHTML=ev.length?ev.map(e=>{
-    const sm=SEV_META[e.severity||'INFO']||SEV_META.INFO;
-    return `<div class="fi"><span class="tm">${new Date(e.ts).toLocaleTimeString('id-ID')}</span>
-      <span class="msg"><span class="f">${esc(e.agent)}</span> · ${esc((e.path||'').split('/').pop()||'-')} <span class="mono muted">${esc((e.hash||'').slice(0,12))}...</span></span>
-      <span class="chip ${sm[1]}">${esc(e.severity||'INFO')}</span></div>`}).join('')
-    :'<div class="fi muted">Belum ada event. Drop file di ~/Downloads agen, atau lihat simulasi tombol Agents.</div>';
-}
-
-function showDetail(a){
-  document.getElementById('modal-title').textContent=a.name;
-  const rows=[['ID',a.id],['Nama',a.name],['Tipe',a.type],['Status',a.status],['IP',a.ip],['Versi',a.version],
-    ['Binary',a.binary],['RAM',a.ram],['Last Keep Alive',(a.lastKeepAlive||'-').slice(0,19)],
-    ['Age (detik)',a.age_sec!=null?a.age_sec+'s':'-']];
-  document.getElementById('modal-body').innerHTML=rows.map(r=>`<div class="modal-row"><span class="l">${r[0]}</span><span class="r mono">${esc(r[1])}</span></div>`).join('');
-  document.getElementById('modal').classList.add('on');
-}
-function closeModal(){document.getElementById('modal').classList.remove('on')}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
-
-function renderAgents(){
-  const q=(document.getElementById('q').value||'').toLowerCase();
-  const sf=document.getElementById('sf').value;
-  let rows=DATA.agents.filter(a=>!q||[a.id,a.name,a.ip,a.os].join(' ').toLowerCase().includes(q));
-  if(sf)rows=rows.filter(a=>a.status===sf);
-  document.getElementById('acount').textContent=`${rows.length}/${DATA.agents.length} agent`;
-  const tb=document.getElementById('tbody');
-  tb.innerHTML=rows.length?rows.map(a=>`<tr onclick="showDetail(${JSON.stringify(a).replace(/"/g,'&quot;')})" style="cursor:pointer">
-    <td class="mono">${esc(a.id)}</td><td>${esc(a.name)}</td>
-    <td><span class="chip ${a.type==='rust'?'c-rust':'c-wz'}">${esc(a.type)}</span></td>
-    <td class="mono">${esc(a.os||'-')}</td>
-    <td><span class="chip ${a.status==='active'?'c-ok':'c-no'}">${esc(a.status)}</span></td>
-    <td class="mono">${esc(a.ip)}</td><td class="mono">${esc(a.version)}</td>
-    <td class="mono muted">${esc((a.lastKeepAlive||'-').slice(0,19))}</td>
-    <td class="mono">${esc(a.binary)}</td><td class="mono">${esc(a.ram)}</td></tr>`).join('')
-  :'<tr><td colspan="10" class="muted" style="text-align:center;padding:24px">tidak ada agent cocok</td></tr>';
-}
-
-function exportCSV(){
-  const h=['ID','Nama','Tipe','OS','Status','IP','Versi','LastKeepAlive','Binary','RAM'];
-  const rows=DATA.agents.map(a=>[a.id,a.name,a.type,a.os,a.status,a.ip,a.version,(a.lastKeepAlive||'').slice(0,19),a.binary,a.ram]);
-  const csv=[h.join(','),...rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','))].join('\n');
-  const b=new Blob([csv],{type:'text/csv'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='soar-fleet.csv';a.click();
-}
-
-function renderEvents(){
-  const f=document.getElementById('sevf').value;
-  const ev=DATA.events.filter(e=>!f||(e.severity||'INFO')===f);
-  document.getElementById('evcount').textContent=`${ev.length} event terfilter dari ${DATA.events.length}`;
-  document.getElementById('evbody').innerHTML=ev.length?ev.map(e=>{
-    const sm=SEV_META[e.severity||'INFO']||SEV_META.INFO;
-    return `<tr><td class="mono muted">${new Date(e.ts).toLocaleString('id-ID')}</td>
-      <td>${esc(e.agent)}</td><td class="mono" title="${esc(e.path)}">${esc((e.path||'-').split('/').pop())}</td>
-      <td class="mono muted" title="${esc(e.hash)}">${esc((e.hash||'-').slice(0,16))}...</td>
-      <td><span class="chip ${sm[1]}">${esc(e.severity||'INFO')}</span></td>
-      <td class="mono">${esc(e.status)}</td></tr>`}).join('')
-  :'<tr><td colspan="6" class="muted" style="text-align:center;padding:24px">belum ada event — drop EICAR di ~/Downloads</td></tr>';
-}
-
-function renderHealth(){
-  const h=DATA.health;
-  document.getElementById('hkpis').innerHTML=`
-    <div class="kpi"><div class="t">n8n (otak)</div><div class="v ${h.n8n?'ok':'bad'}">${h.n8n?'UP':'DOWN'}</div><div class="h">webhook wazuh-alert</div></div>
-    <div class="kpi"><div class="t">Gemini 2.5</div><div class="v ${h.gemini?'ok':'warn'}">${h.gemini?'KEY OK':'NO KEY'}</div><div class="h">API analisis AI</div></div>
-    <div class="kpi"><div class="t">Wazuh API</div><div class="v ${h.wazuh_api?'ok':'bad'}">${h.wazuh_api?'UP':'DOWN'}</div><div class="h">baseline agent 001/002</div></div>`;
-  document.getElementById('hlist').innerHTML=`
-    <span><span class="chip ${h.n8n?'c-ok':'c-no'}">n8n ${h.n8n?'OK':'DOWN'}</span></span>
-    <span><span class="chip ${h.gemini?'c-ok':'c-no'}">Gemini ${h.gemini?'OK':'no key'}</span></span>
-    <span><span class="chip ${h.wazuh_api?'c-ok':'c-no'}">Wazuh API ${h.wazuh_api?'OK':'DOWN'}</span></span>
-    <span class="muted">Fleet bind 0.0.0.0:8080 · Tailscale 100.95.198.108:8080 untuk 100 PC · desain plek Wazuh Dashboard</span>`;
-}
-
-async function simulate(){
-  for(let i=4;i<=100;i++){const id=String(i).padStart(3,'0');
-    await fetch('/api/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,name:`rust-agent-lab-${id}`,ip:`192.168.18.${100+i}`,version:'0.1.0'})});}
-  load();
-}
-
-// Toggle sidebar: chevron flip + label dinamis
-function tog(){
-  const open=document.body.classList.toggle('x');
-  const b=document.getElementById('togbtn');
-  b.setAttribute('aria-expanded',open);
-  b.querySelector('.lbl').textContent=open?'Tutup menu':'Buka menu';
-  b.querySelector('svg').style.transform=open?'rotate(0deg)':'rotate(180deg)';
-}
-
-// Sidebar nav multi-view
-document.querySelectorAll('.side .item').forEach(a=>a.addEventListener('click',ev=>{
-  ev.preventDefault();
-  document.querySelectorAll('.side .item').forEach(x=>x.classList.remove('active'));
-  a.classList.add('active');
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
-  document.getElementById('v-'+a.dataset.view).classList.add('on');
-  document.getElementById('crumb').textContent=a.querySelector('.lbl').textContent;
-  location.hash=a.dataset.view;
-}));
-const hash=location.hash.slice(1);
-if(['overview','agents','threat','health'].includes(hash)){document.querySelector(`.side .item[data-view="${hash}"]`).click();}
-
-renderIcons(); // render statis saat DOM ready
-setInterval(()=>{document.getElementById('countdown').textContent=--timer;if(timer<=0)load()},1000);
-load();
-</script>
+HTML = """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>SOAR Control Plane API</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:680px;margin:48px auto;padding:0 16px;color:#1a1c21;">
+  <h1>SOAR Fleet Control Plane API</h1>
+  <p>This service provides the authenticated backend API for the SOAR Dashboard and Endpoint Agents.</p>
+  <p>Health endpoint: <code>GET /healthz</code>. Use the Next.js Dashboard UI for interactive SOC operations.</p>
 </body>
 </html>
 """
-
 
 def _to_utc_iso(value):
     """Normalisasi ts apa pun (WITA +08:00, Z, Wazuh +0000, epoch) -> UTC 'Z'.
@@ -1129,8 +735,10 @@ def _event_row(ev):
 
 
 def _db():
-    conn = sqlite3.connect(EVENTS_DB, timeout=5)
+    conn = sqlite3.connect(EVENTS_DB, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=10000")
     return conn
 
 
@@ -1204,6 +812,13 @@ def _event_store_init():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)"
             )
+            try:
+                conn.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique "
+                    "ON users(LOWER(email)) WHERE email IS NOT NULL AND TRIM(email) != ''"
+                )
+            except Exception:
+                pass
             _init_default_users(conn)
             conn.execute(
                 """CREATE TABLE IF NOT EXISTS agent_enrollment_requests (
@@ -1215,11 +830,18 @@ def _event_store_init():
                     status TEXT NOT NULL DEFAULT 'pending',
                     agent_id TEXT,
                     poll_token TEXT,
+                    claim_secret_hash TEXT,
+                    token_claimed_at TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT,
                     approved_by TEXT
                 )"""
             )
+            for col in ("claim_secret_hash", "token_claimed_at"):
+                try:
+                    conn.execute(f"ALTER TABLE agent_enrollment_requests ADD COLUMN {col} TEXT")
+                except Exception:
+                    pass
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_enroll_status ON agent_enrollment_requests(status)"
             )
@@ -1334,8 +956,8 @@ def _event_store_prune(now=None):
         print(f"event store prune error: {e}", flush=True)
 
 
-def _event_store_query(since=None, until=None, severity=None, agent_id=None, q=None):
-    """Ambil semua event SOAR dalam rentang (belum dipaginasi; volume SOAR kecil)."""
+def _event_store_query(since=None, until=None, severity=None, agent_id=None, q=None, limit=HISTORY_MAX_LIMIT):
+    """Ambil event SOAR dalam rentang dengan batas atas aman."""
     where = ["source = 'soar'"]
     params = []
     if since:
@@ -1357,7 +979,9 @@ def _event_store_query(since=None, until=None, severity=None, agent_id=None, q=N
             " OR ai LIKE ? OR rule_desc LIKE ?)"
         )
         params.extend([like] * 6)
-    sql = "SELECT * FROM events WHERE " + " AND ".join(where) + " ORDER BY ts DESC"
+    safe_limit = max(1, min(int(limit or HISTORY_MAX_LIMIT), HISTORY_MAX_LIMIT))
+    sql = "SELECT * FROM events WHERE " + " AND ".join(where) + " ORDER BY ts DESC LIMIT ?"
+    params.append(safe_limit)
     try:
         with closing(_db()) as conn:
             rows = conn.execute(sql, params).fetchall()
@@ -1376,7 +1000,7 @@ def _api_key_create(name, scopes):
     valid_scopes = [
         s.strip()
         for s in (scopes or [])
-        if s.strip() in ("read:fleet", "read:intel", "write:actions", "*")
+        if s.strip() in ("read:fleet", "read:intel", "write:actions", "write:investigations", "*")
     ]
     if not valid_scopes:
         valid_scopes = ["read:fleet", "read:intel"]
@@ -1466,12 +1090,20 @@ def _verify_api_key(headers, required_scope=""):
         if required_scope and ("*" not in scopes and required_scope not in scopes):
             return False, None
 
-        now_iso = datetime.now(WITA).isoformat()
-        with closing(_db()) as conn, conn:
-            conn.execute(
-                "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
-                (now_iso, row["id"]),
-            )
+        now_ts = time.time()
+        should_touch = False
+        with _fleet_locks.API_KEY_TOUCH_LOCK:
+            last_t = _API_KEY_LAST_TOUCH.get(row["id"], 0.0)
+            if now_ts - last_t >= 60.0:
+                _API_KEY_LAST_TOUCH[row["id"]] = now_ts
+                should_touch = True
+        if should_touch:
+            now_iso = datetime.now(WITA).isoformat()
+            with closing(_db()) as conn, conn:
+                conn.execute(
+                    "UPDATE api_keys SET last_used_at = ? WHERE id = ?",
+                    (now_iso, row["id"]),
+                )
 
         return True, {"id": row["id"], "name": row["name"], "scopes": scopes}
     except Exception as e:
@@ -1647,54 +1279,46 @@ def _investigation_delete(inv_id):
 
 
 def _hash_password(password, salt=None):
-    if salt is None:
-        salt = secrets.token_hex(16)
-    h = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000)
-    return f"{salt}${h.hex()}"
+    return _fleet_sec.hash_password(password, salt=salt)
 
 
 def _verify_password(password, stored_hash):
-    try:
-        salt, hash_val = stored_hash.split("$", 1)
-        test_h = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000).hex()
-        return hmac.compare_digest(hash_val, test_h)
-    except Exception:
-        return False
+    return _fleet_sec.verify_password(password, stored_hash)
 
 
 def _init_default_users(conn):
     try:
         cur = conn.execute("SELECT count(*) FROM users")
         count = cur.fetchone()[0]
-        admin_email = os.environ.get("ADMIN_EMAIL", "raviarnankeren@gmail.com")
+        if count > 0:
+            return
+        admin_email = (
+            os.environ.get("FLEET_BOOTSTRAP_ADMIN_EMAIL")
+            or os.environ.get("ADMIN_EMAIL")
+            or "admin@soar.local"
+        ).strip().lower()
+        init_pw = (
+            os.environ.get("FLEET_BOOTSTRAP_ADMIN_PASSWORD")
+            or os.environ.get("ADMIN_INITIAL_PASSWORD")
+            or ""
+        ).strip()
+        generated = False
+        if not init_pw:
+            init_pw = secrets.token_urlsafe(18)
+            generated = True
         now_iso = datetime.now(WITA).isoformat()
-        if count == 0:
-            defaults = [
-                ("usr_admin", "admin", _hash_password(os.environ.get("ADMIN_INITIAL_PASSWORD", "Admin@SOAR2026!")), "admin", admin_email, "Ravi Arnan (SOC Lead)", now_iso, 1),
-                ("usr_analyst", "analyst", _hash_password("Analyst@SOAR2026!"), "analyst", "analyst@soar.local", "SOC Tier 2 Analyst", now_iso, 1),
-                ("usr_viewer", "auditor", _hash_password("Viewer@SOAR2026!"), "viewer", "ravinewgemini@gmail.com", "Ravi (Auditor Viewer)", now_iso, 1),
-            ]
-            conn.executemany(
-                """INSERT INTO users (id, username, password_hash, role, email, name, created_at, active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                defaults,
+        conn.execute(
+            """INSERT INTO users (id, username, password_hash, role, email, name, created_at, active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+            ("usr_admin", "admin", _hash_password(init_pw), "admin", admin_email, "SOAR Administrator", now_iso),
+        )
+        if generated:
+            print(
+                f"BOOTSTRAP ADMIN GENERATED: username=admin email={admin_email} password={init_pw}",
+                flush=True,
             )
-            print("default users initialized: admin, analyst, auditor (ravinewgemini@gmail.com)", flush=True)
         else:
-            # Pastikan ravinewgemini@gmail.com terdaftar di tabel users
-            existing_viewer = conn.execute("SELECT id FROM users WHERE LOWER(email) = 'ravinewgemini@gmail.com'").fetchone()
-            if not existing_viewer:
-                auditor_row = conn.execute("SELECT id FROM users WHERE username = 'auditor'").fetchone()
-                if auditor_row:
-                    conn.execute("UPDATE users SET email = 'ravinewgemini@gmail.com', name = 'Ravi (Auditor Viewer)' WHERE username = 'auditor'")
-                    print("updated auditor email to ravinewgemini@gmail.com", flush=True)
-                else:
-                    conn.execute(
-                        """INSERT INTO users (id, username, password_hash, role, email, name, created_at, active)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
-                        ("usr_ravinewgemini", "ravinewgemini", _hash_password("Viewer@SOAR2026!"), "viewer", "ravinewgemini@gmail.com", "Ravi (Auditor Viewer)", now_iso),
-                    )
-                    print("added ravinewgemini@gmail.com as viewer", flush=True)
+            print(f"default admin initialized: username=admin email={admin_email}", flush=True)
     except Exception as e:
         print(f"init_default_users error: {e}", flush=True)
 
@@ -1962,7 +1586,7 @@ def _cf_active_user_emails():
             ).fetchall()
         for r in rows:
             em = str(r["email"] or "").strip().lower()
-            if "@" in em and " " not in em:
+            if _fleet_sec.is_valid_external_email(em):
                 emails.add(em)
     except Exception as e:
         print(f"cf_active_user_emails error: {e}", flush=True)
@@ -2011,6 +1635,11 @@ def _cf_sync_status_summary():
 
 def _sync_cloudflare_access_policy():
     """Sinkronkan daftar email user aktif ke Cloudflare Zero Trust Access Policy."""
+    with _fleet_locks.CF_SYNC_LOCK:
+        return _sync_cloudflare_access_policy_locked()
+
+
+def _sync_cloudflare_access_policy_locked():
     cfg = _cf_access_config()
     emails = _cf_active_user_emails()
     if not (cfg["token"] and cfg["account_id"] and cfg["policy_id"]):
@@ -2063,24 +1692,16 @@ def _sync_cloudflare_access_policy():
                 raise RuntimeError(f"Cloudflare GET policy gagal: {errs or get_resp}")
 
             policy_obj = get_resp.get("result") or {}
+            # Preserve seluruh field policy yang ada dari GET, hanya ganti include/name/decision
             put_body = {
-                "name": policy_obj.get("name") or "SOAR Authorized Users",
-                "decision": policy_obj.get("decision") or "allow",
-                "include": _cf_build_include_rules(policy_obj.get("include"), emails),
+                k: v
+                for k, v in policy_obj.items()
+                if k not in ("id", "uid", "created_at", "updated_at", "reusable")
+                and v is not None
             }
-            for opt_key in (
-                "precedence",
-                "exclude",
-                "require",
-                "session_duration",
-                "purpose_justification_required",
-                "purpose_justification_prompt",
-                "approval_required",
-                "approval_groups",
-                "isolation_required",
-            ):
-                if opt_key in policy_obj and policy_obj[opt_key] is not None:
-                    put_body[opt_key] = policy_obj[opt_key]
+            put_body["name"] = policy_obj.get("name") or "SOAR Authorized Users"
+            put_body["decision"] = policy_obj.get("decision") or "allow"
+            put_body["include"] = _cf_build_include_rules(policy_obj.get("include"), emails)
 
             put_resp = _cf_api_request(target_url, cfg["token"], method="PUT", payload=put_body)
             if not isinstance(put_resp, dict) or not put_resp.get("success"):
@@ -2161,18 +1782,21 @@ def _enroll_request_create(hostname, os_name="linux", arch="x86_64", ip=""):
     clean_arch = (arch or "x86_64").strip()[:32]
     clean_ip = (ip or "").strip()[:64]
     req_id = f"req_{uuid.uuid4().hex[:12]}"
+    claim_secret = secrets.token_hex(24)
+    claim_secret_hash = _hash_api_key(claim_secret)
     created_at = datetime.now(WITA).isoformat()
 
     with closing(_db()) as conn, conn:
         conn.execute(
             """INSERT INTO agent_enrollment_requests
-            (id, hostname, os, arch, ip, status, created_at)
-            VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
-            (req_id, clean_host, clean_os, clean_arch, clean_ip, created_at),
+            (id, hostname, os, arch, ip, status, claim_secret_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            (req_id, clean_host, clean_os, clean_arch, clean_ip, claim_secret_hash, created_at),
         )
 
     return {
         "request_id": req_id,
+        "claim_secret": claim_secret,
         "hostname": clean_host,
         "os": clean_os,
         "arch": clean_arch,
@@ -2189,7 +1813,8 @@ def _enroll_request_get(req_id):
     try:
         with closing(_db()) as conn:
             row = conn.execute(
-                """SELECT id, hostname, os, arch, ip, status, agent_id, poll_token, created_at, updated_at, approved_by
+                """SELECT id, hostname, os, arch, ip, status, agent_id, poll_token,
+                          claim_secret_hash, token_claimed_at, created_at, updated_at, approved_by
                 FROM agent_enrollment_requests WHERE id = ?""",
                 (clean_id,),
             ).fetchone()
@@ -2204,6 +1829,8 @@ def _enroll_request_get(req_id):
                 "status": row["status"],
                 "agent_id": row["agent_id"],
                 "poll_token": row["poll_token"],
+                "claim_secret_hash": row["claim_secret_hash"],
+                "token_claimed_at": row["token_claimed_at"],
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
                 "approved_by": row["approved_by"],
@@ -2211,6 +1838,36 @@ def _enroll_request_get(req_id):
     except Exception as e:
         print(f"enroll_request_get error: {e}", flush=True)
         return None
+
+
+def _enroll_claim_status(req_id, claim_secret=""):
+    """Ambil status enrollment dengan one-time pickup poll_token (TTL 15 menit)."""
+    req = _enroll_request_get(req_id)
+    if not req:
+        return None, 404, "request tidak ditemukan"
+    expected_hash = (req.get("claim_secret_hash") or "").strip()
+    if expected_hash:
+        provided = str(claim_secret or "").strip()
+        if not provided or not hmac.compare_digest(_hash_api_key(provided), expected_hash):
+            return None, 403, "claim_secret tidak valid"
+    poll_token = None
+    if req["status"] == "approved" and req.get("poll_token") and not req.get("token_claimed_at"):
+        # Cek TTL 15 menit sejak approval
+        updated_epoch = _ts_epoch(req.get("updated_at") or req.get("created_at"))
+        if not updated_epoch or (time.time() - updated_epoch <= 900):
+            poll_token = req["poll_token"]
+            now_iso = datetime.now(WITA).isoformat()
+            with closing(_db()) as conn, conn:
+                conn.execute(
+                    "UPDATE agent_enrollment_requests SET poll_token = NULL, token_claimed_at = ? WHERE id = ?",
+                    (now_iso, req["id"]),
+                )
+    return {
+        "status": req["status"],
+        "agent_id": req.get("agent_id"),
+        "agent_name": f"agent-{req.get('hostname')}",
+        "poll_token": poll_token,
+    }, 200, None
 
 
 def _enroll_requests_list(status_filter=None):
@@ -2270,13 +1927,20 @@ def _next_agent_id(conn):
 
 def _enroll_request_approve(req_id, custom_agent_id=None, custom_name=None, approved_by="admin"):
     clean_id = str(req_id).strip()
-    with closing(_db()) as conn, conn:
+    conn = sqlite3.connect(EVENTS_DB, timeout=10, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute("PRAGMA busy_timeout=10000")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT * FROM agent_enrollment_requests WHERE id = ?", (clean_id,)
         ).fetchone()
         if not row:
+            conn.execute("ROLLBACK")
             raise ValueError("Permohonan enrollment tidak ditemukan")
         if row["status"] != "pending":
+            conn.execute("ROLLBACK")
             raise ValueError(f"Permohonan sudah berstatus '{row['status']}'")
 
         if custom_agent_id and _valid_agent_id(str(custom_agent_id).strip()):
@@ -2301,8 +1965,17 @@ def _enroll_request_approve(req_id, custom_agent_id=None, custom_name=None, appr
             WHERE id = ?""",
             (agent_id, poll_token, now_iso, approved_by, clean_id),
         )
-
-        FLEET_AGENT_POLL_TOKENS[agent_id] = poll_token
+        conn.execute("COMMIT")
+        with _fleet_locks.STATE_LOCK:
+            FLEET_AGENT_POLL_TOKENS[agent_id] = poll_token
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        conn.close()
 
     return {
         "request_id": clean_id,
@@ -2338,388 +2011,15 @@ def _enroll_request_reject(req_id, rejected_by="admin"):
 
 
 def _generate_linux_installer_script(server_origin):
-    return f"""#!/usr/bin/env bash
-set -euo pipefail
-
-# SOAR Agent Automated One-Line Installer
-SERVER_URL="{server_origin}"
-HOSTNAME=$(hostname | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9.-' | cut -c1-30)
-ARCH=$(uname -m)
-
-echo "========================================================"
-echo " SOAR Endpoint Security: Automated Agent Installer"
-echo " Target Host: $HOSTNAME ($ARCH)"
-echo " Server URL : $SERVER_URL"
-echo "========================================================"
-
-[ "$(id -u)" = 0 ] || {{ echo "[!] Harap jalankan script ini sebagai root (sudo)"; exit 1; }}
-
-echo "[1/4] Mengirim permohonan pendaftaran ke server SOAR..."
-REQUEST_JSON=$(curl -fsSL -X POST "$SERVER_URL/api/enroll/request" \\
-  -H "Content-Type: application/json" \\
-  -d "{{\\"hostname\\":\\"$HOSTNAME\\",\\"os\\":\\"linux\\",\\"arch\\":\\"$ARCH\\"}}")
-
-REQ_ID=$(echo "$REQUEST_JSON" | grep -o '"request_id":"[^"]*' | cut -d'"' -f4)
-if [ -z "$REQ_ID" ]; then
-  echo "[x] Gagal mendaftarkan host ke server. Respons: $REQUEST_JSON"
-  exit 1
-fi
-
-echo "[2/4] Permohonan tercatat dengan Request ID: $REQ_ID"
-echo "      Menunggu persetujuan (Approval) dari Administrator di SOAR Dashboard..."
-
-APPROVED=0
-for i in $(seq 1 120); do
-  sleep 3
-  STATUS_JSON=$(curl -fsSL "$SERVER_URL/api/enroll/status?request_id=$REQ_ID" || true)
-  STATUS=$(echo "$STATUS_JSON" | grep -o '"status":"[^"]*' | cut -d'"' -f4)
-  if [ "$STATUS" = "approved" ]; then
-    APPROVED=1
-    AGENT_ID=$(echo "$STATUS_JSON" | grep -o '"agent_id":"[^"]*' | cut -d'"' -f4)
-    AGENT_NAME=$(echo "$STATUS_JSON" | grep -o '"agent_name":"[^"]*' | cut -d'"' -f4)
-    POLL_TOKEN=$(echo "$STATUS_JSON" | grep -o '"poll_token":"[^"]*' | cut -d'"' -f4)
-    echo ""
-    echo "[✓] Disetujui oleh Admin! Menerima Agent ID: $AGENT_ID ($AGENT_NAME)"
-    break
-  elif [ "$STATUS" = "rejected" ]; then
-    echo ""
-    echo "[x] Permohonan instalasi ditolak oleh administrator."
-    exit 1
-  fi
-  printf "."
-done
-echo ""
-
-if [ "$APPROVED" -ne 1 ]; then
-  echo "[x] Waktu tunggu persetujuan habis (timeout 6 menit). Silakan coba lagi."
-  exit 1
-fi
-
-echo "[3/4] Menyiapkan direktori dan file kredensial agent..."
-mkdir -p /etc/soar-agent /var/ossec/quarantine /usr/local/bin
-chmod 750 /var/ossec/quarantine
-printf '%s\\n' "$POLL_TOKEN" > /etc/soar-agent/fleet.token
-printf 'SOAR_FLEET_POLL_TOKEN_FILE=/etc/soar-agent/fleet.token\\n' > /etc/soar-agent/fleet.env
-chmod 600 /etc/soar-agent/fleet.token /etc/soar-agent/fleet.env
-
-if [ ! -f /usr/local/bin/soar-agent ] || [ ! -s /usr/local/bin/soar-agent ]; then
-  echo "      Mengunduh binary soar-agent..."
-  curl -fsSL -o /usr/local/bin/soar-agent "$SERVER_URL/api/installer/download/soar-agent" || rm -f /usr/local/bin/soar-agent
-  if [ ! -f /usr/local/bin/soar-agent ] || [ ! -s /usr/local/bin/soar-agent ]; then
-    if [ -f /tmp/soar-agent ]; then
-      cp /tmp/soar-agent /usr/local/bin/soar-agent
-    fi
-  fi
-fi
-if [ -f /usr/local/bin/soar-agent ]; then
-  chmod 755 /usr/local/bin/soar-agent || true
-fi
-
-echo "[4/4] Mendaftarkan layanan soar-agent..."
-if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-  cat > /etc/systemd/system/soar-agent.service <<UNIT
-[Unit]
-Description=SOAR Agen Ringan Rust
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/soar-agent --webhook $SERVER_URL/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name $AGENT_NAME --fleet-url $SERVER_URL/api/heartbeat --fleet-poll-token-file /etc/soar-agent/fleet.token
-Restart=always
-RestartSec=5
-Environment=RUST_LOG=info
-EnvironmentFile=/etc/soar-agent/fleet.env
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-  systemctl daemon-reload || true
-  if [ -x /usr/local/bin/soar-agent ]; then
-    systemctl enable --now soar-agent || true
-  else
-    echo "[!] Binary /usr/local/bin/soar-agent belum tersedia (misal non-x86_64). Build agent-rs lalu jalankan: systemctl enable --now soar-agent"
-  fi
-elif command -v rc-service >/dev/null 2>&1; then
-  cat > /etc/init.d/soar-agent <<OPENRC
-#!/sbin/openrc-run
-name="soar-agent"
-command="/usr/local/bin/soar-agent"
-command_args="--webhook $SERVER_URL/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name $AGENT_NAME --fleet-url $SERVER_URL/api/heartbeat --fleet-poll-token-file /etc/soar-agent/fleet.token"
-command_background=true
-pidfile="/run/soar-agent.pid"
-depend() {{ need net; }}
-OPENRC
-  chmod 755 /etc/init.d/soar-agent
-  rc-update add soar-agent default || true
-  [ -x /usr/local/bin/soar-agent ] && rc-service soar-agent restart || true
-else
-  echo "[!] systemd/OpenRC tidak terdeteksi. Jalankan manual:"
-  echo "    /usr/local/bin/soar-agent --webhook $SERVER_URL/webhook/wazuh-alert --agent-id $AGENT_ID --agent-name $AGENT_NAME --fleet-url $SERVER_URL/api/heartbeat --fleet-poll-token-file /etc/soar-agent/fleet.token"
-fi
-
-echo "========================================================"
-echo " [✓] Instalasi Selesai!"
-echo " Agent ID   : $AGENT_ID"
-echo " Nama Agent : $AGENT_NAME"
-echo " Status     : Aktif & Terhubung ke SOAR Security Platform"
-echo "========================================================"
-"""
+    return _fleet_installers.generate_linux_installer_script(server_origin)
 
 
 def _generate_macos_installer_script(server_origin):
-    return f"""#!/usr/bin/env bash
-set -euo pipefail
-
-# SOAR Agent Automated One-Line Installer for macOS (Apple Silicon & Intel)
-SERVER_URL="{server_origin}"
-if [ "$(uname -s)" != "Darwin" ]; then
-  echo "[!] Script ini khusus macOS (Darwin). Gunakan ?os=linux atau ?os=windows untuk OS lain."
-  exit 1
-fi
-
-HOSTNAME=$(scutil --get LocalHostName 2>/dev/null || hostname -s | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9.-' | cut -c1-30)
-ARCH=$(uname -m)
-
-echo "========================================================"
-echo " SOAR Endpoint Security: Automated macOS Agent Installer"
-echo " Target Host: $HOSTNAME ($ARCH)"
-echo " Server URL : $SERVER_URL"
-echo "========================================================"
-
-[ "$(id -u)" = 0 ] || {{ echo "[!] Harap jalankan script ini sebagai root (sudo)"; exit 1; }}
-
-echo "[1/4] Mengirim permohonan pendaftaran ke server SOAR..."
-REQUEST_JSON=$(curl -fsSL -X POST "$SERVER_URL/api/enroll/request" \\
-  -H "Content-Type: application/json" \\
-  -d "{{\\"hostname\\":\\"$HOSTNAME\\",\\"os\\":\\"macos\\",\\"arch\\":\\"$ARCH\\"}}")
-
-REQ_ID=$(echo "$REQUEST_JSON" | grep -o '"request_id":"[^"]*' | cut -d'"' -f4)
-if [ -z "$REQ_ID" ]; then
-  echo "[x] Gagal mendaftarkan host ke server. Respons: $REQUEST_JSON"
-  exit 1
-fi
-
-echo "[2/4] Permohonan tercatat dengan Request ID: $REQ_ID"
-echo "      Menunggu persetujuan (Approval) dari Administrator di SOAR Dashboard..."
-
-APPROVED=0
-for i in $(seq 1 120); do
-  sleep 3
-  STATUS_JSON=$(curl -fsSL "$SERVER_URL/api/enroll/status?request_id=$REQ_ID" || true)
-  STATUS=$(echo "$STATUS_JSON" | grep -o '"status":"[^"]*' | cut -d'"' -f4)
-  if [ "$STATUS" = "approved" ]; then
-    APPROVED=1
-    AGENT_ID=$(echo "$STATUS_JSON" | grep -o '"agent_id":"[^"]*' | cut -d'"' -f4)
-    AGENT_NAME=$(echo "$STATUS_JSON" | grep -o '"agent_name":"[^"]*' | cut -d'"' -f4)
-    POLL_TOKEN=$(echo "$STATUS_JSON" | grep -o '"poll_token":"[^"]*' | cut -d'"' -f4)
-    echo ""
-    echo "[✓] Disetujui oleh Admin! Menerima Agent ID: $AGENT_ID ($AGENT_NAME)"
-    break
-  elif [ "$STATUS" = "rejected" ]; then
-    echo ""
-    echo "[x] Permohonan instalasi ditolak oleh administrator."
-    exit 1
-  fi
-  printf "."
-done
-echo ""
-
-if [ "$APPROVED" -ne 1 ]; then
-  echo "[x] Waktu tunggu persetujuan habis (timeout 6 menit). Silakan coba lagi."
-  exit 1
-fi
-
-echo "[3/4] Menyiapkan direktori, token, dan binary macOS..."
-mkdir -p /etc/soar-agent /var/ossec/quarantine /usr/local/bin /Library/LaunchDaemons
-chmod 750 /var/ossec/quarantine
-printf '%s\\n' "$POLL_TOKEN" > /etc/soar-agent/fleet.token
-printf 'SOAR_FLEET_POLL_TOKEN_FILE=/etc/soar-agent/fleet.token\\n' > /etc/soar-agent/fleet.env
-chmod 600 /etc/soar-agent/fleet.token /etc/soar-agent/fleet.env
-
-if [ ! -f /usr/local/bin/soar-agent ] || [ ! -s /usr/local/bin/soar-agent ]; then
-  echo "      Mengunduh binary macOS ($ARCH)..."
-  curl -fsSL -o /usr/local/bin/soar-agent "$SERVER_URL/api/installer/download/soar-agent-macos-$ARCH" 2>/dev/null \\
-    || curl -fsSL -o /usr/local/bin/soar-agent "$SERVER_URL/api/installer/download/soar-agent-macos" 2>/dev/null \\
-    || rm -f /usr/local/bin/soar-agent
-  if [ ! -f /usr/local/bin/soar-agent ] && [ -f /tmp/soar-agent ]; then
-    cp /tmp/soar-agent /usr/local/bin/soar-agent
-  fi
-fi
-
-if [ -f /usr/local/bin/soar-agent ] && [ -s /usr/local/bin/soar-agent ]; then
-  chmod 755 /usr/local/bin/soar-agent
-fi
-
-echo "[4/4] Mendaftarkan LaunchDaemon launchd (dev.raviarnan.soar-agent)..."
-PLIST_PATH="/Library/LaunchDaemons/dev.raviarnan.soar-agent.plist"
-cat > "$PLIST_PATH" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>dev.raviarnan.soar-agent</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/usr/local/bin/soar-agent</string>
-    <string>--webhook</string>
-    <string>$SERVER_URL/webhook/wazuh-alert</string>
-    <string>--agent-id</string>
-    <string>$AGENT_ID</string>
-    <string>--agent-name</string>
-    <string>$AGENT_NAME</string>
-    <string>--fleet-url</string>
-    <string>$SERVER_URL/api/heartbeat</string>
-    <string>--fleet-poll-token-file</string>
-    <string>/etc/soar-agent/fleet.token</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>/var/log/soar-agent.log</string>
-  <key>StandardErrorPath</key>
-  <string>/var/log/soar-agent.log</string>
-</dict>
-</plist>
-PLIST
-chmod 644 "$PLIST_PATH"
-chown root:wheel "$PLIST_PATH"
-
-if [ -x /usr/local/bin/soar-agent ]; then
-  launchctl bootout system/dev.raviarnan.soar-agent 2>/dev/null || launchctl unload "$PLIST_PATH" 2>/dev/null || true
-  launchctl bootstrap system "$PLIST_PATH" 2>/dev/null || launchctl load -w "$PLIST_PATH"
-  echo "========================================================"
-  echo " [✓] Instalasi macOS Selesai!"
-  echo " Agent ID   : $AGENT_ID"
-  echo " Nama Agent : $AGENT_NAME"
-  echo " Service    : dev.raviarnan.soar-agent (launchd aktif)"
-  echo "========================================================"
-else
-  echo "========================================================"
-  echo " [!] Token & LaunchDaemon macOS sudah siap, namun binary macOS ($ARCH) belum tersedia di server."
-  echo "     Build di Mac dari folder agent-rs:"
-  echo "       cargo build --release && sudo cp target/release/soar-agent /usr/local/bin/soar-agent"
-  echo "     Lalu aktifkan service:"
-  echo "       sudo launchctl bootstrap system $PLIST_PATH"
-  echo "========================================================"
-fi
-"""
+    return _fleet_installers.generate_macos_installer_script(server_origin)
 
 
 def _generate_windows_installer_script(server_origin):
-    return f"""# SOAR Agent Automated One-Line Installer for Windows PowerShell
-$ErrorActionPreference = "Stop"
-$ServerUrl = "{server_origin}"
-$Hostname = $env:COMPUTERNAME.ToLower()
-$Arch = if ([Environment]::Is64BitOperatingSystem) {{ "x64" }} else {{ "x86" }}
-
-Write-Host "========================================================" -ForegroundColor Cyan
-Write-Host " SOAR Endpoint Security: Automated Windows Agent Installer" -ForegroundColor Cyan
-Write-Host " Target Host: $Hostname ($Arch)" -ForegroundColor Gray
-Write-Host " Server URL : $ServerUrl" -ForegroundColor Gray
-Write-Host "========================================================" -ForegroundColor Cyan
-
-# 1. Permohonan enrollment
-Write-Host "[1/4] Mengirim permohonan pendaftaran ke server SOAR..." -ForegroundColor Yellow
-$Payload = @{{ hostname = $Hostname; os = "windows"; arch = $Arch }} | ConvertTo-Json
-$EnrollUrl = "$ServerUrl/api/enroll/request"
-try {{
-    $Resp = Invoke-RestMethod -Uri $EnrollUrl -Method Post -ContentType "application/json" -Body $Payload
-}} catch {{
-    Write-Host "[x] Gagal menghubungi server SOAR: $_" -ForegroundColor Red
-    exit 1
-}}
-
-$ReqId = $Resp.request_id
-if (-not $ReqId) {{
-    Write-Host "[x] Gagal mendaftarkan host: $Resp" -ForegroundColor Red
-    exit 1
-}}
-
-Write-Host "[2/4] Permohonan tercatat dengan Request ID: $ReqId" -ForegroundColor Yellow
-Write-Host "      Menunggu persetujuan (Approval) dari Administrator di SOAR Dashboard..." -ForegroundColor Gray
-
-# 2. Polling persetujuan
-$Approved = $false
-for ($i = 1; $i -le 120; $i++) {{
-    Start-Sleep -Seconds 3
-    $StatusUrl = "$ServerUrl/api/enroll/status?request_id=$ReqId"
-    try {{
-        $StatusResp = Invoke-RestMethod -Uri $StatusUrl -Method Get
-        if ($StatusResp.status -eq "approved") {{
-            $Approved = $true
-            $AgentId = $StatusResp.agent_id
-            $AgentName = $StatusResp.agent_name
-            $PollToken = $StatusResp.poll_token
-            Write-Host "`n[✓] Disetujui oleh Admin! Menerima Agent ID: $AgentId ($AgentName)" -ForegroundColor Green
-            break
-        }} elseif ($StatusResp.status -eq "rejected") {{
-            Write-Host "`n[x] Permohonan pendaftaran ditolak oleh administrator." -ForegroundColor Red
-            exit 1
-        }}
-    }} catch {{}}
-    Write-Host -NoNewline "."
-}}
-
-if (-not $Approved) {{
-    Write-Host "`n[x] Waktu tunggu persetujuan habis (timeout 6 menit)." -ForegroundColor Red
-    exit 1
-}}
-
-# 3. Setup direktori, token ACL ketat, dan unduh binary
-Write-Host "`n[3/4] Menyiapkan direktori C:\\soar-agent dan token..." -ForegroundColor Yellow
-$TargetDir = "C:\\soar-agent"
-if (-not (Test-Path $TargetDir)) {{
-    New-Item -Path $TargetDir -ItemType Directory | Out-Null
-}}
-$QuarantineDir = "$TargetDir\\quarantine"
-if (-not (Test-Path $QuarantineDir)) {{
-    New-Item -Path $QuarantineDir -ItemType Directory | Out-Null
-}}
-
-$TokenPath = "$TargetDir\\fleet.token"
-Remove-Item $TokenPath -Force -ErrorAction SilentlyContinue
-[System.IO.File]::WriteAllText($TokenPath, $PollToken)
-icacls $TokenPath /inheritance:r /grant:r "*S-1-5-18:(R)" "*S-1-5-32-544:(R)" | Out-Null
-
-$ExePath = "$TargetDir\\soar-agent.exe"
-if (-not (Test-Path $ExePath)) {{
-    Write-Host "      Mengunduh binary soar-agent.exe..." -ForegroundColor Gray
-    $BinUrl = "$ServerUrl/api/installer/download/soar-agent.exe"
-    try {{
-        Invoke-WebRequest -Uri $BinUrl -OutFile $ExePath -UseBasicParsing
-    }} catch {{
-        Write-Host "[!] Binary tidak dapat diunduh otomatis dari server. Pastikan soar-agent.exe tersedia di $TargetDir" -ForegroundColor Yellow
-    }}
-}}
-
-# 4. Daftarkan & jalankan Scheduled Task SYSTEM
-Write-Host "[4/4] Mendaftarkan Scheduled Task 'SOAR Agent' (SYSTEM)..." -ForegroundColor Yellow
-$TaskName = "SOAR Agent"
-$WatchPaths = "$env:USERPROFILE\\Downloads,$env:USERPROFILE\\Desktop,$env:USERPROFILE\\Documents"
-$AgentArgs = "--webhook $ServerUrl/webhook/wazuh-alert --agent-id $AgentId --agent-name `"$AgentName`" --fleet-url $ServerUrl/api/heartbeat --fleet-poll-token-file `"$TokenPath`" --watch `"$WatchPaths`" --scan-interval-secs 21600"
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
-$Action = New-ScheduledTaskAction -Execute $ExePath -Argument $AgentArgs
-$TriggerStartup = New-ScheduledTaskTrigger -AtStartup
-$TriggerLogon = New-ScheduledTaskTrigger -AtLogOn
-$Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-$Settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger @($TriggerStartup, $TriggerLogon) -Principal $Principal -Settings $Settings -Force | Out-Null
-if (Test-Path $ExePath) {{
-    Start-ScheduledTask -TaskName $TaskName
-}}
-
-Write-Host "========================================================" -ForegroundColor Green
-Write-Host " [✓] Instalasi Selesai!" -ForegroundColor Green
-Write-Host " Agent ID   : $AgentId" -ForegroundColor Gray
-Write-Host " Nama Agent : $AgentName" -ForegroundColor Gray
-Write-Host " Direktori  : $TargetDir" -ForegroundColor Gray
-Write-Host "========================================================" -ForegroundColor Green
-"""
-
+    return _fleet_installers.generate_windows_installer_script(server_origin)
 
 DEFAULT_AI_CONFIG = {
     "enabled": True,
@@ -2905,12 +2205,33 @@ def _init_default_settings(conn):
         print(f"init_default_settings error: {e}", flush=True)
 
 
+def _transform_settings_secrets(key, value, fn):
+    if not isinstance(value, dict):
+        return value
+    copied = json.loads(json.dumps(value))
+    if key == "ai_config":
+        for f in ("api_key", "fallback_api_key"):
+            if copied.get(f):
+                copied[f] = fn(copied[f])
+        for item in copied.get("saved_api_keys") or []:
+            if isinstance(item, dict) and item.get("api_key"):
+                item["api_key"] = fn(item["api_key"])
+    elif key == "threat_intel_config":
+        sources = copied.get("sources")
+        if isinstance(sources, dict):
+            for sval in sources.values():
+                if isinstance(sval, dict) and sval.get("api_key"):
+                    sval["api_key"] = fn(sval["api_key"])
+    return copied
+
+
 def _get_system_setting(key, default=None):
     try:
         with closing(_db()) as conn:
             row = conn.execute("SELECT value FROM system_settings WHERE key = ?", (key,)).fetchone()
             if row:
-                return json.loads(row[0])
+                parsed = json.loads(row[0])
+                return _transform_settings_secrets(key, parsed, _fleet_sec.decrypt_secret)
     except Exception as e:
         print(f"get_system_setting error ({key}): {e}", flush=True)
     return default
@@ -2918,7 +2239,8 @@ def _get_system_setting(key, default=None):
 
 def _set_system_setting(key, value, updated_by="admin"):
     now_iso = datetime.now(WITA).isoformat()
-    val_str = json.dumps(value)
+    secured = _transform_settings_secrets(key, value, _fleet_sec.encrypt_secret)
+    val_str = json.dumps(secured)
     with closing(_db()) as conn, conn:
         conn.execute(
             """INSERT INTO system_settings (key, value, updated_at, updated_by)
@@ -3097,6 +2419,21 @@ _NON_CHAT_EXPERIENTIAL_MODELS = {
 }
 
 
+def _format_http_error(exc, effective_key=""):
+    detail = ""
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:240]
+            detail = f"HTTP {exc.code}: {body or exc.reason}"
+        except Exception:
+            detail = f"HTTP {exc.code}: {exc.reason}"
+    else:
+        detail = str(exc)
+    if effective_key and len(effective_key) > 6:
+        detail = detail.replace(effective_key, "[REDACTED]")
+    return detail
+
+
 def _invoke_ai_provider(
     provider,
     model_name,
@@ -3117,15 +2454,25 @@ def _invoke_ai_provider(
     if not effective_key:
         effective_key = _resolve_provider_env_key(prov)
     clean_base = str(base_url or "").strip().rstrip("/")
-    temp = float(temperature) if temperature is not None else 0.3
-    tok = int(max_tokens) if max_tokens is not None else 300
+    try:
+        temp = max(0.0, min(2.0, float(temperature) if temperature is not None else 0.3))
+    except (TypeError, ValueError):
+        temp = 0.3
+    try:
+        tok = max(1, min(8192, int(max_tokens) if max_tokens is not None else 300))
+    except (TypeError, ValueError):
+        tok = 300
     sys_inst = str(system_instruction or "").strip()
 
     if prov == "google":
         if not effective_key:
             return {"success": False, "provider": prov, "model": model_id or "gemini-2.5-flash", "error": "API Key Google Gemini belum dikonfigurasi"}
         model_id = model_id or "gemini-2.5-flash"
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={effective_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
+        try:
+            _fleet_sec.validate_outbound_url(url)
+        except ValueError as ve:
+            return {"success": False, "provider": prov, "model": model_id, "error": str(ve)}
         body_data = {
             "contents": [{"parts": [{"text": clean_prompt}]}],
             "generationConfig": {"temperature": temp, "maxOutputTokens": tok},
@@ -3135,7 +2482,7 @@ def _invoke_ai_provider(
         req = urllib.request.Request(
             url,
             data=json.dumps(body_data).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "x-goog-api-key": effective_key},
             method="POST",
         )
         try:
@@ -3145,7 +2492,9 @@ def _invoke_ai_provider(
                 text = "".join(str(p.get("text", "")) for p in parts if isinstance(p, dict))
                 latency = int((time.time() - start_t) * 1000)
                 if not text.strip():
+                    AI_CIRCUIT_BREAKER.record_failure(prov, "empty response")
                     return {"success": False, "provider": prov, "model": model_id, "error": "Gemini mengembalikan respons kosong"}
+                AI_CIRCUIT_BREAKER.record_success(prov)
                 return {
                     "success": True,
                     "model": model_id,
@@ -3154,13 +2503,20 @@ def _invoke_ai_provider(
                     "response": text.strip(),
                 }
         except Exception as e:
-            return {"success": False, "provider": prov, "model": model_id, "error": f"Gemini error: {str(e)}"}
+            err_msg = _format_http_error(e, effective_key)
+            immediate = isinstance(e, urllib.error.HTTPError) and e.code in (401, 402, 403)
+            AI_CIRCUIT_BREAKER.record_failure(prov, err_msg, immediate_open=immediate)
+            return {"success": False, "provider": prov, "model": model_id, "error": f"Gemini error: {err_msg}"}
 
     if prov == "anthropic":
         if not effective_key:
             return {"success": False, "provider": prov, "model": model_id or "claude-3-5-sonnet-latest", "error": "API Key Anthropic Claude belum dikonfigurasi"}
         model_id = model_id or "claude-3-5-sonnet-latest"
         url = f"{clean_base}/messages" if clean_base else "https://api.anthropic.com/v1/messages"
+        try:
+            _fleet_sec.validate_outbound_url(url)
+        except ValueError as ve:
+            return {"success": False, "provider": prov, "model": model_id, "error": str(ve)}
         body_data = {
             "model": model_id,
             "max_tokens": tok,
@@ -3186,7 +2542,9 @@ def _invoke_ai_provider(
                 text = "".join(str(b.get("text", "")) for b in blocks if isinstance(b, dict) and b.get("type") == "text")
                 latency = int((time.time() - start_t) * 1000)
                 if not text.strip():
+                    AI_CIRCUIT_BREAKER.record_failure(prov, "empty response")
                     return {"success": False, "provider": prov, "model": model_id, "error": "Anthropic mengembalikan respons kosong"}
+                AI_CIRCUIT_BREAKER.record_success(prov)
                 return {
                     "success": True,
                     "model": model_id,
@@ -3195,7 +2553,10 @@ def _invoke_ai_provider(
                     "response": text.strip(),
                 }
         except Exception as e:
-            return {"success": False, "provider": prov, "model": model_id, "error": f"Anthropic error: {str(e)}"}
+            err_msg = _format_http_error(e, effective_key)
+            immediate = isinstance(e, urllib.error.HTTPError) and e.code in (401, 402, 403)
+            AI_CIRCUIT_BREAKER.record_failure(prov, err_msg, immediate_open=immediate)
+            return {"success": False, "provider": prov, "model": model_id, "error": f"Anthropic error: {err_msg}"}
 
     if prov in _OPENAI_COMPAT_BASES or (prov == "custom" and clean_base):
         if prov in ("openai", "experiential") and not effective_key:
@@ -3204,6 +2565,10 @@ def _invoke_ai_provider(
         model_id = model_id or _OPENAI_COMPAT_DEFAULTS.get(prov, "default-model")
         endpoint_base = clean_base or _OPENAI_COMPAT_BASES.get(prov, "")
         url = endpoint_base if endpoint_base.endswith("/chat/completions") else f"{endpoint_base}/chat/completions"
+        try:
+            _fleet_sec.validate_outbound_url(url)
+        except ValueError as ve:
+            return {"success": False, "provider": prov, "model": model_id, "error": str(ve)}
         headers = {"Content-Type": "application/json", "User-Agent": "soar-fleet-monitor/1.0"}
         if effective_key:
             headers["Authorization"] = f"Bearer {effective_key}"
@@ -3230,7 +2595,9 @@ def _invoke_ai_provider(
                 text = (msg.get("content") if isinstance(msg, dict) else "") or ""
                 latency = int((time.time() - start_t) * 1000)
                 if not str(text).strip():
+                    AI_CIRCUIT_BREAKER.record_failure(prov, "empty response")
                     return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} mengembalikan respons kosong"}
+                AI_CIRCUIT_BREAKER.record_success(prov)
                 return {
                     "success": True,
                     "model": model_id,
@@ -3239,7 +2606,10 @@ def _invoke_ai_provider(
                     "response": str(text).strip(),
                 }
         except Exception as e:
-            return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} error: {str(e)}"}
+            err_msg = _format_http_error(e, effective_key)
+            immediate = isinstance(e, urllib.error.HTTPError) and e.code in (401, 402, 403)
+            AI_CIRCUIT_BREAKER.record_failure(prov, err_msg, immediate_open=immediate)
+            return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} error: {err_msg}"}
 
     # Custom tanpa base URL: mode simulasi lokal untuk pengujian offline
     return {
@@ -3259,14 +2629,29 @@ def _fetch_provider_models(provider, api_key=None, base_url=None, saved_key_id=N
         slot_field = "api_key"
     elif slot == "fallback" and stored_ai.get("fallback_provider") == prov:
         slot_field = "fallback_api_key"
-    effective_key = _resolve_ai_key(api_key, saved_key_id, stored_ai, slot_field, prov)
     clean_base = str(base_url or "").strip().rstrip("/")
+    using_stored_secret = bool(saved_key_id or slot_field) and not (api_key and "•" not in str(api_key))
+    if clean_base and using_stored_secret and not _fleet_sec.provider_host_allows_stored_key(prov, clean_base):
+        return {
+            "success": False,
+            "provider": prov,
+            "error": "Ditolak: stored API key tidak boleh dikirim ke custom base_url di luar host resmi provider",
+        }
+    effective_key = _resolve_ai_key(api_key, saved_key_id, stored_ai, slot_field, prov)
 
     if prov == "google":
         if not effective_key:
             return {"success": False, "provider": prov, "error": "API Key Google Gemini diperlukan untuk memuat daftar model"}
-        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={effective_key}"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
+        url = "https://generativelanguage.googleapis.com/v1beta/models"
+        try:
+            _fleet_sec.validate_outbound_url(url)
+        except ValueError as ve:
+            return {"success": False, "provider": prov, "error": str(ve)}
+        req = urllib.request.Request(
+            url,
+            headers={"Accept": "application/json", "x-goog-api-key": effective_key},
+            method="GET",
+        )
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
@@ -3292,13 +2677,17 @@ def _fetch_provider_models(provider, api_key=None, base_url=None, saved_key_id=N
             models.sort(key=lambda x: x["id"])
             return {"success": True, "provider": prov, "models": models, "total": len(models), "free_count": 0}
         except Exception as e:
-            return {"success": False, "provider": prov, "error": f"Gagal memuat model Google: {str(e)}"}
+            return {"success": False, "provider": prov, "error": f"Gagal memuat model Google: {_format_http_error(e, effective_key)}"}
 
     if prov == "anthropic":
         if not effective_key:
             return {"success": False, "provider": prov, "error": "API Key Anthropic diperlukan untuk memuat daftar model"}
         base = clean_base or "https://api.anthropic.com/v1"
         url = f"{base}/models"
+        try:
+            _fleet_sec.validate_outbound_url(url)
+        except ValueError as ve:
+            return {"success": False, "provider": prov, "error": str(ve)}
         req = urllib.request.Request(
             url,
             headers={
@@ -3328,7 +2717,7 @@ def _fetch_provider_models(provider, api_key=None, base_url=None, saved_key_id=N
             models.sort(key=lambda x: x["id"])
             return {"success": True, "provider": prov, "models": models, "total": len(models), "free_count": 0}
         except Exception as e:
-            return {"success": False, "provider": prov, "error": f"Gagal memuat model Anthropic: {str(e)}"}
+            return {"success": False, "provider": prov, "error": f"Gagal memuat model Anthropic: {_format_http_error(e, effective_key)}"}
 
     if prov in _OPENAI_COMPAT_BASES or (prov == "custom" and clean_base):
         if prov in ("openai", "experiential") and not effective_key:
@@ -3338,6 +2727,10 @@ def _fetch_provider_models(provider, api_key=None, base_url=None, saved_key_id=N
         if endpoint_base.endswith("/chat/completions"):
             endpoint_base = endpoint_base[: -len("/chat/completions")]
         url = endpoint_base if endpoint_base.endswith("/models") else f"{endpoint_base}/models"
+        try:
+            _fleet_sec.validate_outbound_url(url)
+        except ValueError as ve:
+            return {"success": False, "provider": prov, "error": str(ve)}
         headers = {"Accept": "application/json", "User-Agent": "soar-fleet-monitor/1.0"}
         if effective_key:
             headers["Authorization"] = f"Bearer {effective_key}"
@@ -3389,7 +2782,7 @@ def _fetch_provider_models(provider, api_key=None, base_url=None, saved_key_id=N
             free_count = sum(1 for x in models if x["free"])
             return {"success": True, "provider": prov, "models": models, "total": len(models), "free_count": free_count}
         except Exception as e:
-            return {"success": False, "provider": prov, "error": f"Gagal memuat model {prov}: {str(e)}"}
+            return {"success": False, "provider": prov, "error": f"Gagal memuat model {prov}: {_format_http_error(e, effective_key)}"}
 
     return {"success": False, "provider": prov, "error": "Isi Base URL Endpoint untuk memuat daftar model dari Custom Endpoint"}
 
@@ -3414,8 +2807,11 @@ def _test_ai_inference(
         fb_prov = fb.get("provider") or stored_ai.get("fallback_provider") or "pollinations"
         fb_model = fb.get("model") or stored_ai.get("fallback_model") or "deepseek/deepseek-v4-flash"
         fb_slot = "fallback_api_key" if stored_ai.get("fallback_provider") == fb_prov else ""
-        fb_key = _resolve_ai_key(fb.get("api_key"), fb.get("saved_key_id"), stored_ai, fb_slot, fb_prov)
         fb_base = fb.get("base_url") if fb.get("base_url") is not None else stored_ai.get("fallback_base_url")
+        if fb_base and not (fb.get("api_key") and "•" not in str(fb.get("api_key"))) and not _fleet_sec.provider_host_allows_stored_key(fb_prov, fb_base):
+            if fb_base != stored_ai.get("fallback_base_url"):
+                return {"success": False, "provider": fb_prov, "model": fb_model, "error": "Ditolak: stored API key tidak boleh dikirim ke custom base_url asing"}
+        fb_key = _resolve_ai_key(fb.get("api_key"), fb.get("saved_key_id"), stored_ai, fb_slot, fb_prov)
         return _invoke_ai_provider(
             fb_prov,
             fb_model,
@@ -3428,18 +2824,30 @@ def _test_ai_inference(
         )
 
     p_slot = "api_key" if stored_ai.get("provider") == provider else ""
-    eff_key = _resolve_ai_key(api_key, saved_key_id, stored_ai, p_slot, provider)
     eff_base = base_url if base_url is not None else stored_ai.get("custom_base_url")
-    primary_res = _invoke_ai_provider(
-        provider,
-        model_name,
-        prompt,
-        api_key=eff_key,
-        base_url=eff_base,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        system_instruction=system_instruction,
-    )
+    if base_url and not (api_key and "•" not in str(api_key)) and not _fleet_sec.provider_host_allows_stored_key(provider, base_url):
+        if str(base_url).strip().rstrip("/") != str(stored_ai.get("custom_base_url") or "").strip().rstrip("/"):
+            return {"success": False, "provider": provider, "model": model_name, "error": "Ditolak: stored API key tidak boleh dikirim ke custom base_url asing"}
+    eff_key = _resolve_ai_key(api_key, saved_key_id, stored_ai, p_slot, provider)
+
+    if target == "auto" and AI_CIRCUIT_BREAKER.is_open(provider):
+        primary_res = {
+            "success": False,
+            "provider": provider,
+            "model": model_name,
+            "error": "Primary provider sedang dalam cooldown circuit breaker",
+        }
+    else:
+        primary_res = _invoke_ai_provider(
+            provider,
+            model_name,
+            prompt,
+            api_key=eff_key,
+            base_url=eff_base,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            system_instruction=system_instruction,
+        )
     if primary_res.get("success") or target != "auto":
         return primary_res
 
@@ -3530,7 +2938,7 @@ def _indexer_filter_clauses(since, until, agent_id=None, q=None):
     if agent_id:
         clauses.append({"term": {"agent.id": str(agent_id)}})
     for token in q or []:
-        t = str(token).strip()
+        t = str(token).strip().replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?")
         if not t:
             continue
         clauses.append(
@@ -3994,46 +3402,126 @@ def build_event_history(
     }
 
 
+def _find_installer_binary(bin_name):
+    here = os.path.dirname(__file__)
+    search_paths = [
+        f"/deploy/bundle/{bin_name}",
+        f"/agent-rs/target/release/{bin_name}",
+        os.path.join(here, "../deploy/bundle", bin_name),
+        os.path.join(here, "../agent-rs/target/release", bin_name),
+        os.path.join(here, bin_name),
+    ]
+    return next((p for p in search_paths if os.path.isfile(p)), None)
+
+
+def _check_login_rate_limit(key):
+    now = time.time()
+    window = 900.0
+    max_attempts = 10
+    with _LOGIN_LOCK:
+        attempts = [ts for ts in _LOGIN_ATTEMPTS.get(key, []) if now - ts < window]
+        _LOGIN_ATTEMPTS[key] = attempts
+        if len(attempts) >= max_attempts:
+            return False
+    return True
+
+
+def _record_login_failure(key):
+    now = time.time()
+    with _LOGIN_LOCK:
+        attempts = [ts for ts in _LOGIN_ATTEMPTS.get(key, []) if now - ts < 900.0]
+        attempts.append(now)
+        _LOGIN_ATTEMPTS[key] = attempts
+        if len(_LOGIN_ATTEMPTS) > 5000:
+            _LOGIN_ATTEMPTS.clear()
+
+
+def _clear_login_failures(key):
+    with _LOGIN_LOCK:
+        _LOGIN_ATTEMPTS.pop(key, None)
+
+
+def _is_agent_or_command_authorized(headers, agent_id):
+    if _bearer_matches(headers, FLEET_COMMAND_TOKEN):
+        return True
+    if not _valid_agent_id(agent_id):
+        return False
+    with _fleet_locks.STATE_LOCK:
+        expected = str(FLEET_AGENT_POLL_TOKENS.get(agent_id, "") or "")
+    return bool(expected) and _bearer_matches(headers, expected)
+
+
 class Handler(BaseHTTPRequestHandler):
+    def setup(self):
+        super().setup()
+        try:
+            self.request.settimeout(15)
+        except OSError:
+            pass
+
     def log_message(self, fmt, *args):
         print(f"{self.client_address[0]} {fmt % args}", flush=True)
 
     def _json(self, code, obj, headers=None):
-        body = json.dumps(obj).encode()
+        body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
         for key, value in (headers or {}).items():
             self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
+    def _unauthorized(self):
+        self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+
+    def _read_json(self, max_bytes=65536, require_dict=True):
+        try:
+            return _fleet_sec.read_bounded_json_body(self, max_bytes=max_bytes, require_dict=require_dict), None
+        except OverflowError:
+            self._json(413, {"error": "payload terlalu besar"})
+            return None, 413
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            self._json(400, {"error": str(exc)})
+            return None, 400
+
+    def _require_command_or_scope(self, scope):
+        if _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+            return True, None
+        valid_key, key_info = _verify_api_key(self.headers, scope)
+        if valid_key:
+            return True, key_info
+        self._unauthorized()
+        return False, None
+
     def do_GET(self):
         cfg = _cfg()
         parsed = urlparse(self.path)
         if parsed.path == "/":
+            body = HTML.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(HTML.encode())
+            self.wfile.write(body)
+        elif parsed.path == "/healthz":
+            self._json(200, {"status": "ok"})
         elif parsed.path == "/api/fleet":
-            _verify_api_key(self.headers, "read:fleet")
-            data = build_fleet(cfg)
-            body = json.dumps(data).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
+            ok, _ = self._require_command_or_scope("read:fleet")
+            if not ok:
+                return
+            self._json(200, build_fleet(cfg))
         elif parsed.path == "/api/events":
-            _verify_api_key(self.headers, "read:intel")
-            body = json.dumps({"events": list(reversed(EVENTS))}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
+            ok, _ = self._require_command_or_scope("read:intel")
+            if not ok:
+                return
+            with _fleet_locks.EVENTS_LOCK:
+                ev_copy = list(reversed(EVENTS))
+            self._json(200, {"events": ev_copy})
         elif parsed.path == "/api/events/history":
-            _verify_api_key(self.headers, "read:intel")
-            # Riwayat event per rentang waktu (SOAR SQLite + Wazuh Indexer).
-            # ?since&until&limit&offset&severity&agent_id&source&q&dedup
+            ok, _ = self._require_command_or_scope("read:intel")
+            if not ok:
+                return
             qs = parse_qs(parsed.query)
 
             def _one(key, default=""):
@@ -4054,94 +3542,87 @@ class Handler(BaseHTTPRequestHandler):
                 ),
             )
         elif parsed.path == "/api/metrics":
-            # History resource per agent untuk grafik: ?agent_id=003
+            ok, _ = self._require_command_or_scope("read:fleet")
+            if not ok:
+                return
             qs = parse_qs(parsed.query)
             aid = (qs.get("agent_id", [""])[0] or "").strip()
-            body = json.dumps(
-                {"agent_id": aid, "points": METRICS.get(aid, [])}
-            ).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(body)
+            with _fleet_locks.METRICS_LOCK:
+                pts = list(METRICS.get(aid, []))
+            self._json(200, {"agent_id": aid, "points": pts})
         elif parsed.path == "/api/scan-results":
-            # Hasil scan on-demand. ?agent_id=003 -> 1 agent (termasuk daftar
-            # file), tanpa param -> ringkasan semua agent + history (tanpa file).
+            ok, _ = self._require_command_or_scope("read:fleet")
+            if not ok:
+                return
             qs = parse_qs(parsed.query)
             aid = (qs.get("agent_id", [""])[0] or "").strip()
-            if aid:
-                self._json(200, {"agent_id": aid, "scan": SCAN_RESULTS.get(aid)})
-            else:
-                scans = {
-                    k: {kk: vv for kk, vv in v.items() if kk != "files"}
-                    for k, v in SCAN_RESULTS.items()
-                }
-                self._json(200, {"scans": scans, "history": SCAN_HISTORY[-20:]})
+            with _fleet_locks.SCAN_LOCK:
+                if aid:
+                    scan_data = SCAN_RESULTS.get(aid)
+                    self._json(200, {"agent_id": aid, "scan": scan_data})
+                else:
+                    scans = {
+                        k: {kk: vv for kk, vv in v.items() if kk != "files"}
+                        for k, v in SCAN_RESULTS.items()
+                    }
+                    self._json(200, {"scans": scans, "history": list(SCAN_HISTORY[-20:])})
         elif parsed.path == "/api/commands":
             qs = parse_qs(parsed.query)
             aid = (qs.get("agent_id", [""])[0] or "").strip()
             if not _valid_agent_id(aid):
                 self._json(400, {"error": "agent_id tidak valid"})
                 return
-            expected_token = FLEET_AGENT_POLL_TOKENS.get(aid, "")
+            with _fleet_locks.STATE_LOCK:
+                expected_token = FLEET_AGENT_POLL_TOKENS.get(aid, "")
             if not expected_token:
                 self._json(403, {"error": "agent tidak terdaftar"})
                 return
             if not _bearer_matches(self.headers, str(expected_token)):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
-            cmds = COMMANDS.pop(aid, [])
+            with _fleet_locks.COMMANDS_LOCK:
+                cmds = COMMANDS.pop(aid, [])
             self._json(200, {"commands": cmds})
         elif parsed.path == "/api/vt-cache":
-            # Ringkasan cache verdict VT (untuk observabilitas & bukti laporan).
-            # ?hash=<hex> -> detail satu entri.
+            ok, _ = self._require_command_or_scope("read:intel")
+            if not ok:
+                return
             qs = parse_qs(parsed.query)
             h = (qs.get("hash", [""])[0] or "").strip().lower()
-            if h:
-                ent = VT_CACHE.get(h)
-                now = time.time()
-                self._json(
-                    200,
-                    {
-                        "hash": h,
-                        "found": bool(ent),
-                        "entry": ent,
-                        "age_secs": int(now - ent["stored_at"]) if ent else None,
-                    },
-                )
-            else:
-                lookups = VT_CACHE_STATS["lookups"]
-                self._json(
-                    200,
-                    {
-                        "size": len(VT_CACHE),
-                        "max": VT_CACHE_MAX,
-                        "ttl_secs": {
-                            "malicious": VT_TTL_MALICIOUS,
-                            "clean": VT_TTL_CLEAN,
-                            "unknown": VT_TTL_UNKNOWN,
+            now = time.time()
+            with _fleet_locks.VT_CACHE_LOCK:
+                if h:
+                    ent = VT_CACHE.get(h)
+                    self._json(
+                        200,
+                        {
+                            "hash": h,
+                            "found": bool(ent),
+                            "entry": ent,
+                            "age_secs": int(now - ent["stored_at"]) if ent else None,
                         },
-                        "stats": dict(VT_CACHE_STATS),
-                        "hit_rate": (
-                            round(VT_CACHE_STATS["hits"] / lookups, 4)
-                            if lookups
-                            else 0.0
-                        ),
-                        "file": VT_CACHE_FILE,
-                    },
-                )
+                    )
+                else:
+                    lookups = VT_CACHE_STATS["lookups"]
+                    self._json(
+                        200,
+                        {
+                            "size": len(VT_CACHE),
+                            "max": VT_CACHE_MAX,
+                            "ttl_secs": {
+                                "malicious": VT_TTL_MALICIOUS,
+                                "clean": VT_TTL_CLEAN,
+                                "unknown": VT_TTL_UNKNOWN,
+                            },
+                            "stats": dict(VT_CACHE_STATS),
+                            "hit_rate": (
+                                round(VT_CACHE_STATS["hits"] / lookups, 4) if lookups else 0.0
+                            ),
+                        },
+                    )
         elif parsed.path == "/api/investigations":
-            valid_key, _ = _verify_api_key(self.headers, "read:intel")
-            if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+            ok, _ = self._require_command_or_scope("read:intel")
+            if not ok:
                 return
             qs = parse_qs(parsed.query)
             res = _investigation_list(
@@ -4154,24 +3635,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, res)
         elif parsed.path == "/api/keys":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
             self._json(200, {"keys": _api_key_list()})
         elif parsed.path == "/api/users":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
             self._json(200, {"users": _user_list(), "cloudflare_sync": _cf_sync_status_summary()})
         elif parsed.path == "/api/users/lookup":
-            # Lookup user by email for Cloudflare Access Zero Trust SSO
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
             qs = parse_qs(parsed.query)
             email = qs.get("email", [""])[0].strip()
             user = _user_by_email(email)
@@ -4179,43 +3654,39 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/enroll/status":
             qs = parse_qs(parsed.query)
             req_id = qs.get("request_id", [""])[0].strip()
+            claim_secret = qs.get("claim_secret", [""])[0].strip()
             if not req_id:
                 self._json(400, {"error": "request_id diperlukan"})
                 return
-            req = _enroll_request_get(req_id)
-            if not req:
-                self._json(404, {"error": "request tidak ditemukan"})
+            data, code, err = _enroll_claim_status(req_id, claim_secret=claim_secret)
+            if err:
+                self._json(code, {"error": err})
                 return
-            self._json(200, {
-                "status": req["status"],
-                "agent_id": req.get("agent_id"),
-                "agent_name": f"agent-{req.get('hostname')}",
-                "poll_token": req.get("poll_token"),
-            })
+            self._json(200, data)
         elif parsed.path == "/api/enroll/requests":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                self._unauthorized()
                 return
             qs = parse_qs(parsed.query)
             status_filter = qs.get("status", [""])[0].strip() or None
             self._json(200, {"requests": _enroll_requests_list(status_filter)})
         elif parsed.path in ("/api/enroll/script/linux", "/api/enroll/script/windows", "/api/enroll/script/macos"):
-            host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host", "127.0.0.1:8080")).split(",")[0].strip()
-            if "host.docker.internal" in host or "127.0.0.1" in host or "soar.raviarnan.dev" in host:
-                host = "soar-agent.raviarnan.dev"
-            proto = "https" if "raviarnan.dev" in host or self.headers.get("X-Forwarded-Proto") == "https" else "http"
-            origin = f"{proto}://{host}"
+            origin = _fleet_sec.sanitize_public_origin(
+                raw_host=self.headers.get("X-Forwarded-Host") or self.headers.get("Host", ""),
+                x_proto=self.headers.get("X-Forwarded-Proto", ""),
+            )
             script_map = {
                 "linux": _generate_linux_installer_script,
                 "windows": _generate_windows_installer_script,
                 "macos": _generate_macos_installer_script,
             }
             target_os = parsed.path.rsplit("/", 1)[-1]
-            script = script_map[target_os](origin)
+            script = script_map[target_os](origin).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(script)))
             self.end_headers()
-            self.wfile.write(script.encode("utf-8"))
+            self.wfile.write(script)
         elif parsed.path in (
             "/api/installer/download/soar-agent",
             "/api/installer/download/soar-agent.exe",
@@ -4224,15 +3695,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/installer/download/soar-agent-macos-x86_64",
         ):
             bin_name = parsed.path.rsplit("/", 1)[-1]
-            here = os.path.dirname(__file__)
-            search_paths = [
-                f"/deploy/bundle/{bin_name}",
-                f"/agent-rs/target/release/{bin_name}",
-                os.path.join(here, "../deploy/bundle", bin_name),
-                os.path.join(here, "../agent-rs/target/release", bin_name),
-                os.path.join(here, bin_name),
-            ]
-            found_path = next((p for p in search_paths if os.path.isfile(p)), None)
+            found_path = _find_installer_binary(bin_name)
             if found_path:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/octet-stream")
@@ -4243,15 +3706,37 @@ class Handler(BaseHTTPRequestHandler):
                         self.wfile.write(chunk)
             else:
                 self._json(404, {"error": f"Binary {bin_name} belum tersedia di server"})
+        elif parsed.path in (
+            "/api/installer/checksum/soar-agent",
+            "/api/installer/checksum/soar-agent.exe",
+            "/api/installer/checksum/soar-agent-macos",
+            "/api/installer/checksum/soar-agent-macos-arm64",
+            "/api/installer/checksum/soar-agent-macos-x86_64",
+        ):
+            bin_name = parsed.path.rsplit("/", 1)[-1]
+            found_path = _find_installer_binary(bin_name)
+            if not found_path:
+                self._json(404, {"error": f"Binary {bin_name} belum tersedia di server"})
+                return
+            digest = hashlib.sha256()
+            with open(found_path, "rb") as bf:
+                while chunk := bf.read(65536):
+                    digest.update(chunk)
+            out = (digest.hexdigest() + "\n").encode("ascii")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
         elif parsed.path == "/api/settings/threat-intel":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                self._unauthorized()
                 return
             self._json(200, _get_masked_settings())
         elif parsed.path == "/api/settings/runtime-config":
-            valid_key, _ = _verify_api_key(self.headers, "read:intel")
-            if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+            # Hanya token internal control plane (n8n/dashboard), BUKAN API key eksternal read:intel
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
                 return
             ai = _merge_ai_defaults(_get_system_setting("ai_config", DEFAULT_AI_CONFIG))
             if not (ai.get("api_key") or "").strip():
@@ -4261,71 +3746,59 @@ class Handler(BaseHTTPRequestHandler):
             ai.pop("saved_api_keys", None)
             ti = _get_system_setting("threat_intel_config", DEFAULT_THREAT_INTEL_CONFIG)
             self._json(200, {"ai": ai, "threat_intel": ti})
-        elif parsed.path == "/healthz":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"status":"ok"}')
         else:
-            self.send_response(404)
-            self.end_headers()
-            self.wfile.write(b"not found")
+            self._json(404, {"error": "not found"})
 
     def do_POST(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/heartbeat":
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            j, err = self._read_json(max_bytes=65536)
+            if err:
+                return
             try:
-                j = json.loads(body)
                 hid = str(j.get("id", "")).strip()
                 if not hid:
                     raise ValueError("need id")
-                # IP dari X-Forwarded atau remote
-                # ponytail: binary lama kirim "127.0.0.1" hardcoded, anggap
-                # kosong -> pakai IP TCP asli pengirim (kolom IP dashboard
-                # akurat tanpa harus rebuild semua agent dulu).
+                if not _is_agent_or_command_authorized(self.headers, hid):
+                    self._unauthorized()
+                    return
                 _sent_ip = (j.get("ip") or "").strip()
                 if _sent_ip in ("", "127.0.0.1", "0.0.0.0", "localhost", "::1"):
                     _sent_ip = ""
                 ip = _sent_ip or self.client_address[0]
-                # first_seen = kapan agent ini PERTAMA terlihat. Roster sudah
-                # persisten, jadi nilai ini bertahan lintas restart/offline dan
-                # dipakai dashboard sebagai "Registration date" gaya Wazuh.
-                _prev = HEARTBEATS.get(hid) or {}
                 _now = time.time()
-                HEARTBEATS[hid] = {
-                    "name": j.get("name", f"rust-agent-{hid}"),
-                    "ip": ip,
-                    "version": j.get("version", "0.1.0"),
-                    "os": j.get("os", "unknown"),
-                    "last_hash": j.get("last_hash", ""),
-                    "watch_paths": j.get("watch_paths", []),
-                    "last_seen": _now,
-                    "first_seen": _prev.get("first_seen") or _now,
-                    # Resource metrics dari agent (sysinfo, opsional; 0/absen = tak dilaporkan)
-                    "cpu_pct": j.get("cpu_pct", 0),
-                    "ram_gb": j.get("ram_gb", {}),
-                }
+                with _fleet_locks.STATE_LOCK:
+                    _prev = HEARTBEATS.get(hid) or {}
+                    HEARTBEATS[hid] = {
+                        "name": j.get("name", f"rust-agent-{hid}"),
+                        "ip": ip,
+                        "version": j.get("version", "0.1.0"),
+                        "os": j.get("os", "unknown"),
+                        "last_hash": j.get("last_hash", ""),
+                        "watch_paths": j.get("watch_paths", []),
+                        "last_seen": _now,
+                        "first_seen": _prev.get("first_seen") or _now,
+                        "cpu_pct": j.get("cpu_pct", 0),
+                        "ram_gb": j.get("ram_gb", {}),
+                    }
                 _save_state()
-                # Simpan titik metrics untuk grafik (hanya kalau agent melapor)
                 try:
                     cpu = float(j.get("cpu_pct", 0) or 0)
                 except (TypeError, ValueError):
                     cpu = 0
                 ram = j.get("ram_gb") or {}
                 if cpu > 0 or (isinstance(ram, dict) and ram.get("total")):
-                    hist = METRICS.setdefault(hid, [])
-                    hist.append(
-                        {
-                            "ts": datetime.now(WITA).isoformat(),
-                            "cpu_pct": round(cpu, 2),
-                            "ram_used": round(float(ram.get("used", 0) or 0), 2),
-                            "ram_total": round(float(ram.get("total", 0) or 0), 2),
-                        }
-                    )
-                    del hist[:-METRICS_MAX]
-                # Event file dari agent (kalau dikirim bersama heartbeat)
+                    with _fleet_locks.METRICS_LOCK:
+                        hist = METRICS.setdefault(hid, [])
+                        hist.append(
+                            {
+                                "ts": datetime.now(WITA).isoformat(),
+                                "cpu_pct": round(cpu, 2),
+                                "ram_used": round(float(ram.get("used", 0) or 0), 2),
+                                "ram_total": round(float(ram.get("total", 0) or 0), 2),
+                            }
+                        )
+                        del hist[:-METRICS_MAX]
                 if j.get("last_hash") and j.get("last_path"):
                     ev = {
                         "id": uuid.uuid4().hex,
@@ -4336,25 +3809,21 @@ class Handler(BaseHTTPRequestHandler):
                         "hash": j.get("last_hash", ""),
                         "status": j.get("last_status", "sent"),
                     }
-                    EVENTS.append(ev)
-                    del EVENTS[:-EVENTS_MAX]
+                    with _fleet_locks.EVENTS_LOCK:
+                        EVENTS.append(ev)
+                        del EVENTS[:-EVENTS_MAX]
                     _event_store_insert(ev)
-                resp = {"status": "ok", "id": hid}
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps(resp).encode())
+                self._json(200, {"status": "ok", "id": hid})
             except Exception as e:
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                self._json(400, {"error": str(e)})
         elif parsed.path == "/webhook-log":
-            # n8n / agent lain bisa POST alert log ke sini -> tampil di dashboard News feed
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
+            j, err = self._read_json(max_bytes=131072)
+            if err:
+                return
             try:
-                j = json.loads(body)
                 sc = j.get("syscheck") or {}
                 ev = {
                     "id": uuid.uuid4().hex,
@@ -4379,26 +3848,21 @@ class Handler(BaseHTTPRequestHandler):
                     "md5": str(j.get("md5") or sc.get("md5_after") or sc.get("md5") or ""),
                     "sha1": str(j.get("sha1") or sc.get("sha1_after") or sc.get("sha1") or ""),
                 }
-                EVENTS.append(ev)
-                del EVENTS[:-EVENTS_MAX]
+                with _fleet_locks.EVENTS_LOCK:
+                    EVENTS.append(ev)
+                    del EVENTS[:-EVENTS_MAX]
                 _event_store_insert(ev)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(b'{"status":"ok"}')
+                self._json(200, {"status": "ok"})
             except Exception as e:
-                self.send_response(400)
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                self._json(400, {"error": str(e)})
         elif parsed.path == "/api/seen":
-            # Dedup lapis-2 n8n: {"key": "003|<hash>|<path>", "window_secs": 300}
-            # -> {"duplicate": false} (baru, dicatat) atau {"duplicate": true}.
-            # Key tak dikenal formatnya tidak ditolak (fail-open di sisi n8n),
-            # tapi dibatasi panjangnya biar tidak jadi tempat sampah memori.
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
+            j, err = self._read_json(max_bytes=8192)
+            if err:
+                return
             try:
-                j = json.loads(body)
                 key = str(j.get("key", "")).strip()
                 if not key:
                     raise ValueError("need key")
@@ -4410,41 +3874,35 @@ class Handler(BaseHTTPRequestHandler):
                     window = 300
                 window = max(10, min(window, 3600))
                 now = time.time()
-                for k in [k for k, ts in SEEN.items() if now - ts > window]:
-                    del SEEN[k]
-                if key in SEEN:
-                    dup = True
-                else:
-                    SEEN[key] = now
-                    dup = False
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"duplicate": dup}).encode())
+                with _fleet_locks.SEEN_LOCK:
+                    for k in [k for k, ts in list(SEEN.items()) if now - ts > window]:
+                        SEEN.pop(k, None)
+                    if key in SEEN:
+                        dup = True
+                    else:
+                        SEEN[key] = now
+                        dup = False
+                self._json(200, {"duplicate": dup})
             except Exception as e:
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
+                self._json(400, {"error": str(e)})
         elif parsed.path == "/api/vt-cache/lookup":
-            # Lapis-1 n8n (node "Cek Cache VT"): {"hash": "<hex>"} ->
-            # {"hit": true, stats, known, age_secs, ttl_secs} atau {"hit": false}.
-            # Fail-open di sisi n8n: error/timeout apa pun -> tetap panggil VT.
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            ok, _ = self._require_command_or_scope("read:intel")
+            if not ok:
+                return
+            j, err = self._read_json(max_bytes=8192)
+            if err:
+                return
             try:
-                j = json.loads(body)
                 h = str(j.get("hash", "")).strip().lower()
                 if not _is_hex_hash(h):
                     raise ValueError("hash harus hex 32/40/64")
                 now = time.time()
-                VT_CACHE_STATS["lookups"] += 1
-                ent = VT_CACHE.get(h)
-                if ent and now - ent.get("stored_at", 0) < ent.get("ttl", 0):
-                    VT_CACHE_STATS["hits"] += 1
-                    self._json(
-                        200,
-                        {
+                with _fleet_locks.VT_CACHE_LOCK:
+                    VT_CACHE_STATS["lookups"] += 1
+                    ent = VT_CACHE.get(h)
+                    if ent and now - ent.get("stored_at", 0) < ent.get("ttl", 0):
+                        VT_CACHE_STATS["hits"] += 1
+                        resp_obj = {
                             "hit": True,
                             "hash": h,
                             "stats": ent.get("stats"),
@@ -4452,24 +3910,22 @@ class Handler(BaseHTTPRequestHandler):
                             "malicious": ent.get("malicious", 0),
                             "age_secs": int(now - ent["stored_at"]),
                             "ttl_secs": ent.get("ttl"),
-                        },
-                    )
-                else:
-                    VT_CACHE_STATS["misses"] += 1
-                    VT_CACHE.pop(h, None)  # kadaluwarsa -> buang
-                    self._json(200, {"hit": False, "hash": h})
+                        }
+                    else:
+                        VT_CACHE_STATS["misses"] += 1
+                        VT_CACHE.pop(h, None)
+                        resp_obj = {"hit": False, "hash": h}
+                self._json(200, resp_obj)
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/vt-cache/store":
-            # Simpan verdict dari VT (node "Simpan Cache VT"). Dua bentuk:
-            #   {"hash":..., "stats":{malicious,...}}  -> verdict dikenal
-            #   {"hash":..., "not_found": true}        -> VT tak kenal hash (404)
-            # Error transien (429/5xx/timeout) TIDAK sampai ke sini (n8n hanya
-            # menyimpan NotFoundError), jadi kuota tidak "membekukan" verdict.
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
+            j, err = self._read_json(max_bytes=16384)
+            if err:
+                return
             try:
-                j = json.loads(body)
                 h = str(j.get("hash", "")).strip().lower()
                 if not _is_hex_hash(h):
                     raise ValueError("hash harus hex 32/40/64")
@@ -4488,13 +3944,7 @@ class Handler(BaseHTTPRequestHandler):
                         raise TypeError("butuh stats (objek) atau not_found true")
                     slim = {
                         k: int(stats.get(k, 0) or 0)
-                        for k in (
-                            "malicious",
-                            "suspicious",
-                            "undetected",
-                            "harmless",
-                            "timeout",
-                        )
+                        for k in ("malicious", "suspicious", "undetected", "harmless", "timeout")
                     }
                     malicious = slim["malicious"]
                     ent = {
@@ -4504,102 +3954,102 @@ class Handler(BaseHTTPRequestHandler):
                         "stored_at": now,
                         "ttl": _vt_ttl_secs(malicious, True),
                     }
-                VT_CACHE[h] = ent
-                VT_CACHE_STATS["stores"] += 1
+                with _fleet_locks.VT_CACHE_LOCK:
+                    VT_CACHE[h] = ent
+                    VT_CACHE_STATS["stores"] += 1
+                    cache_size = len(VT_CACHE)
                 _vt_cache_prune(now)
                 _vt_cache_save()
                 self._json(
                     200,
-                    {
-                        "status": "ok",
-                        "hash": h,
-                        "ttl_secs": ent["ttl"],
-                        "cache_size": len(VT_CACHE),
-                    },
+                    {"status": "ok", "hash": h, "ttl_secs": ent["ttl"], "cache_size": cache_size},
                 )
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/scan-result":
-            # Laporan scan on-demand dari agent (walk folder -> hash -> kirim 1
-            # ringkasan). Cache-first: hash yang sudah dikenal tidak dihitung
-            # baru, jadi laporan fokus ke file yang belum pernah terlihat.
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            j, err = self._read_json(max_bytes=1048576)
+            if err:
+                return
             try:
-                j = json.loads(body)
                 aid = str(j.get("agent_id", "")).strip()
                 if not aid:
                     raise ValueError("need agent_id")
+                if not _is_agent_or_command_authorized(self.headers, aid):
+                    self._unauthorized()
+                    return
                 if not isinstance(j.get("files"), list):
                     raise TypeError("files harus list")
                 now = time.time()
                 files = []
                 new_hashes = 0
+                malicious_hashes = 0
                 total_bytes = 0
-                for f in j["files"][:SCAN_FILES_MAX]:
-                    if not isinstance(f, dict):
-                        continue
-                    h = str(f.get("sha256", "")).strip().lower()
-                    if len(h) != 64:
-                        continue
-                    size = int(f.get("size", 0) or 0)
-                    files.append(
-                        {
-                            "path": str(f.get("path", "")),
-                            "size": size,
-                            "sha256": h,
-                            "new": h not in KNOWN_HASHES,
-                        }
-                    )
-                    if h not in KNOWN_HASHES:
-                        new_hashes += 1
-                    KNOWN_HASHES[h] = now
-                    total_bytes += size
-                # Batasi memori cache: buang entri paling lama (LRU kasar).
-                if len(KNOWN_HASHES) > KNOWN_HASHES_MAX:
-                    oldest = sorted(KNOWN_HASHES.items(), key=lambda kv: kv[1])
-                    for k, _ in oldest[: len(KNOWN_HASHES) - KNOWN_HASHES_MAX]:
-                        KNOWN_HASHES.pop(k, None)
-                scanned = len(files)
-                result = {
-                    "agent_id": aid,
-                    "agent_name": str(j.get("agent_name", "")),
-                    "path": str(j.get("path", "")),
-                    "trigger": str(j.get("trigger", "on-demand")),
-                    "started": j.get("started") or datetime.now(WITA).isoformat(),
-                    "finished": datetime.now(WITA).isoformat(),
-                    "elapsed_ms": int(j.get("elapsed_ms", 0) or 0),
-                    "scanned": scanned,
-                    "new_hashes": new_hashes,
-                    "known_hashes": scanned - new_hashes,
-                    "total_bytes": int(j.get("total_bytes", 0) or 0) or total_bytes,
-                    "truncated": bool(j.get("truncated")),
-                    "files": files,
-                }
-                SCAN_RESULTS[aid] = result
-                SCAN_HISTORY.append({k: v for k, v in result.items() if k != "files"})
-                del SCAN_HISTORY[:-SCAN_HISTORY_MAX]
+                with _fleet_locks.SCAN_LOCK, _fleet_locks.VT_CACHE_LOCK:
+                    for f in j["files"][:SCAN_FILES_MAX]:
+                        if not isinstance(f, dict):
+                            continue
+                        h = str(f.get("sha256", "")).strip().lower()
+                        if len(h) != 64:
+                            continue
+                        size = int(f.get("size", 0) or 0)
+                        vt_ent = VT_CACHE.get(h)
+                        vt_mal = int(vt_ent.get("malicious", 0)) if isinstance(vt_ent, dict) else 0
+                        is_mal = vt_mal >= 1
+                        if is_mal:
+                            malicious_hashes += 1
+                        is_new = h not in KNOWN_HASHES
+                        files.append(
+                            {
+                                "path": str(f.get("path", "")),
+                                "size": size,
+                                "sha256": h,
+                                "new": is_new,
+                                "malicious": is_mal,
+                                "vt_malicious": vt_mal,
+                            }
+                        )
+                        if is_new:
+                            new_hashes += 1
+                        KNOWN_HASHES[h] = now
+                        total_bytes += size
+                    if len(KNOWN_HASHES) > KNOWN_HASHES_MAX:
+                        oldest = sorted(KNOWN_HASHES.items(), key=lambda kv: kv[1])
+                        for k, _ in oldest[: len(KNOWN_HASHES) - KNOWN_HASHES_MAX]:
+                            KNOWN_HASHES.pop(k, None)
+                    scanned = len(files)
+                    result = {
+                        "agent_id": aid,
+                        "agent_name": str(j.get("agent_name", "")),
+                        "path": str(j.get("path", "")),
+                        "trigger": str(j.get("trigger", "on-demand")),
+                        "started": j.get("started") or datetime.now(WITA).isoformat(),
+                        "finished": datetime.now(WITA).isoformat(),
+                        "elapsed_ms": int(j.get("elapsed_ms", 0) or 0),
+                        "scanned": scanned,
+                        "new_hashes": new_hashes,
+                        "known_hashes": scanned - new_hashes,
+                        "malicious_hashes": malicious_hashes,
+                        "total_bytes": int(j.get("total_bytes", 0) or 0) or total_bytes,
+                        "truncated": bool(j.get("truncated")),
+                        "files": files,
+                    }
+                    SCAN_RESULTS[aid] = result
+                    SCAN_HISTORY.append({k: v for k, v in result.items() if k != "files"})
+                    del SCAN_HISTORY[:-SCAN_HISTORY_MAX]
                 self._json(
                     200,
-                    {
-                        "status": "ok",
-                        "scan": {k: v for k, v in result.items() if k != "files"},
-                    },
+                    {"status": "ok", "scan": {k: v for k, v in result.items() if k != "files"}},
                 )
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/keys":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=16384)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 name = str(data.get("name", "AI Agent")).strip()
                 scopes = data.get("scopes", ["read:fleet", "read:intel"])
                 if not isinstance(scopes, list):
@@ -4610,16 +4060,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/keys/revoke":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=8192)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 key_id = str(data.get("id", "")).strip()
                 if not key_id:
                     self._json(400, {"error": "id key diperlukan"})
@@ -4630,16 +4076,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/users":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=32768)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 action = data.get("action", "create")
                 if action == "create":
                     created = _user_create(
@@ -4680,43 +4122,54 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json(500, {"error": str(e)})
         elif parsed.path == "/api/auth/login":
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=8192)
+            if err:
+                return
             try:
-                data = json.loads(body)
-                username = data.get("username", "")
-                password = data.get("password", "")
+                username = str(data.get("username", "")).strip()
+                password = str(data.get("password", ""))
+                rl_key = f"{self.client_address[0]}:{username.lower()}"
+                if not _check_login_rate_limit(rl_key):
+                    self._json(429, {"error": "Terlalu banyak percobaan login gagal. Coba lagi nanti."})
+                    return
                 user = _user_authenticate(username, password)
                 if not user:
+                    _record_login_failure(rl_key)
                     self._json(401, {"error": "Username atau password salah atau akun nonaktif"})
                     return
+                _clear_login_failures(rl_key)
                 self._json(200, {"success": True, "user": user})
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/enroll/request":
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=8192)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 hostname = str(data.get("hostname", "")).strip()
                 os_name = str(data.get("os", "linux")).strip()
                 arch = str(data.get("arch", "x86_64")).strip()
-                ip = (
-                    self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-                    or self.client_address[0]
-                )
+                ip = self.client_address[0]
                 req = _enroll_request_create(hostname, os_name, arch, ip)
-                self._json(201, {"success": True, "request_id": req["request_id"], "status": "pending"})
+                self._json(
+                    201,
+                    {
+                        "success": True,
+                        "request_id": req["request_id"],
+                        "claim_secret": req["claim_secret"],
+                        "status": "pending",
+                    },
+                )
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/enroll/approve":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=16384)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 req_id = str(data.get("request_id", "")).strip()
                 custom_id = data.get("agent_id")
                 custom_name = data.get("agent_name")
@@ -4729,12 +4182,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(500, {"error": str(e)})
         elif parsed.path == "/api/enroll/reject":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=8192)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 req_id = str(data.get("request_id", "")).strip()
                 rejected_by = str(data.get("rejected_by", "admin")).strip()
                 res = _enroll_request_reject(req_id, rejected_by)
@@ -4745,12 +4198,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(500, {"error": str(e)})
         elif parsed.path == "/api/settings/threat-intel":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=65536)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 updated_by = str(data.get("updated_by", "admin")).strip()
                 res = _update_system_settings(data, updated_by)
                 self._json(200, {"success": True, "settings": res})
@@ -4758,47 +4211,36 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/settings/ai/test":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=65536)
+            if err:
+                return
             try:
-                data = json.loads(body)
-                provider = data.get("provider", "google")
-                model_name = data.get("model", "gemini-2.5-flash")
-                prompt = data.get("prompt", "")
-                custom_key = data.get("api_key")
-                base_url = data.get("base_url")
-                fallback_config = data.get("fallback")
-                temperature = data.get("temperature", 0.3)
-                max_tokens = data.get("max_tokens", 300)
-                system_instruction = data.get("system_instruction")
-                target = data.get("target", "primary")
-                saved_key_id = data.get("saved_key_id")
                 res = _test_ai_inference(
-                    provider,
-                    model_name,
-                    prompt,
-                    api_key=custom_key,
-                    base_url=base_url,
-                    fallback_config=fallback_config,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    system_instruction=system_instruction,
-                    target=target,
-                    saved_key_id=saved_key_id,
+                    data.get("provider", "google"),
+                    data.get("model", "gemini-2.5-flash"),
+                    data.get("prompt", ""),
+                    api_key=data.get("api_key"),
+                    base_url=data.get("base_url"),
+                    fallback_config=data.get("fallback"),
+                    temperature=data.get("temperature", 0.3),
+                    max_tokens=data.get("max_tokens", 300),
+                    system_instruction=data.get("system_instruction"),
+                    target=data.get("target", "primary"),
+                    saved_key_id=data.get("saved_key_id"),
                 )
                 self._json(200, res)
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/settings/ai/models":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=16384)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 res = _fetch_provider_models(
                     data.get("provider", "google"),
                     api_key=data.get("api_key"),
@@ -4810,21 +4252,16 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/investigations":
-            valid_key, key_info = _verify_api_key(self.headers, "read:intel")
+            valid_key, key_info = _verify_api_key(self.headers, "write:investigations")
+            if not valid_key:
+                valid_key, key_info = _verify_api_key(self.headers, "write:actions")
             if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            if length > 131072:
-                self._json(413, {"error": "Payload investigasi terlalu besar"})
+            data, err = self._read_json(max_bytes=131072)
+            if err:
                 return
-            body = self.rfile.read(length) if length else b"{}"
             try:
-                data = json.loads(body)
                 actor = (
                     f"api_key:{key_info['name']}"
                     if valid_key and key_info
@@ -4836,16 +4273,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/investigations/delete":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length) if length else b"{}"
+            data, err = self._read_json(max_bytes=8192)
+            if err:
+                return
             try:
-                data = json.loads(body)
                 inv_id = str(data.get("id", "")).strip()
                 if not inv_id:
                     self._json(400, {"error": "id investigasi diperlukan"})
@@ -4857,11 +4290,7 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/api/commands":
             valid_key, key_info = _verify_api_key(self.headers, "write:actions")
             if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
-                self._json(
-                    401,
-                    {"error": "unauthorized"},
-                    {"WWW-Authenticate": "Bearer"},
-                )
+                self._unauthorized()
                 return
             if not self.headers.get("Content-Type", "").startswith("application/json"):
                 self._json(415, {"error": "Content-Type harus application/json"})
@@ -4882,27 +4311,24 @@ class Handler(BaseHTTPRequestHandler):
             if valid_key and key_info:
                 command["by"] = f"agent:{key_info['name']}"
             aid = command["agent_id"]
-            if aid not in FLEET_AGENT_POLL_TOKENS:
+            with _fleet_locks.STATE_LOCK:
+                registered = aid in FLEET_AGENT_POLL_TOKENS
+            if not registered:
                 self._json(404, {"error": "agent tidak terdaftar"})
                 return
-            if aid not in COMMANDS and len(COMMANDS) >= COMMANDS_MAX_AGENTS:
-                self._json(429, {"error": "queue agent penuh"})
-                return
-            q = COMMANDS.setdefault(aid, [])
-            q.append(
-                {
-                    **command,
-                    "ts": datetime.now(WITA).isoformat(),
-                }
-            )
-            del q[:-COMMANDS_MAX]
+            with _fleet_locks.COMMANDS_LOCK:
+                if aid not in COMMANDS and len(COMMANDS) >= COMMANDS_MAX_AGENTS:
+                    self._json(429, {"error": "queue agent penuh"})
+                    return
+                q = COMMANDS.setdefault(aid, [])
+                q.append({**command, "ts": datetime.now(WITA).isoformat()})
+                del q[:-COMMANDS_MAX]
             self._json(
                 200,
                 {"status": "queued", "agent_id": aid, "action": command["action"]},
             )
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._json(404, {"error": "not found"})
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -4914,14 +4340,14 @@ def main():
     _validate_runtime_secrets()
     cfg = _cfg()
     port = cfg["port"]
+    bind = os.environ.get("FLEET_BIND", "0.0.0.0").strip() or "0.0.0.0"
     _load_state()
     _vt_cache_load()
     _event_store_init()
     _event_store_prune()
-    # ThreadingHTTPServer agar multi-client request tidak saling block
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    server = ThreadingHTTPServer((bind, port), Handler)
     print(
-        f"fleet-monitor listen 0.0.0.0:{port} (Wazuh {cfg['wazuh_url']}, n8n {cfg['n8n_url']})",
+        f"fleet-monitor listen {bind}:{port} (Wazuh {cfg['wazuh_url']}, n8n {cfg['n8n_url']})",
         flush=True,
     )
     try:

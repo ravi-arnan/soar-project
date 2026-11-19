@@ -1,11 +1,12 @@
 <!--
-  Sysmon minimal config untuk SOAR — fokus deteksi detonasi malware multi-stage
-  (LOLBin chain: cmd -> powershell hidden -> python dari TEMP).
+  Sysmon minimal config untuk SOAR: fokus deteksi detonasi malware multi-stage
+  (LOLBin chain: cmd -> powershell hidden -> python dari TEMP), dropper di folder
+  user, serta persistensi Registry Run Keys.
 
-  Hanya menangkap Event ID yang dipakai rules SOAR (110001-110011):
-    1  = ProcessCreate (ParentImage, CommandLine, Image) — utama
-    11  = FileCreate (dropper dari TEMP/APP_DATA)
-    13  = RegistryEvent (persistence)
+  Menangkap Event ID yang dipakai rules SOAR (110001-110044):
+    1  = ProcessCreate (ParentImage, CommandLine, Image)
+    11 = FileCreate (dropper executable/script di Downloads/Temp/AppData/Startup)
+    13 = RegistryEvent (persistence: Run/RunOnce/Winlogon/IFEO)
 
   Apply di endpoint Windows:
     Sysmon64.exe -accepteula -i deploy/sysmon-minimal.xml
@@ -15,22 +16,36 @@
 <Sysmon schemaversion="4.90">
   <EventFiltering>
 
-    <!-- Event ID 1: ProcessCreate — inti deteksi chain -->
+    <!-- Event ID 1: ProcessCreate (inti deteksi process chain) -->
     <ProcessCreate onmatch="exclude">
-      <!-- Filter noise: proses sistem/antivirus yang sah -->
+      <!-- Filter noise: proses sistem/browser yang sah -->
       <CommandLine condition="contains">System32\wbem\WmiPrvSE</CommandLine>
       <CommandLine condition="contains">Microsoft\EdgeWebView</CommandLine>
       <Image condition="is">C:\Windows\System32\svchost.exe</Image>
     </ProcessCreate>
 
-    <!-- Event ID 11: FileCreate — dropper di TEMP/AppData -->
-    <FileCreateTime onmatch="exclude">
-      <!-- Filter build tools yang sah menulis ke temp -->
-      <TargetFilename condition="begin with">C:\Users\*\AppData\Local\Temp\pip-</TargetFilename>
-    </FileCreateTime>
+    <!-- Event ID 11: FileCreate (dropper executable/script di folder user) -->
+    <FileCreate onmatch="include">
+      <TargetFilename condition="end with">.exe</TargetFilename>
+      <TargetFilename condition="end with">.dll</TargetFilename>
+      <TargetFilename condition="end with">.bat</TargetFilename>
+      <TargetFilename condition="end with">.cmd</TargetFilename>
+      <TargetFilename condition="end with">.ps1</TargetFilename>
+      <TargetFilename condition="end with">.vbs</TargetFilename>
+      <TargetFilename condition="end with">.hta</TargetFilename>
+      <TargetFilename condition="end with">.scr</TargetFilename>
+      <TargetFilename condition="end with">.lnk</TargetFilename>
+      <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
+    </FileCreate>
 
-    <!-- Event ID 13: RegistryEvent — persistence (run keys) -->
-    <RegistryEvent onmatch="exclude" />
+    <!-- Event ID 13: RegistryEvent (targetkan kunci persistensi saja, hindari banjir log) -->
+    <RegistryEvent onmatch="include">
+      <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
+      <TargetObject condition="contains">\CurrentVersion\RunOnce</TargetObject>
+      <TargetObject condition="contains">\Winlogon\Shell</TargetObject>
+      <TargetObject condition="contains">\Winlogon\Userinit</TargetObject>
+      <TargetObject condition="contains">\Image File Execution Options\</TargetObject>
+    </RegistryEvent>
 
   </EventFiltering>
 </Sysmon>

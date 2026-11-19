@@ -6,6 +6,7 @@ import { WazuhFilterBar } from './WazuhFilterBar';
 import { ExpandableCard } from './ExpandableCard';
 import { PeriodFilter } from './PeriodFilter';
 import { Pagination } from './Pagination';
+import { useAuth } from '../AuthContext';
 import { WuiModal } from '../wui/WuiPrimitives';
 import {
   formatWazuhTime,
@@ -48,7 +49,7 @@ function getMitreBadge(ruleId: string, description: string) {
   if (r === '100004' || d.includes('ransomware') || d.includes('canary')) {
     return { id: 'T1486', name: 'Ransomware', bg: 'bg-[#FDE8E8]', text: 'text-[#BD271E]' };
   }
-  if (r === '100003' || d.includes('double extension') || d.includes('masquerading')) {
+  if (r === '100003' || r === '100005' || d.includes('double extension') || d.includes('masquerading')) {
     return { id: 'T1036.007', name: 'Masquerading', bg: 'bg-[#FEF3C7]', text: 'text-[#B45309]' };
   }
   if (r === '100002' || r === '100001' || d.includes('phishing')) {
@@ -73,6 +74,8 @@ export function SecurityEventsDashboard({
   initialPeriod,
   initialSource,
 }: SecurityEventsDashboardProps) {
+  const { user } = useAuth();
+  const canWrite = user?.role === 'admin' || user?.role === 'analyst';
   const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>(
     () => initialTab || 'dashboard'
   );
@@ -167,7 +170,7 @@ export function SecurityEventsDashboard({
       severity: selectedSeverities.length ? selectedSeverities : undefined,
       agentId: agentFilter || undefined,
       source,
-      limit: isAllRows ? 10000 : rowsPerPage,
+      limit: isAllRows ? 500 : rowsPerPage,
       offset: isAllRows ? 0 : page * rowsPerPage,
     }),
     [
@@ -233,11 +236,6 @@ export function SecurityEventsDashboard({
   };
 
   const pageCount = isAllRows ? 1 : Math.max(1, Math.ceil(total / rowsPerPage));
-
-  // total bisa menyusut setelah filter/periode berubah; tarik page kembali ke rentang valid hanya setelah fetch selesai.
-  if (!loading && !isAllRows && page > pageCount - 1) {
-    setPage(pageCount - 1);
-  }
   const safePage = isAllRows ? 0 : loading ? page : Math.min(page, pageCount - 1);
 
   // Riwayat (sudah terfilter + terpaginasi di server) -> baris tabel ala Wazuh.
@@ -950,7 +948,7 @@ export function SecurityEventsDashboard({
                           const st = arState[row.id];
                           const dom = row.rawUrl ? domainOf(row.rawUrl) : '';
                           const isInfo = row.severity === 'INFO' || row.level <= 3;
-                          if (isInfo) {
+                          if (isInfo || !canWrite) {
                             return <span className="text-[#8A94A6]">-</span>;
                           }
                           return (

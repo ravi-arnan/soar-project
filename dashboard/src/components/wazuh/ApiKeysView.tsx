@@ -36,7 +36,7 @@ const AI_AGENT_SETUP_PROMPT = `Kamu adalah AI Security Operations Agent yang ter
 
 1. Konfigurasi Autentikasi & Endpoint:
    - Simpan API Key di environment variable / secret manager (contoh: SOAR_API_KEY), jangan pernah hardcode di kode sumber.
-   - Base URL: https://soar.raviarnan.dev (atau endpoint internal http://100.73.91.17:8080 jika lewat Tailscale/LAN).
+   - Base URL: gunakan SOAR_API_URL dari konfigurasi server Anda (contoh: https://soar.example.com).
    - Sertakan header di setiap HTTP request:
      Authorization: Bearer <SOAR_API_KEY>
 
@@ -45,10 +45,10 @@ const AI_AGENT_SETUP_PROMPT = `Kamu adalah AI Security Operations Agent yang ter
      Melihat status kesehatan fleet, daftar agent terdaftar, agent_id, OS, dan IP.
    - [read:intel]  GET /api/events/history?limit=20&severity=CRITICAL,HIGH
      Mengambil riwayat alert FIM/Wazuh, SHA-256 hash, dan analisis reasoning.
-   - [read:intel]  GET /api/investigations & POST /api/investigations
-     Membaca & menyimpan laporan investigasi AI Agent (agy/MCP) agar tampil terpisah di tab 'Investigasi AI Agent' pada halaman Threat Intelligence.
+   - [write:investigations]  GET /api/investigations & POST /api/investigations
+     Membaca & menyimpan laporan investigasi AI Agent (MCP) agar tampil terpisah di tab 'Investigasi AI Agent' pada halaman Threat Intelligence.
    - [write:actions] POST /api/commands (Content-Type: application/json)
-     Body: {"agent_id":"<id>","action":"quarantine|sinkhole|scan|restore","target":"<path_absolut_atau_domain>"}
+     Body: {"agent_id":"<id>","action":"quarantine|sinkhole|unsinkhole|scan|restore","target":"<path_absolut_atau_domain>"}
 
 3. Aturan Operasional & Keamanan:
    - Selalu lakukan GET /api/fleet dan GET /api/events/history lebih dulu untuk memverifikasi agent_id, severity, dan target sebelum menjalankan aksi.
@@ -66,7 +66,7 @@ export function ApiKeysView() {
 
   // State 2FA (Email & Telegram)
   const [otpInput, setOtpInput] = useState('');
-  const [maskedEmail, setMaskedEmail] = useState('r****n@gmail.com');
+  const [maskedEmail, setMaskedEmail] = useState('admin@example.com');
   const [isRequestingOtp, setIsRequestingOtp] = useState(false);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [otpCooldown, setOtpCooldown] = useState(0);

@@ -92,6 +92,8 @@ export interface FleetHealth {
   n8n: boolean;
   gemini: boolean;
   wazuh_api: boolean;
+  misp?: boolean;
+  alert_log?: boolean;
 }
 
 export interface FleetSeverityCounts {
@@ -250,14 +252,15 @@ export function useFleet(pollMs = 5000): UseFleetResult {
   const [error, setError] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const inFlight = useRef(false);
+  const authFailed = useRef(false);
 
   const load = useCallback(async () => {
-    if (inFlight.current) return;
+    if (inFlight.current || authFailed.current) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     inFlight.current = true;
     try {
       const data = await fetchSnapshot();
       setSnapshot((prev) => {
-        // Cek kesamaan struktural esensial untuk mencegah cascading re-render DOM
         const prevStats = prev.stats;
         const nextStats = data.snapshot.stats;
         const prevHealth = prev.health;
@@ -273,6 +276,8 @@ export function useFleet(pollMs = 5000): UseFleetResult {
           prevHealth.n8n === nextHealth.n8n &&
           prevHealth.gemini === nextHealth.gemini &&
           prevHealth.wazuh_api === nextHealth.wazuh_api &&
+          prevHealth.misp === nextHealth.misp &&
+          prevHealth.alert_log === nextHealth.alert_log &&
           prev.agents.length === data.snapshot.agents.length &&
           prev.agents.every(
             (a, idx) =>
@@ -288,8 +293,12 @@ export function useFleet(pollMs = 5000): UseFleetResult {
       setOnline(true);
       setError(null);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) {
+        authFailed.current = true;
+      }
       setOnline(false);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(msg);
     } finally {
       inFlight.current = false;
       setLoading(false);
@@ -299,13 +308,25 @@ export function useFleet(pollMs = 5000): UseFleetResult {
   useEffect(() => {
     const kickoff = setTimeout(load, 0);
     const timer = setInterval(load, pollMs);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        void load();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
     return () => {
       clearTimeout(kickoff);
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, [load, pollMs]);
 
-  return { snapshot, events, loading, error, online, refresh: load };
+  const manualRefresh = useCallback(async () => {
+    authFailed.current = false;
+    await load();
+  }, [load]);
+
+  return { snapshot, events, loading, error, online, refresh: manualRefresh };
 }
 
 // --- Riwayat event per periode (/api/events/history) ----------------------
@@ -442,7 +463,11 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
   const url = `/api/events/history?${buildHistoryQuery(query)}`;
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const authFailed = useRef(false);
+
   const load = useCallback(async () => {
+    if (authFailed.current) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -456,9 +481,13 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
       setError(null);
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === 'AbortError') {
-        return; // Dibatalkan oleh query baru yang lebih mutakhir
+        return;
       }
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) {
+        authFailed.current = true;
+      }
+      setError(msg);
     } finally {
       if (abortControllerRef.current === controller) {
         setSettledUrl(url);
@@ -468,11 +497,17 @@ export function useEventHistory(query: EventHistoryQuery, pollMs = 20000): UseEv
   }, [url]);
 
   useEffect(() => {
+    authFailed.current = false;
     const kickoff = setTimeout(load, 0);
     const timer = setInterval(load, pollMs);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVis);
     return () => {
       clearTimeout(kickoff);
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVis);
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }

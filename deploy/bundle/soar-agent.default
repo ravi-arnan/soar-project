@@ -7,11 +7,14 @@ AGENT_ID=004
 # Nama tampil di dashboard
 AGENT_NAME=laptop-nama-karyawan
 
-# IP server SOAR (Tailscale/LAN)
-SERVER=100.73.91.17
+# IP/hostname server SOAR (Tailscale/LAN) - wajib disesuaikan
+SERVER=192.0.2.10
 
-# File token polling, mode 0600. Isi harus cocok dengan mapping server.
+# File token polling command, mode 0600. Nilainya dicocokkan dengan
+# FLEET_AGENT_POLL_TOKENS_JSON di server.
 SOAR_FLEET_POLL_TOKEN_FILE=/etc/soar-agent/fleet.token
+
+# (Opsional) path tambahan dipantau, dipisah koma.
 # Default binary sudah memantau ~/Downloads, ~/Desktop, USB /run/media/<user>.
 # Kosongkan kecuali mau override:
 WATCH_ARGS=

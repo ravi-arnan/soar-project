@@ -38,6 +38,7 @@ WORKFLOWS = [
     "deteksi-phishing",
     "telegram-callback-handler",
     "proaktif-phishing",
+    "sla-eskalasi-hitl",
 ]
 
 # Kredensial yang dibuat dari .env. name harus SAMA dengan yang direferensikan
@@ -146,7 +147,9 @@ def build_data(cred, env, vt_key):
             "password": env.get("WAZUH_API_PASS", ""),
         }
     elif t == "httpQueryAuth":
-        data = {"name": "key"}
+        param_name = cred.get("extra", {}).get("name", "key")
+        value = env.get(cred["keys_env"][0], "") if cred.get("keys_env") else ""
+        data = {"name": param_name, "value": value}
     elif t == "httpHeaderAuth":
         header = cred.get("extra", {}).get("name", "X-API-Key")
         if cred["name"].startswith("VirusTotal"):

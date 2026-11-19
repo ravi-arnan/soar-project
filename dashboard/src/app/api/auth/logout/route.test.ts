@@ -2,11 +2,29 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { POST } from "./route.ts";
 
+const originalOrigins = process.env.DASHBOARD_ALLOWED_ORIGINS;
+
+test.beforeEach(() => {
+  process.env.DASHBOARD_ALLOWED_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000";
+});
+
+test.after(() => {
+  if (originalOrigins === undefined) delete process.env.DASHBOARD_ALLOWED_ORIGINS;
+  else process.env.DASHBOARD_ALLOWED_ORIGINS = originalOrigins;
+});
+
+test("logout rejects missing or disallowed origin (CSRF protection)", async () => {
+  const req = new Request("http://localhost:3000/api/auth/logout", { method: "POST" });
+  const res = await POST(req);
+  assert.equal(res.status, 403);
+});
+
 test("logout clears local cookie and returns CF Access logout URL when authenticated via Cloudflare Access", async () => {
   const req = new Request("http://127.0.0.1:3000/api/auth/logout", {
     method: "POST",
     headers: {
-      "cf-access-authenticated-user-email": "raviarnankeren@gmail.com",
+      origin: "http://127.0.0.1:3000",
+      "cf-access-authenticated-user-email": "admin@example.com",
       "x-forwarded-proto": "https",
     },
   });
@@ -31,6 +49,7 @@ test("logout clears local cookie and returns CF Access logout URL when authentic
 test("logout clears local cookie without redirect URL for non-CF-Access session", async () => {
   const req = new Request("http://localhost:3000/api/auth/logout", {
     method: "POST",
+    headers: { origin: "http://localhost:3000" },
   });
 
   const res = await POST(req);

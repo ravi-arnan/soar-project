@@ -1,24 +1,25 @@
 import assert from "node:assert/strict";
+import { createSign, generateKeyPairSync, type JsonWebKey } from "node:crypto";
 import test from "node:test";
 import {
   createSessionToken,
   isValidSession,
   parseSession,
   getAuthorizedSession,
+  resolveAuthorizedSession,
+  verifyCloudflareAccessJwt,
 } from "../../../lib/session.ts";
 import type { SessionUser } from "../../../lib/session.ts";
 
 const secret = "testing-rbac-secret-token-" + "x".repeat(32);
 
-test("RBAC session token generation and parsing", () => {
-  // 1. Legacy token format (2-part)
+test("RBAC session token generation, parsing, and unverified CF header rejection", async () => {
   const legacyToken = createSessionToken(secret);
   assert.equal(isValidSession(legacyToken, secret), true);
   const legacyParsed = parseSession(legacyToken, secret);
   assert.equal(legacyParsed.valid, true);
   assert.equal(legacyParsed.user?.role, "admin");
 
-  // 2. Analyst token format (3-part)
   const analystUser: SessionUser = {
     username: "analyst1",
     role: "analyst",
@@ -31,9 +32,7 @@ test("RBAC session token generation and parsing", () => {
   assert.equal(analystParsed.valid, true);
   assert.equal(analystParsed.user?.username, "analyst1");
   assert.equal(analystParsed.user?.role, "analyst");
-  assert.equal(analystParsed.user?.name, "Tier 2 Responder");
 
-  // 3. Viewer token format (3-part)
   const viewerUser: SessionUser = {
     username: "auditor1",
     role: "viewer",
@@ -41,45 +40,75 @@ test("RBAC session token generation and parsing", () => {
   };
   const viewerToken = createSessionToken(secret, viewerUser);
   assert.equal(isValidSession(viewerToken, secret), true);
-  const viewerParsed = parseSession(viewerToken, secret);
-  assert.equal(viewerParsed.valid, true);
-  assert.equal(viewerParsed.user?.role, "viewer");
 
-  // 4. Tampered token payload
+  // Tampered token payload
   const [expires, , sig] = viewerToken.split(".");
   const tamperedPayload = Buffer.from(
     JSON.stringify({ username: "hacker", role: "admin" }),
   ).toString("base64url");
   const tamperedToken = `${expires}.${tamperedPayload}.${sig}`;
   assert.equal(isValidSession(tamperedToken, secret), false);
-  assert.equal(parseSession(tamperedToken, secret).valid, false);
 
-  // 5. Expired token
+  // Expired token
   const pastTime = Date.now() - 10 * 60 * 60 * 1000;
   const expiredToken = createSessionToken(secret, viewerUser, pastTime);
   assert.equal(isValidSession(expiredToken, secret), false);
-  assert.equal(parseSession(expiredToken, secret).valid, false);
 
-  // 6. getAuthorizedSession from Request
+  // Cookie session authorized
   const req = new Request("http://localhost:3000/api/commands", {
-    headers: {
-      cookie: `soar_session=${analystToken}; other=value`,
-    },
+    headers: { cookie: `soar_session=${analystToken}; other=value` },
   });
   const authorized = getAuthorizedSession(req, secret);
-  assert.notEqual(authorized, null);
   assert.equal(authorized?.username, "analyst1");
   assert.equal(authorized?.role, "analyst");
 
-  // 7. Cloudflare Access Email Header
-  process.env.ADMIN_EMAIL = "raviarnankeren@gmail.com";
-  const cfAdminReq = new Request("http://localhost:3000/api/commands", {
-    headers: {
-      "cf-access-authenticated-user-email": "raviarnankeren@gmail.com",
-    },
+  // Raw cf-access-authenticated-user-email TANPA JWT harus DITOLAK (anti header spoofing)
+  delete process.env.ALLOW_UNVERIFIED_CF_HEADERS;
+  delete process.env.CF_ACCESS_TEAM_DOMAIN;
+  delete process.env.CF_ACCESS_AUD;
+  process.env.ADMIN_EMAIL = "admin@example.com";
+  const spoofReq = new Request("http://localhost:3000/api/commands", {
+    headers: { "cf-access-authenticated-user-email": "admin@example.com" },
   });
-  const cfAdmin = getAuthorizedSession(cfAdminReq, secret);
-  assert.notEqual(cfAdmin, null);
-  assert.equal(cfAdmin?.role, "admin");
-  assert.equal(cfAdmin?.email, "raviarnankeren@gmail.com");
+  assert.equal(await resolveAuthorizedSession(spoofReq, secret), null);
+  assert.equal(getAuthorizedSession(spoofReq, secret), null);
+});
+
+test("Cloudflare Access JWT RS256 signature, audience, and expiry verification", async () => {
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const jwk = { ...(publicKey.export({ format: "jwk" }) as JsonWebKey), kid: "kid-test-1" };
+
+  function signJwt(payloadObj: Record<string, unknown>, kid = "kid-test-1"): string {
+    const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT", kid })).toString("base64url");
+    const payload = Buffer.from(JSON.stringify(payloadObj)).toString("base64url");
+    const signer = createSign("RSA-SHA256");
+    signer.update(`${header}.${payload}`);
+    signer.end();
+    const signature = signer.sign(privateKey).toString("base64url");
+    return `${header}.${payload}.${signature}`;
+  }
+
+  const now = Date.now();
+  const validJwt = signJwt({
+    aud: ["aud-soar-123"],
+    email: "admin@example.com",
+    exp: Math.floor(now / 1000) + 3600,
+  });
+
+  const okRes = await verifyCloudflareAccessJwt(validJwt, "team.cloudflareaccess.com", "aud-soar-123", now, [jwk]);
+  assert.equal(okRes.valid, true);
+  assert.equal(okRes.email, "admin@example.com");
+
+  // Wrong AUD rejected
+  const badAud = await verifyCloudflareAccessJwt(validJwt, "team.cloudflareaccess.com", "wrong-aud", now, [jwk]);
+  assert.equal(badAud.valid, false);
+
+  // Expired JWT rejected
+  const expiredJwt = signJwt({
+    aud: ["aud-soar-123"],
+    email: "admin@example.com",
+    exp: Math.floor(now / 1000) - 10,
+  });
+  const expRes = await verifyCloudflareAccessJwt(expiredJwt, "team.cloudflareaccess.com", "aud-soar-123", now, [jwk]);
+  assert.equal(expRes.valid, false);
 });

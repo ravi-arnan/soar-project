@@ -31,13 +31,13 @@ interface AgentDeploymentViewProps {
   userRole?: string;
 }
 
-export function AgentDeploymentView({ onBackToAgents, userRole = 'admin' }: AgentDeploymentViewProps) {
+export function AgentDeploymentView({ onBackToAgents, userRole = 'viewer' }: AgentDeploymentViewProps) {
   const [requests, setRequests] = useState<EnrollmentRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [authBlocked, setAuthBlocked] = useState(false);
 
-  // Modal approve & reject state
   const [selectedReq, setSelectedReq] = useState<EnrollmentRequest | null>(null);
   const [rejectTarget, setRejectTarget] = useState<EnrollmentRequest | null>(null);
   const [customName, setCustomName] = useState('');
@@ -45,26 +45,35 @@ export function AgentDeploymentView({ onBackToAgents, userRole = 'admin' }: Agen
   const [isApproving, setIsApproving] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
 
-  // Host origin detection
-  const [origin] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.location.origin;
-    }
-    return 'https://soar.raviarnan.dev';
-  });
+  const [installerOrigin, setInstallerOrigin] = useState('https://soar-agent.example.com');
 
-  const installerOrigin = origin.includes('soar.raviarnan.dev')
-    ? 'https://soar-agent.raviarnan.dev'
-    : origin;
+  useEffect(() => {
+    const fallbackOrigin =
+      typeof window !== 'undefined' && window.location.origin
+        ? window.location.origin
+        : 'https://soar-agent.example.com';
+    fetch('/api/config/public', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        setInstallerOrigin(d?.publicEnrollUrl ? String(d.publicEnrollUrl) : fallbackOrigin);
+      })
+      .catch(() => {
+        setInstallerOrigin(fallbackOrigin);
+      });
+  }, []);
 
   const fetchRequests = useCallback(async () => {
+    if (authBlocked) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     try {
       const res = await fetch('/api/enroll');
       if (res.status === 401) {
+        setAuthBlocked(true);
         setError('Sesi dashboard belum aktif.');
         return;
       }
       if (res.status === 403) {
+        setAuthBlocked(true);
         setError('Hanya Admin dan Analyst yang dapat melihat antrean persetujuan agent.');
         return;
       }
@@ -79,48 +88,51 @@ export function AgentDeploymentView({ onBackToAgents, userRole = 'admin' }: Agen
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authBlocked]);
 
   useEffect(() => {
-    let ignore = false;
-    async function load() {
+    if (authBlocked) return;
+    let cancelled = false;
+    const pull = async () => {
+      if (cancelled) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       try {
         const res = await fetch('/api/enroll');
-        if (ignore) return;
+        if (cancelled) return;
         if (res.status === 401) {
+          setAuthBlocked(true);
           setError('Sesi dashboard belum aktif.');
           return;
         }
         if (res.status === 403) {
+          setAuthBlocked(true);
           setError('Hanya Admin dan Analyst yang dapat melihat antrean persetujuan agent.');
           return;
         }
         const data = await res.json();
-        if (ignore) return;
+        if (cancelled) return;
         if (!res.ok) {
           setError(data.error || 'Gagal memuat antrean persetujuan.');
-        } else {
-          setRequests(data.requests || []);
+          return;
         }
+        setRequests(data.requests || []);
       } catch (err) {
-        if (!ignore) {
+        if (!cancelled) {
           setError(`Kesalahan jaringan: ${err instanceof Error ? err.message : String(err)}`);
         }
       } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
-    }
-    load();
+    };
+    void pull();
     const timer = setInterval(() => {
-      fetchRequests();
+      void pull();
     }, 6000);
     return () => {
-      ignore = true;
+      cancelled = true;
       clearInterval(timer);
     };
-  }, [fetchRequests]);
+  }, [authBlocked]);
 
   const handleOpenApproveModal = (req: EnrollmentRequest) => {
     setSelectedReq(req);

@@ -1,9 +1,8 @@
+import { fleetBaseUrl } from "../../../../lib/requestGuard.ts";
+
 export const runtime = "nodejs";
 
-function fleetBaseUrl(): string {
-  const rawBase = process.env.FLEET_API_URL || "http://127.0.0.1:8080";
-  return rawBase.split("?")[0].replace(/\/$/, "");
-}
+const SAFE_HOST_RE = /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(?::\d{1,5})?$/;
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -16,18 +15,19 @@ export async function GET(request: Request): Promise<Response> {
   const scriptPath = scriptPaths[osParam] || "/api/enroll/script/linux";
   const upstreamUrl = `${fleetBaseUrl()}${scriptPath}`;
 
-  // Meneruskan host header publik ke backend
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "soar-agent.raviarnan.dev";
-  const proto = request.headers.get("x-forwarded-proto") || (host.includes("raviarnan.dev") ? "https" : "http");
+  const rawHost = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").split(",")[0]?.trim() || "";
+  const safeHost = SAFE_HOST_RE.test(rawHost) ? rawHost : "";
+  const rawProto = (request.headers.get("x-forwarded-proto") || "").split(",")[0]?.trim().toLowerCase();
+  const safeProto = rawProto === "https" ? "https" : "http";
 
   try {
+    const headers: Record<string, string> = { Accept: "text/plain" };
+    if (safeHost) headers["X-Forwarded-Host"] = safeHost;
+    headers["X-Forwarded-Proto"] = safeProto;
+
     const upstream = await fetch(upstreamUrl, {
       method: "GET",
-      headers: {
-        "X-Forwarded-Host": host,
-        "X-Forwarded-Proto": proto,
-        Accept: "text/plain",
-      },
+      headers,
       cache: "no-store",
       signal: AbortSignal.timeout(10_000),
     });
@@ -40,9 +40,8 @@ export async function GET(request: Request): Promise<Response> {
         "Cache-Control": "no-cache, no-store, must-revalidate",
       },
     });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return new Response(`echo "Gagal mengunduh installer: ${msg}"; exit 1`, {
+  } catch {
+    return new Response('echo "Gagal mengunduh skrip installer dari server SOAR"; exit 1\n', {
       status: 502,
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });

@@ -27,16 +27,20 @@ VERSION="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
 ARCH="amd64"
 DIST="dist"
 DEBROOT="$DIST/soar-agent_${VERSION}_${ARCH}"
-# ponytail: default musl statis; override BIN=... untuk toolchain tanpa std
-# musl (mis. cargo distro): BIN=target/release/soar-agent ./build-deb.sh
+# Default musl statis; jika BIN sudah diberikan dan file tersedia, skip tahap build.
+USER_BIN="${BIN:-}"
 BIN="${BIN:-target/x86_64-unknown-linux-musl/release/soar-agent}"
 
-echo "[1/4] build musl statis"
-rustup target add x86_64-unknown-linux-musl 2>/dev/null || true
-if command -v cross >/dev/null 2>&1; then
-  cross build --release --target x86_64-unknown-linux-musl
+if [ -n "$USER_BIN" ] && [ -f "$BIN" ]; then
+  echo "[1/4] memakai binary existing: $BIN"
 else
-  cargo build --release --target x86_64-unknown-linux-musl
+  echo "[1/4] build musl statis"
+  rustup target add x86_64-unknown-linux-musl 2>/dev/null || true
+  if command -v cross >/dev/null 2>&1; then
+    cross build --release --target x86_64-unknown-linux-musl
+  else
+    cargo build --release --target x86_64-unknown-linux-musl
+  fi
 fi
 [ -f "$BIN" ] || { echo "[x] binary tidak ditemukan: $BIN"; exit 1; }
 strip "$BIN" 2>/dev/null || true
@@ -57,11 +61,11 @@ Version: $VERSION
 Section: net
 Priority: optional
 Architecture: $ARCH
-Maintainer: Ravi Arnan <raviarnankeren@gmail.com>
+Maintainer: SOAR Project Maintainers <security@example.com>
 Description: Agen ringan SOAR (Rust) - pantau file, hitung sha256, POST JSON ke n8n
  Alternatif ringan Wazuh Agent: binary statis ~5 MB, RSS ~5 MB, tanpa
- enroll/manager. Bagian dari TA SOAR n8n (HITL Telegram).
-Homepage: https://github.com/raviarnan/soar-project
+ enroll/manager. Bagian dari SOAR n8n (HITL Telegram).
+Homepage: https://github.com/ravi-arnan/soar-project
 License: GPL-2.0
 EOF
 

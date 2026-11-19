@@ -172,8 +172,11 @@ export async function POST(request: Request): Promise<Response> {
   rateLimit.delete(key);
   await touchUserLastLogin({ username: "admin" });
   const token = createSessionToken(expectedToken);
+  const xfProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
   const secure =
-    new URL(request.url).protocol === "https:" || request.headers.get("origin")?.startsWith("https://") === true;
+    new URL(request.url).protocol === "https:" ||
+    xfProto === "https" ||
+    request.headers.get("origin")?.startsWith("https://") === true;
   return new Response(null, {
     status: 204,
     headers: { "Set-Cookie": sessionCookie(token, secure) },

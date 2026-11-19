@@ -133,9 +133,9 @@ def n8n_exec(api_base, key, workflow_id, since_iso, want_nodes, timeout=180, con
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n8n-url", default="http://100.73.91.17:5678")
-    ap.add_argument("--fleet-url", default="http://100.73.91.17:8080")
-    ap.add_argument("--alert-log-url", default="http://100.73.91.17:8091")
+    ap.add_argument("--n8n-url", default="http://127.0.0.1:5678")
+    ap.add_argument("--fleet-url", default="http://127.0.0.1:8080")
+    ap.add_argument("--alert-log-url", default="http://127.0.0.1:8091")
     ap.add_argument("--api-key-file", default="/tmp/n8n_api_key.txt")
     ap.add_argument("--sla-wait", type=int, default=180)
     a = ap.parse_args()

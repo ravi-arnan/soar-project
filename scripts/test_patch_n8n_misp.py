@@ -1,34 +1,21 @@
 #!/usr/bin/env python3
-"""Unit test patch MISP n8n (offline). Jalankan: python3 scripts/test_patch_n8n_misp.py"""
+"""Unit test patch MISP n8n (offline). Jalankan: python3 -m unittest scripts/test_patch_n8n_misp.py"""
 import importlib.util
 import os
-import sys
+import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def load():
+def _load():
     spec = importlib.util.spec_from_file_location("pnm", os.path.join(HERE, "patch-n8n-misp.py"))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
 
 
-P = load()
-passed = failed = 0
+P = _load()
 
-
-def check(name, cond):
-    global passed, failed
-    if cond:
-        passed += 1
-        print(f"  PASS  {name}")
-    else:
-        failed += 1
-        print(f"  FAIL  {name}")
-
-
-# jsCode v2 minimal (punya semua pola yang ditarget patch MISP)
 JS_V2 = (
     "const mb = $input.first().json;\n"
     "const cacheNode = $('Cek Cache VT').first().json;\n"
@@ -51,37 +38,36 @@ JS_V2 = (
 )
 
 
-def main():
-    js3, ch = P.patch_misp_js(JS_V2)
-    check("v2 -> v3 terdeteksi berubah", ch is True)
-    check("head: input jadi misp", "const misp = $input.first().json;" in js3)
-    check("head: MB pakai referensi node", "const mb = $('MalwareBazaar Lookup').first().json;" in js3)
-    check("blok misp_threat ditambahkan", "const misp_threat = misp_hit;" in js3)
-    check("misp_to_ids dihitung", "const misp_to_ids =" in js3)
-    check("severity HIGH menyertakan misp_threat",
-          "otx_threat || mb_threat || misp_threat || malicious >= 5" in js3)
-    check("output menyertakan misp_hit", "misp_hit," in js3 and "misp_sources" in js3)
-    check("marker v3 ditambahkan", "// patch:misp:v1" in js3)
-    check("marker v2 tetap ada (tidak dihapus)", "// patch:cache-mb:v2" in js3)
+class TestPatchN8nMisp(unittest.TestCase):
+    def test_patch_v2_to_v3_and_idempotency(self):
+        js3, ch = P.patch_misp_js(JS_V2)
+        self.assertTrue(ch)
+        self.assertIn("const misp = $input.first().json;", js3)
+        self.assertIn("const mb = $('MalwareBazaar Lookup').first().json;", js3)
+        self.assertIn("const misp_threat = misp_hit;", js3)
+        self.assertIn("const misp_to_ids =", js3)
+        self.assertIn("otx_threat || mb_threat || misp_threat || malicious >= 5", js3)
+        self.assertIn("misp_hit,", js3)
+        self.assertIn("misp_sources", js3)
+        self.assertIn("// patch:misp:v1", js3)
+        self.assertIn("// patch:cache-mb:v2", js3)
 
-    js3b, ch2 = P.patch_misp_js(js3)
-    check("idempoten: run ulang tidak berubah", ch2 is False and js3b == js3)
+        js3b, ch2 = P.patch_misp_js(js3)
+        self.assertFalse(ch2)
+        self.assertEqual(js3b, js3)
 
-    try:
-        P.patch_misp_js("const x = 1; // tanpa marker")
-        check("gagal keras bila v2 tak ada", False)
-    except SystemExit:
-        check("gagal keras bila v2 tak ada", True)
+    def test_fails_when_v2_marker_missing(self):
+        with self.assertRaises(SystemExit):
+            P.patch_misp_js("const x = 1; // tanpa marker")
 
-    # node MISP terdefinisi benar
-    check("node MISP bertipe httpRequest", P.MISP_NODE["type"] == "n8n-nodes-base.httpRequest")
-    check("node MISP fail-open", P.MISP_NODE.get("onError") == "continueRegularOutput")
-    check("node MISP pakai hash Ekstrak Alert",
-          "Ekstrak Alert" in P.MISP_NODE["parameters"]["queryParameters"]["parameters"][0]["value"])
-
-    print(f"\n{passed}/{passed + failed} lulus")
-    return 0 if failed == 0 else 1
+    def test_misp_node_definition(self):
+        self.assertEqual(P.MISP_NODE["type"], "n8n-nodes-base.httpRequest")
+        self.assertEqual(P.MISP_NODE.get("onError"), "continueRegularOutput")
+        self.assertIn(
+            "Ekstrak Alert",
+            P.MISP_NODE["parameters"]["queryParameters"]["parameters"][0]["value"],
+        )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    unittest.main()

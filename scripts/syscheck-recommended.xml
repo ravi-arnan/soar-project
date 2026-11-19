@@ -39,12 +39,12 @@
   <!-- Systemd services (persistence) -->
   <directories realtime="yes" check_all="yes" report_changes="yes">/etc/systemd/system</directories>
 
-  <!-- User-downloaded files (initial access vector — phishing attachment, drive-by download) -->
-  <directories realtime="yes" check_all="yes">/home/ravi/Downloads</directories>
-  <directories realtime="yes" check_all="yes">/home/ravi/Desktop</directories>
+  <!-- User-downloaded files (initial access vector: phishing attachment, drive-by download) -->
+  <directories realtime="yes" check_all="yes">/home/*/Downloads</directories>
+  <directories realtime="yes" check_all="yes">/home/*/Desktop</directories>
 
   <!-- SSH config (key theft / backdoor key indicator) -->
-  <directories realtime="yes" check_all="yes" report_changes="yes">/home/ravi/.ssh</directories>
+  <directories realtime="yes" check_all="yes" report_changes="yes">/home/*/.ssh</directories>
   <directories realtime="yes" check_all="yes" report_changes="yes">/root/.ssh</directories>
 
   <!-- IGNORE: file/dir yang umumnya berubah (false positive) -->

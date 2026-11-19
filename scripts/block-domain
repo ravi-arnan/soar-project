@@ -2,78 +2,129 @@
 # block-domain - Wazuh custom Active Response (SOAR phishing)
 #
 # Sinkhole domain phishing ke /etc/hosts (0.0.0.0) di endpoint, sehingga host
-# tidak bisa membuka situs phishing. Dipicu MANUAL via Wazuh API (persetujuan
-# analis dari tombol Telegram) atau otomatis untuk deteksi VirusTotal tinggi.
-# Menerima perintah JSON di stdin (protokol AR v1), sama seperti quarantine-file.
+# tidak bisa membuka situs phishing. Menerima perintah JSON di stdin (protokol AR v1).
 #
 # Body API yang diharapkan: command "!block-domain", arguments ["<url_atau_domain>"]
-# -> Wazuh meneruskan nilai itu sebagai parameters.extra_args[0].
 
-LOG="/var/ossec/logs/active-responses.log"
-HOSTS="/etc/hosts"
+set -uo pipefail
+
+LOG="${SOAR_AR_LOG:-/var/ossec/logs/active-responses.log}"
+HOSTS="${SOAR_HOSTS_FILE:-/etc/hosts}"
 MARK="# WAZUH-SOAR-SINKHOLE"
-BACKUP_DIR="/var/ossec/quarantine/.hosts-backup"
-
-read -r INPUT
-
-# command top-level AR: "add" (jalankan) atau "delete" (rollback).
-HEAD=${INPUT%%\"parameters\"*}
-COMMAND=$(printf '%s' "$HEAD" | sed -n 's/.*"command":"\([^"]*\)".*/\1/p')
-
-# argumen pertama = URL atau domain phishing
-RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"extra_args":\["\([^"]*\)".*/\1/p')
+BACKUP_DIR="${SOAR_BACKUP_DIR:-/var/ossec/quarantine/.hosts-backup}"
+MAX_BACKUPS=20
+PYTHON_BIN="${SOAR_PYTHON_BIN:-/var/ossec/framework/python/bin/python3}"
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="$(command -v python3 || true)"
+fi
 
 ts() { date '+%Y/%m/%d %H:%M:%S'; }
+log_msg() {
+  mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
+  printf '%s block-domain: %s\n' "$(ts)" "$1" >> "$LOG"
+}
 
-# Ekstrak domain dari URL: buang skema, kredensial, path, dan port.
-DOM=$(printf '%s' "$RAW" \
-  | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://##' \
-  | sed -E 's#^[^/@]*@##' \
-  | sed -E 's#[/?#].*$##' \
-  | sed -E 's#:[0-9]+$##' \
-  | tr '[:upper:]' '[:lower:]' \
-  | tr -d ' ')
+INPUT="$(cat)"
 
-# Validasi domain sederhana (cegah merusak /etc/hosts dengan input aneh).
-if ! printf '%s' "$DOM" | grep -qE '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$'; then
-  echo "$(ts) block-domain: ERROR domain tidak valid (raw='$RAW' dom='$DOM')" >> "$LOG"
+if [ -z "$PYTHON_BIN" ]; then
+  log_msg "ERROR python3 tidak tersedia untuk parse payload JSON AR"
   exit 1
 fi
 
-mkdir -p "$BACKUP_DIR" 2>/dev/null
-cp -f "$HOSTS" "$BACKUP_DIR/hosts.$(date +%s).bak" 2>/dev/null
+PARSED="$("$PYTHON_BIN" - "$INPUT" <<'PY'
+import json, sys, urllib.parse
+try:
+    obj = json.loads(sys.argv[1] or "{}")
+except Exception:
+    sys.exit(2)
+cmd = str(obj.get("command") or "")
+params = obj.get("parameters") if isinstance(obj.get("parameters"), dict) else {}
+extra = params.get("extra_args") if isinstance(params.get("extra_args"), list) else []
+raw = str(extra[0]).strip() if extra else ""
+if "://" in raw:
+    host = urllib.parse.urlparse(raw).hostname or ""
+else:
+    host = raw.split("/")[0].split("?")[0].split("#")[0].split("@")[-1].split(":")[0]
+dom = host.strip().lower().rstrip(".")
+print(cmd)
+print(raw)
+print(dom)
+PY
+)" || {
+  log_msg "ERROR payload JSON AR tidak valid"
+  exit 1
+}
+
+COMMAND="$(printf '%s\n' "$PARSED" | sed -n '1p')"
+RAW="$(printf '%s\n' "$PARSED" | sed -n '2p')"
+DOM="$(printf '%s\n' "$PARSED" | sed -n '3p')"
+
+# Validasi domain ketat (hindari IP, karakter aneh, atau label kosong)
+if ! printf '%s' "$DOM" | grep -qE '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$'; then
+  log_msg "ERROR domain tidak valid (raw='$RAW' dom='$DOM')"
+  exit 1
+fi
+
+# Denylist domain infrastruktur/kritis agar tidak menyebabkan self-DoS
+is_protected_domain() {
+  local d="$1"
+  local base_list="localhost localdomain local internal lan wazuh.com tailscale.com cloudflare.com github.com googleapis.com google.com virustotal.com abuse.ch telegram.org ubuntu.com debian.org nixos.org microsoft.com windowsupdate.com apple.com"
+  local extra_list="${SOAR_PROTECTED_DOMAINS:-}"
+  local p
+  for p in $base_list ${extra_list//,/ }; do
+    p="$(printf '%s' "$p" | tr '[:upper:]' '[:lower:]')"
+    [ -z "$p" ] && continue
+    if [ "$d" = "$p" ] || [[ "$d" == *".$p" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+if is_protected_domain "$DOM"; then
+  log_msg "DITOLAK domain kritis dilindungi: $DOM"
+  exit 1
+fi
+
+mkdir -p "$BACKUP_DIR" 2>/dev/null || true
+if [ -f "$HOSTS" ]; then
+  cp -f "$HOSTS" "$BACKUP_DIR/hosts.$(date +%s).$$.bak" 2>/dev/null || true
+  # Batasi jumlah backup agar disk tidak penuh
+  ls -1t "$BACKUP_DIR"/hosts.*.bak 2>/dev/null | tail -n +$((MAX_BACKUPS + 1)) | xargs -r rm -f
+fi
 
 case "$COMMAND" in
   add)
-    if grep -q "$MARK" "$HOSTS" 2>/dev/null && grep -qiE "^0\.0\.0\.0[[:space:]]+(www\.)?${DOM}([[:space:]]|\$)" "$HOSTS"; then
-      echo "$(ts) block-domain: $DOM sudah disinkhole, skip" >> "$LOG"
+    ALREADY="$(awk -v d="$DOM" -v m="$MARK" '
+      index($0, m) > 0 && $1 == "0.0.0.0" && ($2 == d || $2 == "www." d) { found=1; exit }
+      END { print found ? "1" : "0" }
+    ' "$HOSTS" 2>/dev/null || echo 0)"
+    if [ "$ALREADY" = "1" ]; then
+      log_msg "$DOM sudah disinkhole, skip"
     else
       {
         printf '0.0.0.0 %s %s\n' "$DOM" "$MARK"
         printf '0.0.0.0 www.%s %s\n' "$DOM" "$MARK"
       } >> "$HOSTS"
-      echo "$(ts) block-domain: SINKHOLED $DOM -> 0.0.0.0 (/etc/hosts)" >> "$LOG"
+      log_msg "SINKHOLED $DOM -> 0.0.0.0 ($HOSTS)"
     fi
     ;;
   delete)
-    # rollback: buang baris sinkhole milik domain ini (hanya yang bertanda MARK).
     if [ -f "$HOSTS" ]; then
-      TMP=$(mktemp)
+      TMP="$(mktemp)"
       awk -v d="$DOM" -v m="$MARK" '
         {
-          line=$0
-          if (index(line, m) > 0 && \
-              (line ~ ("^0\\.0\\.0\\.0[ \t]+" d "([ \t]|$)") || \
-               line ~ ("^0\\.0\\.0\\.0[ \t]+www\\." d "([ \t]|$)"))) {
+          if (index($0, m) > 0 && $1 == "0.0.0.0" && ($2 == d || $2 == "www." d)) {
             next
           }
-          print line
+          print $0
         }' "$HOSTS" > "$TMP" && cat "$TMP" > "$HOSTS" && rm -f "$TMP"
-      echo "$(ts) block-domain: ROLLBACK sinkhole $DOM" >> "$LOG"
+      log_msg "ROLLBACK sinkhole $DOM"
     fi
     ;;
   *)
-    echo "$(ts) block-domain: command tidak dikenal '$COMMAND'" >> "$LOG"
+    log_msg "command tidak dikenal '$COMMAND'"
+    exit 1
     ;;
 esac
 

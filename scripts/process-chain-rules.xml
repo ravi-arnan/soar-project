@@ -19,10 +19,10 @@
        ============================================================ -->
   <rule id="110001" level="8">
     <if_group>sysmon_event1</if_group>
-    <field name="sysmon.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
-    <match type="pcre2">(?i)-windowstyle\s+(hidden|0x0)|-w\s+hidden|-enc\b|-encodedcommand</match>
+    <field name="sysmon.image" type="pcre2">(?i)\\(powershell(_ise)?|pwsh)\.exe$</field>
+    <match type="pcre2">(?i)-windowstyle\s+(hidden|0x0)|-w\s+(hidden|1)\b|-enc\b|-ec\b|-e\s+[A-Za-z0-9+/=]{16,}|-encodedcommand|-ep\s+bypass|-exec(utionpolicy)?\s+bypass</match>
     <options>no_full_log</options>
-    <description>SOAR: PowerShell -WindowStyle Hidden / EncodedCommand (indikator LOLBin chain)</description>
+    <description>SOAR: PowerShell -WindowStyle Hidden / EncodedCommand / Bypass (indikator LOLBin chain)</description>
     <group>process_chain,lolbin,powershell,attack_execution,attack_T1059.001,</group>
   </rule>
 
@@ -46,7 +46,7 @@
        ============================================================ -->
   <rule id="110003" level="12">
     <if_group>sysmon_event1</if_group>
-    <field name="sysmon.parentImage" type="pcre2">(?i)\\powershell\.exe$</field>
+    <field name="sysmon.parentImage" type="pcre2">(?i)\\(powershell(_ise)?|pwsh)\.exe$</field>
     <field name="sysmon.image" type="pcre2">(?i)\\(Temp|AppData|Roaming|Users|Downloads|Desktop)\\.*\\(python|python3)(\.exe)?$</field>
     <description>SOAR: DETEKSI FULL CHAIN - PowerShell hidden -> python/script dari user-temp (malware stage-2)</description>
     <group>process_chain,lolbin,attack_execution,attack_T1059.001,attack_T1059.006,</group>
@@ -83,7 +83,7 @@
   <rule id="110006" level="8">
     <if_group>sysmon_event1</if_group>
     <field name="sysmon.parentImage" type="pcre2">(?i)\\(winword\.exe|excel\.exe|powerpnt\.exe|outlook\.exe)$</field>
-    <field name="sysmon.image" type="pcre2">(?i)\\(cmd\.exe|powershell(\.exe|_ise\.exe)?|wscript\.exe|cscript\.exe|mshta\.exe|python(\.exe)?|regsvr32\.exe|rundll32\.exe|wmic\.exe)$</field>
+    <field name="sysmon.image" type="pcre2">(?i)\\(cmd\.exe|powershell(\.exe|_ise\.exe)?|pwsh\.exe|wscript\.exe|cscript\.exe|mshta\.exe|python(\.exe)?|regsvr32\.exe|rundll32\.exe|wmic\.exe)$</field>
     <description>SOAR: Office app spawn shell/script interpreter (malware document / phishing attachment)</description>
     <group>process_chain,lolbin,phishing,attack_T1566,attack_T1204,</group>
   </rule>
@@ -101,13 +101,15 @@
   </rule>
 
   <!-- ============================================================
-       LEVEL 5: Script extension (.bat/.cmd/.vbs/.ps1/.js) dari
-       user-temp — initial dropper.
+       LEVEL 6: Script extension (.bat/.cmd/.vbs/.ps1/.js) dijalankan
+       melalui interpreter (cmd/powershell/pwsh/wscript/cscript) dari
+       user-temp / Downloads / Desktop (initial dropper).
        ============================================================ -->
-  <rule id="110008" level="5">
+  <rule id="110008" level="6">
     <if_group>sysmon_event1</if_group>
-    <field name="sysmon.image" type="pcre2">(?i)\\(Temp|AppData|Downloads|Desktop)\\.*\\.(bat|cmd|vbs|ps1|js)$</field>
-    <description>SOAR: Script (.bat/.vbs/.ps1) dijalankan dari user-temp (potensi initial dropper)</description>
+    <field name="sysmon.image" type="pcre2">(?i)\\(cmd|powershell(_ise)?|pwsh|wscript|cscript)\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)\\(Temp|AppData|Downloads|Desktop)\\[^\r\n]*\.(bat|cmd|vbs|vbe|ps1|js|jse|wsf)\b</field>
+    <description>SOAR: Script (.bat/.vbs/.ps1/.js) dijalankan dari user-temp (potensi initial dropper)</description>
     <group>process_chain,lolbin,attack_initial_access,attack_T1059,</group>
   </rule>
 
@@ -115,15 +117,13 @@
        KEMBAR JSON (110011-110018): pola sama untuk agent Windows modern
        yang kirim eventchannel sebagai JSON. Decoder JSON mengisi field
        win.eventdata.* (bukan sysmon.*), grup decoder tetap sysmon_event1.
-       Ditemukan 19 Sep 2026: event 006 (ideapc) hanya fire rules bawaan
-       karena varian ini belum ada.
        ============================================================ -->
   <rule id="110011" level="8">
     <if_group>sysmon_event1</if_group>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\powershell(_ise)?\.exe$</field>
-    <match type="pcre2">(?i)-windowstyle\s+(hidden|0x0)|-w\s+hidden|-enc\b|-encodedcommand</match>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\(powershell(_ise)?|pwsh)\.exe$</field>
+    <match type="pcre2">(?i)-windowstyle\s+(hidden|0x0)|-w\s+(hidden|1)\b|-enc\b|-ec\b|-e\s+[A-Za-z0-9+/=]{16,}|-encodedcommand|-ep\s+bypass|-exec(utionpolicy)?\s+bypass</match>
     <options>no_full_log</options>
-    <description>SOAR: PowerShell -WindowStyle Hidden / EncodedCommand (JSON)</description>
+    <description>SOAR: PowerShell -WindowStyle Hidden / EncodedCommand / Bypass (JSON)</description>
     <group>process_chain,lolbin,powershell,attack_execution,attack_T1059.001,</group>
   </rule>
 
@@ -136,7 +136,7 @@
 
   <rule id="110013" level="12">
     <if_group>sysmon_event1</if_group>
-    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\powershell\.exe$</field>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\(powershell(_ise)?|pwsh)\.exe$</field>
     <field name="win.eventdata.image" type="pcre2">(?i)\\(Temp|AppData|Roaming|Users|Downloads|Desktop)\\.*\\(python|python3)(\.exe)?$</field>
     <description>SOAR: DETEKSI FULL CHAIN - PowerShell hidden -&gt; python/script dari user-temp (JSON)</description>
     <group>process_chain,lolbin,attack_execution,attack_T1059.001,attack_T1059.006,</group>
@@ -159,7 +159,7 @@
   <rule id="110016" level="8">
     <if_group>sysmon_event1</if_group>
     <field name="win.eventdata.parentImage" type="pcre2">(?i)\\(winword\.exe|excel\.exe|powerpnt\.exe|outlook\.exe)$</field>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\(cmd\.exe|powershell(\.exe|_ise\.exe)?|wscript\.exe|cscript\.exe|mshta\.exe|python(\.exe)?|regsvr32\.exe|rundll32\.exe|wmic\.exe)$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\(cmd\.exe|powershell(\.exe|_ise\.exe)?|pwsh\.exe|wscript\.exe|cscript\.exe|mshta\.exe|python(\.exe)?|regsvr32\.exe|rundll32\.exe|wmic\.exe)$</field>
     <description>SOAR: Office app spawn shell/script interpreter (JSON)</description>
     <group>process_chain,lolbin,phishing,attack_T1566,attack_T1204,</group>
   </rule>
@@ -172,121 +172,119 @@
     <group>process_chain,lolbin,attack_T1218.010,attack_T1218.011,</group>
   </rule>
 
-  <rule id="110018" level="5">
+  <rule id="110018" level="6">
     <if_group>sysmon_event1</if_group>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\(Temp|AppData|Downloads|Desktop)\\.*\\.(bat|cmd|vbs|ps1|js)$</field>
-    <description>SOAR: Script (.bat/.vbs/.ps1) dijalankan dari user-temp (JSON)</description>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\(cmd|powershell(_ise)?|pwsh|wscript|cscript)\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\\(Temp|AppData|Downloads|Desktop)\\[^\r\n]*\.(bat|cmd|vbs|vbe|ps1|js|jse|wsf)\b</field>
+    <description>SOAR: Script (.bat/.vbs/.ps1/.js) dijalankan dari user-temp (JSON)</description>
     <group>process_chain,lolbin,attack_initial_access,attack_T1059,</group>
   </rule>
 
   <!-- ============================================================
        LEVEL 0: Allowlist — rundll32/regsvr32 SAH dari System32 yang
-       di-spawn Tasks Scheduler (svchost -k netsvcs). Contoh nyata:
-       rundll32 Windows.StateRepositoryClient.dll,StateRepositoryDoMaintenanceTasks.
-       Menimpa 110007/110017 supaya maintenance bawaan Windows tak
-       naik jadi HIGH (false positive rundll32,DLL dari System32).
-       Dua rule terpisah: 110019 = varian JSON (win.eventdata.*),
-       110020 = varian teks-klasik (sysmon.*).
+       di-spawn Tasks Scheduler (svchost -k netsvcs) TANPA memuat dari URL/Temp.
        ============================================================ -->
   <rule id="110019" level="0">
     <if_sid>110017</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+(rundll32|regsvr32)\.exe$</field>
-    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\svchost\.exe$</field>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+svchost\.exe$</field>
     <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)-k\s+netsvcs</field>
+    <field name="win.eventdata.commandLine" type="pcre2" negate="yes">(?i)(https?://|\\temp\\|\\appdata\\|\\downloads\\)</field>
     <description>SOAR allowlist: rundll32/regsvr32 System32 dari Task Scheduler (maintenance Windows)</description>
   </rule>
 
   <rule id="110020" level="0">
     <if_sid>110007</if_sid>
     <field name="sysmon.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+(rundll32|regsvr32)\.exe$</field>
-    <field name="sysmon.parentImage" type="pcre2">(?i)\\svchost\.exe$</field>
+    <field name="sysmon.parentImage" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+svchost\.exe$</field>
+    <field name="sysmon.parentCommandLine" type="pcre2">(?i)-k\s+netsvcs</field>
+    <field name="sysmon.commandLine" type="pcre2" negate="yes">(?i)(https?://|\\temp\\|\\appdata\\|\\downloads\\)</field>
     <description>SOAR allowlist: rundll32/regsvr32 System32 dari Task Scheduler (maintenance Windows, teks-klasik)</description>
   </rule>
 
   <!-- ============================================================
-       LEVEL 0: Allowlist — rundll32 FileProtocolHandler untuk browser
-       spawn / Google OAuth (mis. CLI Google Antigravity `agy`).
-       Di-spawn oleh agy.exe atau membuka URL resmi accounts.google.com.
+       LEVEL 0: Allowlist — rundll32 FileProtocolHandler untuk Google OAuth resmi.
        ============================================================ -->
   <rule id="110021" level="0">
     <if_sid>110017</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+rundll32\.exe$</field>
     <field name="win.eventdata.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler\s+https://accounts\.google\.com/</field>
     <description>SOAR allowlist: rundll32 FileProtocolHandler Google OAuth (JSON)</description>
   </rule>
 
   <rule id="110022" level="0">
     <if_sid>110017</if_sid>
-    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\agy(\.exe)?$</field>
-    <field name="win.eventdata.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+rundll32\.exe$</field>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)^[A-Z]:\\+(Program Files|Users\\+[^\\]+\\+AppData\\+Local)\\+.*\\agy\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler\s+https://</field>
     <description>SOAR allowlist: agy CLI browser spawn via rundll32 (JSON)</description>
   </rule>
 
   <rule id="110023" level="0">
     <if_sid>110007</if_sid>
+    <field name="sysmon.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+rundll32\.exe$</field>
     <field name="sysmon.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler\s+https://accounts\.google\.com/</field>
     <description>SOAR allowlist: rundll32 FileProtocolHandler Google OAuth (teks-klasik)</description>
   </rule>
 
   <rule id="110024" level="0">
     <if_sid>110007</if_sid>
-    <field name="sysmon.parentImage" type="pcre2">(?i)\\agy(\.exe)?$</field>
-    <field name="sysmon.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler</field>
+    <field name="sysmon.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+rundll32\.exe$</field>
+    <field name="sysmon.parentImage" type="pcre2">(?i)^[A-Z]:\\+(Program Files|Users\\+[^\\]+\\+AppData\\+Local)\\+.*\\agy\.exe$</field>
+    <field name="sysmon.commandLine" type="pcre2">(?i)url\.dll,FileProtocolHandler\s+https://</field>
     <description>SOAR allowlist: agy CLI browser spawn via rundll32 (teks-klasik)</description>
   </rule>
 
   <!-- ============================================================
-       LEVEL 0: Allowlist — Python installer resmi via MsiExec
-       (ensurepip / bootstrap wheel pip).
-       Dua rule terpisah: 110025 = varian JSON (win.eventdata.*),
-       110026 = varian teks-klasik (sysmon.*).
+       LEVEL 0: Allowlist — Python installer resmi di AppData\Local\Programs\Python
+       via MsiExec System32 (ensurepip / bootstrap wheel pip).
        ============================================================ -->
   <rule id="110025" level="0">
     <if_sid>110014</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
-    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\MsiExec\.exe$</field>
-    <description>SOAR allowlist: Python installer via MsiExec (JSON)</description>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Python\\+Python\d+\\+python(\d+)?\.exe$</field>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(System32|SysWOW64)\\+MsiExec\.exe$</field>
+    <description>SOAR allowlist: Python installer resmi via MsiExec (JSON)</description>
   </rule>
 
   <rule id="110026" level="0">
     <if_sid>110004</if_sid>
-    <field name="sysmon.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
-    <field name="sysmon.parentImage" type="pcre2">(?i)\\MsiExec\.exe$</field>
-    <description>SOAR allowlist: Python installer via MsiExec (teks-klasik)</description>
+    <field name="sysmon.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Python\\+Python\d+\\+python(\d+)?\.exe$</field>
+    <field name="sysmon.parentImage" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(System32|SysWOW64)\\+MsiExec\.exe$</field>
+    <description>SOAR allowlist: Python installer resmi via MsiExec (teks-klasik)</description>
   </rule>
 
   <!-- ============================================================
-       LEVEL 0: Allowlist — Python subproses ensurepip bootstrapping pip.
+       LEVEL 0: Allowlist — Python resmi subproses ensurepip bootstrapping pip.
        ============================================================ -->
   <rule id="110027" level="0">
     <if_sid>110014</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
-    <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)\bensurepip\b</field>
-    <description>SOAR allowlist: Python ensurepip bootstrap pip (JSON)</description>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Python\\+Python\d+\\+python(\d+)?\.exe$</field>
+    <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)-m\s+ensurepip\b</field>
+    <description>SOAR allowlist: Python resmi ensurepip bootstrap pip (JSON)</description>
   </rule>
 
   <rule id="110028" level="0">
     <if_sid>110004</if_sid>
-    <field name="sysmon.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
-    <field name="sysmon.parentCommandLine" type="pcre2">(?i)\bensurepip\b</field>
-    <description>SOAR allowlist: Python ensurepip bootstrap pip (teks-klasik)</description>
+    <field name="sysmon.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Python\\+Python\d+\\+python(\d+)?\.exe$</field>
+    <field name="sysmon.parentCommandLine" type="pcre2">(?i)-m\s+ensurepip\b</field>
+    <description>SOAR allowlist: Python resmi ensurepip bootstrap pip (teks-klasik)</description>
   </rule>
 
   <!-- ============================================================
-       LEVEL 0: Allowlist — Antigravity CLI (`agy`) eksekusi Python
-       (wrapper agy/bin/python.cmd, statusline, probe tty/select).
+       LEVEL 0: Allowlist — Python resmi Windows per-user di-spawn oleh agy CLI.
        ============================================================ -->
   <rule id="110029" level="0">
     <if_sid>110014</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
-    <field name="win.eventdata.parentCommandLine" type="pcre2">(?i)(\\agy\\|antigravity)</field>
-    <description>SOAR allowlist: Python di-spawn oleh Antigravity CLI agy (JSON)</description>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Python\\+Python\d+\\+python(\d+)?\.exe$</field>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)^[A-Z]:\\+(Program Files|Users\\+[^\\]+\\+AppData\\+Local)\\+.*\\agy\.exe$</field>
+    <description>SOAR allowlist: Python resmi di-spawn oleh agy CLI (JSON)</description>
   </rule>
 
   <rule id="110030" level="0">
     <if_sid>110004</if_sid>
-    <field name="sysmon.image" type="pcre2">(?i)\\python(\d+)?\.exe$</field>
-    <field name="sysmon.parentCommandLine" type="pcre2">(?i)(\\agy\\|antigravity)</field>
-    <description>SOAR allowlist: Python di-spawn oleh Antigravity CLI agy (teks-klasik)</description>
+    <field name="sysmon.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Python\\+Python\d+\\+python(\d+)?\.exe$</field>
+    <field name="sysmon.parentImage" type="pcre2">(?i)^[A-Z]:\\+(Program Files|Users\\+[^\\]+\\+AppData\\+Local)\\+.*\\agy\.exe$</field>
+    <description>SOAR allowlist: Python resmi di-spawn oleh agy CLI (teks-klasik)</description>
   </rule>
 
   <!-- ============================================================

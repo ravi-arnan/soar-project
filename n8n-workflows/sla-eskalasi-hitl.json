@@ -1,0 +1,90 @@
+{
+  "name": "SLA Eskalasi HITL",
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodes": [
+    {
+      "id": "sla-schedule-1",
+      "name": "Jadwal Cek SLA (5 Menit)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sla-check-2",
+      "name": "Cek Keputusan Lewat SLA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const token = ($env.ALERT_LOG_TOKEN || '').trim();\nconst headers = Object.assign({ 'Accept': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {});\nlet data = null;\ntry {\n  data = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'http://host.docker.internal:8091/decision/pending?overdue_only=1',\n    headers,\n    timeout: 8000,\n  });\n} catch (e) {\n  return [];\n}\nconst items = Array.isArray(data?.items) ? data.items : (Array.isArray(data?.pending) ? data.pending : []);\nif (items.length === 0) return [];\n\nconst lines = items.slice(0, 10).map((it, idx) => {\n  const target = it.filename || it.filepath || it.hash || '-';\n  const agent = it.agent_name || it.agent_id || '-';\n  const sev = it.severity || 'MEDIUM';\n  return `${idx + 1}. [${sev}] ${target} (Agent: ${agent}, ID: ${String(it.did || it.hash || '').slice(0, 12)})`;\n});\nconst msg = [\n  'ESKALASI SLA HITL (>15 Menit Belum Direspons)',\n  `Total tertunda: ${items.length} insiden`,\n  '',\n  ...lines,\n  '',\n  'Harap analis segera merespons tombol keputusan pada pesan alert terkait atau tindak lanjuti melalui Dashboard SOAR.',\n].join('\\n');\nreturn [{ json: { count: items.length, message: msg, items } }];"
+      }
+    },
+    {
+      "id": "sla-telegram-3",
+      "name": "Kirim Eskalasi Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "",
+          "name": "Telegram account"
+        }
+      },
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      }
+    }
+  ],
+  "connections": {
+    "Jadwal Cek SLA (5 Menit)": {
+      "main": [
+        [
+          {
+            "node": "Cek Keputusan Lewat SLA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek Keputusan Lewat SLA": {
+      "main": [
+        [
+          {
+            "node": "Kirim Eskalasi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

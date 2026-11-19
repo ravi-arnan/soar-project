@@ -29,7 +29,7 @@ SERVER_NAME = "soar-mcp-server"
 SERVER_VERSION = "1.0.0"
 PROTOCOL_VERSION = "2024-11-05"
 
-DEFAULT_SOAR_URL = os.environ.get("SOAR_API_URL") or "http://100.73.91.17:8080"
+DEFAULT_SOAR_URL = os.environ.get("SOAR_API_URL") or "http://127.0.0.1:8080"
 DEFAULT_SOAR_KEY = os.environ.get("SOAR_API_KEY", "")
 CF_CLIENT_ID = os.environ.get("CF_ACCESS_CLIENT_ID", "")
 CF_CLIENT_SECRET = os.environ.get("CF_ACCESS_CLIENT_SECRET", "")
@@ -193,7 +193,7 @@ TOOLS = [
         "description": (
             "Mengeksekusi tindakan mitigasi respon aktif (Active Response) secara terukur ke endpoint target. "
             "Aksi yang didukung: 'quarantine' (karantina berkas), 'restore' (kembalikan berkas dari karantina), "
-            "'sinkhole' (blokir domain phishing), atau 'scan' (pemicu pemindaian direktori). "
+            "'sinkhole' (blokir domain phishing), 'unsinkhole' (cabut blokir domain), atau 'scan' (pemicu pemindaian direktori). "
             "Membutuhkan scope write:actions pada API key."
         ),
         "inputSchema": {
@@ -205,7 +205,7 @@ TOOLS = [
                 },
                 "action": {
                     "type": "string",
-                    "enum": ["quarantine", "restore", "sinkhole", "scan"],
+                    "enum": ["quarantine", "restore", "sinkhole", "unsinkhole", "scan"],
                     "description": "Jenis tindakan mitigasi keamanan",
                 },
                 "target": {
@@ -339,11 +339,17 @@ def handle_tool_call(client: SoarClient, name: str, args: Dict[str, Any]) -> str
 
         health = data.get("health", {})
         stats = data.get("stats", {})
+        total_agents = int(stats.get("total", 0) or 0)
+        capacity_pct = stats.get("capacity_pct")
+        if capacity_pct is None:
+            capacity_pct = min(100.0, round((total_agents / 100.0) * 100.0, 1))
 
         health_lines = [
             f"- Wazuh Manager API: {'AKTIF' if health.get('wazuh_api') else 'TERGANGGU'}",
             f"- n8n Orchestrator: {'AKTIF' if health.get('n8n') else 'TERGANGGU'}",
-            f"- Gemini 2.5 Flash AI Engine: {'SIAP' if health.get('gemini') else 'TIDAK TERSEDIA'}",
+            f"- AI Reasoning Engine: {'SIAP' if health.get('gemini') else 'TIDAK TERSEDIA'}",
+            f"- MISP OSINT Feed: {'AKTIF' if health.get('misp') else 'NONAKTIF/TERGANGGU'}",
+            f"- Alert Log Registry: {'AKTIF' if health.get('alert_log') else 'TERGANGGU'}",
         ]
 
         summary = (
@@ -352,12 +358,12 @@ def handle_tool_call(client: SoarClient, name: str, args: Dict[str, Any]) -> str
             + "\n".join(health_lines)
             + "\n\n"
             "Statistik Endpoint:\n"
-            f"- Total Agen: {stats.get('total', 0)} host\n"
+            f"- Total Agen: {total_agents} host\n"
             f"- Agen Aktif: {stats.get('active', 0)} host\n"
             f"- Agen Terputus: {stats.get('disconnected', 0)} host\n"
             f"- Agen Ringan Rust (soar-agent): {stats.get('rust', 0)} host\n"
             f"- Agen Tradisional Wazuh: {stats.get('wazuh', 0)} host\n"
-            f"- Kapasitas Armada: {stats.get('capacity_pct', 0)}% dari 100 PC target\n"
+            f"- Kapasitas Armada: {capacity_pct}% dari 100 PC target\n"
             f"\nDiperbarui pada: {data.get('generated_at', '-')}"
         )
         return summary
@@ -381,8 +387,13 @@ def handle_tool_call(client: SoarClient, name: str, args: Dict[str, Any]) -> str
             name_host = a.get("name", "Unknown")
             ip = a.get("ip", "-")
             st = str(a.get("status", "unknown")).upper()
-            os_name = a.get("os_short") or a.get("os", {}).get("name") or "Linux/Windows"
-            agent_type = "Rust soar-agent" if a.get("is_rust") else "Wazuh Agent"
+            raw_os = a.get("os")
+            if isinstance(raw_os, dict):
+                os_name = a.get("os_short") or raw_os.get("name") or "Unknown"
+            else:
+                os_name = a.get("os_short") or (str(raw_os).strip() if raw_os else "") or "Unknown"
+            is_rust = str(a.get("type", "")).lower() == "rust" or bool(a.get("is_rust"))
+            agent_type = "Rust soar-agent" if is_rust else "Wazuh Agent"
             reg_date = a.get("regDate") or a.get("dateAdd") or "-"
             last_seen = a.get("lastKeepAlive") or "-"
 
@@ -457,11 +468,18 @@ def handle_tool_call(client: SoarClient, name: str, args: Dict[str, Any]) -> str
                 "atau masa berlaku TTL cache telah berakhir."
             )
 
-        entry = data.get("entry", {})
-        stats = entry.get("stats", {})
-        verdict = entry.get("verdict", "unknown").upper()
-        source = entry.get("source", "vt-cache")
-        ttl_left = entry.get("ttl_remaining_secs", 0)
+        # Support baik format flat dari fleet-monitor.py maupun format nested entry
+        entry = data.get("entry") if isinstance(data.get("entry"), dict) else data
+        stats = entry.get("stats") if isinstance(entry.get("stats"), dict) else {}
+        mal = int(stats.get("malicious", entry.get("mal", 0)) or 0)
+        susp = int(stats.get("suspicious", entry.get("susp", 0)) or 0)
+        undet = int(stats.get("undetected", entry.get("undet", 0)) or 0)
+        mb_hit = bool(entry.get("mb_hit", False))
+        mb_sig = entry.get("mb_sig") or "-"
+        otx_pulses = int(entry.get("otx_pulses", 0) or 0)
+        verdict = str(entry.get("verdict") or entry.get("status") or "unknown").upper()
+        source = entry.get("source") or "vt-cache"
+        ttl_left = int(entry.get("ttl_remaining_secs", entry.get("ttl_s", 0)) or 0)
         hours_left = round(ttl_left / 3600, 1)
 
         summary = (
@@ -469,10 +487,12 @@ def handle_tool_call(client: SoarClient, name: str, args: Dict[str, Any]) -> str
             f"Hash: {target_hash}\n"
             f"Vonis: {verdict}\n"
             f"Sumber: {source}\n"
-            f"Statistik Antivirus (VirusTotal / MalwareBazaar):\n"
-            f"  - Malicious: {stats.get('malicious', 0)}\n"
-            f"  - Suspicious: {stats.get('suspicious', 0)}\n"
-            f"  - Undetected/Clean: {stats.get('undetected', 0)}\n"
+            f"Statistik Antivirus (VirusTotal / MalwareBazaar / OTX):\n"
+            f"  - Malicious: {mal}\n"
+            f"  - Suspicious: {susp}\n"
+            f"  - Undetected/Clean: {undet}\n"
+            f"  - MalwareBazaar Hit: {'YA (' + str(mb_sig) + ')' if mb_hit else 'TIDAK'}\n"
+            f"  - AlienVault OTX Pulses: {otx_pulses}\n"
             f"Masa Berlaku Cache: {hours_left} jam tersisa ({ttl_left} detik)"
         )
         return summary
@@ -631,9 +651,19 @@ def run_stdio_server(client: SoarClient):
             )
             continue
 
+        if not isinstance(req, dict):
+            send_response(
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32600, "message": "Invalid Request: payload harus JSON object"},
+                }
+            )
+            continue
+
         req_id = req.get("id")
         method = req.get("method")
-        params = req.get("params") or {}
+        params = req.get("params") if isinstance(req.get("params"), dict) else {}
 
         # 1. Inisialisasi Handshake
         if method == "initialize":

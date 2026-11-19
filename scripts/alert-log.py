@@ -1,71 +1,49 @@
 #!/usr/bin/env python3
 """Pencatat alert Telegram keluar + registry keputusan analis (SOAR).
 
-Dua peran, satu service:
-
-1. **Observability alert keluar** (peran asli). n8n mem-POST setiap alert
-   Telegram yang benar-benar terkirim ke sini; service menyimpannya sebagai
-   JSONL (durable) di `state/telegram-alerts.jsonl`. Bot API Telegram TIDAK
-   menyediakan histori pesan keluar, jadi kita catat sendiri di titik kirim.
-
-2. **Registry keputusan analis (HITL)** — inti matriks confidence -> otonomi
-   (milestone M3). Saat sebuah deteksi masuk jalur HITL, n8n mendaftarkan
-   deteksi tertunda (per **hash**) di sini SEBELUM mengirim notifikasi, dan
-   tombol inline di Telegram membawa hash (bukan path) supaya aksinya
-   tepat-sasaran meski teks pesan di-escape Markdown. Registry menyediakan:
-   - sumber kebenaran target aksi (path/agent) saat analis menekan tombol;
-   - **batas waktu (deadline)** agar item HITL yang tak direspons bisa
-     dieskalasi, bukan hilang diam-diam;
-   - **audit trail** keputusan (siapa, kapan, aksi apa, berapa lama respons)
-     yang bertahan lintas restart -> bukti bab evaluasi.
-
-Tier non-HITL (otomatis/observasi) juga didaftarkan supaya setiap aksi analis
-tercatat di audit trail, tetapi `hitl=false` sehingga tanpa tenggat eskalaasi.
-
 Env:
-  ALERT_LOG_FILE              default /state/telegram-alerts.jsonl
+  ALERT_LOG_FILE              default state/telegram-alerts.jsonl
+  ALERT_LOG_BIND              default 127.0.0.1
   ALERT_LOG_PORT              default 8091
   ALERT_DECISION_FILE         default <dir ALERT_LOG_FILE>/decisions.json
   ALERT_DECISION_AUDIT_FILE   default <dir>/decisions-audit.jsonl
   ALERT_DECISION_TTL_SECS     default 21600 (6 jam) -> pending kedaluwarsa
-  ALERT_LOG_TOKEN             opsional; bila diisi, endpoint tulis keputusan
-                              wajib header `Authorization: Bearer <token>`
-
-Endpoint:
-  POST /log   {..} atau [{..}]        -> {"ok":true,"stored":N}
-  GET  /log?limit=50                  -> {"count":N,"items":[...]}
-  GET  /stats                         -> total, by_severity/by_workflow, decisions
-  POST /decision/pending  {hash,agent_id,filepath,severity,hitl,deadline_secs?}
-  POST /decision/resolve  {hash|did,action,by,note?}
-                                  -> {ok,found,filepath,agent_id,severity,dst}
-  POST /decision/escalate {hash}      -> tandai sudah dieskalasi (anti-spam SLA)
-  GET  /decision/pending?overdue=1&all=1&limit=
-  GET  /decision/audit?limit=&hash=
-  GET  /healthz
+  ALERT_LOG_TOKEN             wajib di produksi (fail-closed)
+  ALERT_LOG_DEV_INSECURE      set 1 hanya untuk dev/test lokal tanpa token
 """
+import collections
+import hashlib
 import hmac
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 LOG_FILE = os.getenv("ALERT_LOG_FILE", "state/telegram-alerts.jsonl")
+BIND = os.getenv("ALERT_LOG_BIND", "127.0.0.1")
 PORT = int(os.getenv("ALERT_LOG_PORT", "8091"))
 DECISION_FILE = os.getenv("ALERT_DECISION_FILE", "")
 DECISION_AUDIT_FILE = os.getenv("ALERT_DECISION_AUDIT_FILE", "")
 DECISION_TTL_SECS = int(os.getenv("ALERT_DECISION_TTL_SECS", "21600"))
 LOG_TOKEN = os.getenv("ALERT_LOG_TOKEN", "").strip()
+DEV_INSECURE = os.getenv("ALERT_LOG_DEV_INSECURE", "").strip().lower() in ("1", "true", "yes")
 
 DEFAULT_DEADLINE_SECS = 900  # 15 menit (matriks M3)
-DECISION_ID_LEN = 16  # id pendek untuk callback_data Telegram (<=64 byte)
+DECISION_ID_LEN = 16
+MIN_PREFIX_LEN = 8
 MIN_DEADLINE_SECS = 30
 MAX_DEADLINE_SECS = 86400
 MAX_HASH_LEN = 128
 MAX_STR = 4096
+MAX_BODY_BYTES = 262144
+MAX_LIMIT = 1000
+MAX_LOG_BYTES = 10 * 1024 * 1024
+MAX_LOG_BACKUPS = 5
 DECISION_ACTIONS = ("quarantine", "false_positive", "acknowledged")
 _lock = threading.Lock()
 DECISIONS = {}
@@ -90,6 +68,36 @@ def _ensure_dir(path=None):
         os.makedirs(d, exist_ok=True)
 
 
+def _rotate_if_needed_locked(path):
+    try:
+        if not os.path.exists(path) or os.path.getsize(path) < MAX_LOG_BYTES:
+            return
+        for idx in range(MAX_LOG_BACKUPS - 1, 0, -1):
+            src = f"{path}.{idx}"
+            dst = f"{path}.{idx + 1}"
+            if os.path.exists(src):
+                os.replace(src, dst)
+        os.replace(path, f"{path}.1")
+    except OSError:
+        pass
+
+
+def _atomic_write_json(path, payload):
+    _ensure_dir(path)
+    parent = os.path.dirname(os.path.abspath(path)) or "."
+    fd, tmp = tempfile.mkstemp(prefix=".tmp-", suffix=".json", dir=parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 # --------------------------------------------------------------------------
 # Peran 1: pencatat alert keluar
 # --------------------------------------------------------------------------
@@ -97,7 +105,8 @@ def append_records(records, path=None):
     path = path or LOG_FILE
     _ensure_dir(path)
     with _lock:
-        with open(path, "a") as f:
+        _rotate_if_needed_locked(path)
+        with open(path, "a", encoding="utf-8") as f:
             for r in records:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
     return len(records)
@@ -107,11 +116,15 @@ def read_records(limit=50, path=None):
     path = path or LOG_FILE
     if not os.path.exists(path):
         return []
+    safe_limit = max(1, min(int(limit or 50), 100000))
     with _lock:
-        with open(path) as f:
-            lines = f.readlines()
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                tail = collections.deque(f, maxlen=safe_limit)
+        except OSError:
+            return []
     out = []
-    for ln in lines[-max(1, limit):]:
+    for ln in tail:
         try:
             out.append(json.loads(ln))
         except ValueError:
@@ -126,12 +139,22 @@ def _iso(ts):
 # --------------------------------------------------------------------------
 # Peran 2: registry keputusan analis (HITL)
 # --------------------------------------------------------------------------
+def _decision_key(agent_id, h):
+    return f"{agent_id}:{h}"
+
+
+def _decision_did(agent_id, h):
+    # Untuk kompatibilitas, gunakan 16 char hash unik per (agent_id, hash)
+    # namun _lookup_locked juga tetap menerima prefix hash bila tidak ambigu.
+    return hashlib.sha256(f"{agent_id}:{h}".encode("utf-8")).hexdigest()[:DECISION_ID_LEN]
+
+
 def _load_decisions():
     path = decision_file()
     if not os.path.exists(path):
         return {}
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (ValueError, OSError):
         return {}
@@ -144,19 +167,36 @@ def _load_decisions():
         if not isinstance(v, dict):
             continue
         if now - float(v.get("created_ts", 0)) > DECISION_TTL_SECS * 4:
-            continue  # sangat lama: buang dari state
+            continue
         out[str(k)] = v
     return out
 
 
 def _save_decisions_locked():
-    path = decision_file()
-    _ensure_dir(path)
-    tmp = path + ".tmp"
     payload = {"saved_at": time.time(), "decisions": DECISIONS}
-    with open(tmp, "w") as f:
-        json.dump(payload, f, ensure_ascii=False)
-    os.replace(tmp, path)
+    _atomic_write_json(decision_file(), payload)
+
+
+def _prune_and_expire_locked(now=None):
+    now = time.time() if now is None else now
+    changed = False
+    to_drop = []
+    for k, rec in DECISIONS.items():
+        age = now - float(rec.get("created_ts", now))
+        if age > DECISION_TTL_SECS * 4:
+            to_drop.append(k)
+            changed = True
+            continue
+        if age > DECISION_TTL_SECS and rec.get("status") in ("pending", "escalated"):
+            rec["status"] = "expired"
+            rec["expired_ts"] = now
+            rec["expired_at"] = _iso(now)
+            _append_audit_locked(dict(rec))
+            changed = True
+    for k in to_drop:
+        DECISIONS.pop(k, None)
+    if changed:
+        _save_decisions_locked()
 
 
 def _clean_str(value, max_len=MAX_STR):
@@ -171,8 +211,18 @@ def _valid_hash(value):
     ) is not None
 
 
+def _append_audit_locked(rec):
+    path = decision_audit_file()
+    _ensure_dir(path)
+    _rotate_if_needed_locked(path)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
 def register_pending(payload):
-    """Daftarkan deteksi HITL sebagai keputusan tertunda (key = hash)."""
+    """Daftarkan deteksi HITL sebagai keputusan tertunda (key = agent_id:hash)."""
+    if not isinstance(payload, dict):
+        return None, "payload harus objek JSON"
     h = _clean_str(payload.get("hash"), MAX_HASH_LEN).lower()
     if not _valid_hash(h):
         return None, "hash tidak valid"
@@ -189,19 +239,19 @@ def register_pending(payload):
     except (TypeError, ValueError):
         deadline_secs = 0
     if hitl:
-        deadline_secs = max(MIN_DEADLINE_SECS,
-                            min(MAX_DEADLINE_SECS, deadline_secs or DEFAULT_DEADLINE_SECS))
+        deadline_secs = max(
+            MIN_DEADLINE_SECS,
+            min(MAX_DEADLINE_SECS, deadline_secs or DEFAULT_DEADLINE_SECS),
+        )
     else:
-        # Tier otomatis/observasi: tetap dicatat untuk audit trail, tapi tanpa
-        # tenggat -> tidak pernah masuk daftar eskalaasi SLA.
         deadline_secs = 0
     now = time.time()
+    dkey = _decision_key(agent_id, h)
     with _lock:
-        prev = DECISIONS.get(h) or {}
+        _prune_and_expire_locked(now)
+        prev = DECISIONS.get(dkey) or {}
 
         def _pick(field, max_len=MAX_STR, default=""):
-            """Nilai baru bila dikirim; kalau kosong pertahankan nilai sebelumnya
-            (pendaftaran ulang tanpa field opsional tidak boleh menghapus info)."""
             val = _clean_str(payload.get(field), max_len)
             return val or prev.get(field, default)
 
@@ -210,11 +260,12 @@ def register_pending(payload):
             and str(prev.get("agent_id")) == agent_id
             and prev.get("status") == "pending"
         )
-        # Deteksi sama yang diulang (mis. retry n8n): jangan reset tenggat
         created = prev.get("created_ts", now) if same else now
+        did = _decision_did(agent_id, h)
         rec = {
+            "key": dkey,
             "hash": h,
-            "did": h[:DECISION_ID_LEN],
+            "did": did,
             "hitl": hitl,
             "agent_id": agent_id,
             "agent_name": _pick("agent_name", 128),
@@ -233,29 +284,38 @@ def register_pending(payload):
             "escalated_ts": None,
             "resolved_ts": None,
         }
-        DECISIONS[h] = rec
+        DECISIONS[dkey] = rec
         _save_decisions_locked()
     return rec, None
 
 
-def _append_audit(rec):
-    path = decision_audit_file()
-    _ensure_dir(path)
-    with open(path, "a") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-
-def _lookup_locked(key):
-    """Cari entri keputusan: cocok persis, atau unik sebagai awalan (did pendek).
-
-    Tombol Telegram hanya boleh membawa <=64 byte, jadi callback membawa id
-    pendek (`did` = 16 karakter pertama hash/kunci). Bila awalan ambigu
-    (teoretis), keputusan ditolak supaya aksi tidak salah sasaran.
-    """
-    rec = DECISIONS.get(key)
-    if rec is not None:
-        return rec, None
-    matches = [r for k, r in DECISIONS.items() if k.startswith(key)]
+def _lookup_locked(key, agent_id=""):
+    """Cari entri keputusan: exact key / did / hash (atau prefix >= 8 char unik)."""
+    if agent_id:
+        composite = _decision_key(agent_id, key)
+        if composite in DECISIONS:
+            return DECISIONS[composite], None
+    if key in DECISIONS:
+        return DECISIONS[key], None
+    exact_did = [r for r in DECISIONS.values() if r.get("did") == key]
+    if len(exact_did) == 1:
+        return exact_did[0], None
+    if len(exact_did) > 1:
+        return None, "id keputusan ambigu"
+    exact_hash = [r for r in DECISIONS.values() if r.get("hash") == key]
+    if len(exact_hash) == 1:
+        return exact_hash[0], None
+    if len(exact_hash) > 1:
+        return None, "id keputusan ambigu"
+    if len(key) < MIN_PREFIX_LEN:
+        return None, "hash tidak terdaftar"
+    matches = [
+        r
+        for k, r in DECISIONS.items()
+        if k.startswith(key)
+        or str(r.get("hash", "")).startswith(key)
+        or str(r.get("did", "")).startswith(key)
+    ]
     if len(matches) == 1:
         return matches[0], None
     if len(matches) > 1:
@@ -265,16 +325,22 @@ def _lookup_locked(key):
 
 def resolve_decision(payload):
     """Catat keputusan analis; kembalikan target aksi dari registry."""
-    key = _clean_str(payload.get("hash"), MAX_HASH_LEN).lower()
+    if not isinstance(payload, dict):
+        return None, "payload harus objek JSON"
+    key = _clean_str(payload.get("hash") or payload.get("did"), MAX_HASH_LEN).lower()
+    agent_id = _clean_str(payload.get("agent_id"), 64)
     action = _clean_str(payload.get("action"), 32).lower()
     by = _clean_str(payload.get("by"), 128) or "analis"
     if not _valid_hash(key) or action not in DECISION_ACTIONS:
         return None, "hash/action tidak valid"
     now = time.time()
     with _lock:
-        rec, err = _lookup_locked(key)
+        _prune_and_expire_locked(now)
+        rec, err = _lookup_locked(key, agent_id=agent_id)
         if rec is None:
             return None, err
+        if rec.get("status") == "expired":
+            return None, "keputusan sudah kedaluwarsa"
         if rec.get("status") == "resolved":
             return {
                 "ok": True,
@@ -293,12 +359,13 @@ def resolve_decision(payload):
         rec["response_secs"] = int(now - float(rec.get("created_ts", now)))
         rec["dst"] = bool(payload.get("dst"))
         _save_decisions_locked()
-        _append_audit(dict(rec))
+        _append_audit_locked(dict(rec))
         out = {
             "ok": True,
             "found": True,
             "duplicate": False,
             "hash": rec.get("hash"),
+            "did": rec.get("did"),
             "filepath": rec.get("filepath"),
             "agent_id": rec.get("agent_id"),
             "severity": rec.get("severity"),
@@ -310,10 +377,11 @@ def resolve_decision(payload):
     return out, None
 
 
-def mark_escalated(key):
+def mark_escalated(key, agent_id=""):
     now = time.time()
     with _lock:
-        rec, _err = _lookup_locked(key)
+        _prune_and_expire_locked(now)
+        rec, _err = _lookup_locked(key, agent_id=agent_id)
         if rec is None or rec.get("status") != "pending":
             return None
         if rec.get("escalated_ts"):
@@ -322,27 +390,23 @@ def mark_escalated(key):
         rec["escalated_at"] = _iso(now)
         rec["status"] = "escalated"
         _save_decisions_locked()
-        _append_audit(dict(rec))
+        _append_audit_locked(dict(rec))
         return dict(rec)
 
 
 def pending_decisions(overdue_only=False, include_all=False, limit=100):
     now = time.time()
     with _lock:
+        _prune_and_expire_locked(now)
         items = [dict(v) for v in DECISIONS.values()]
     out = []
     for rec in items:
         age = now - float(rec.get("created_ts", now))
-        if age > DECISION_TTL_SECS and rec.get("status") in ("pending", "escalated"):
-            rec["status"] = "expired"
         if not include_all and rec.get("status") not in ("pending", "escalated"):
             continue
         if overdue_only and rec.get("status") != "pending":
-            # sudah dieskalasi -> jangan dieskalasi berulang oleh sweeper SLA;
-            # pakai ?all=1 kalau mau melihat item yang tetap belum ditangani.
             continue
         if overdue_only and (not rec.get("hitl") or not rec.get("deadline_ts")):
-            # tier otomatis/observasi: dicatat untuk audit, tanpa tenggat.
             continue
         if overdue_only and float(rec.get("deadline_ts") or 0) > now:
             continue
@@ -350,14 +414,19 @@ def pending_decisions(overdue_only=False, include_all=False, limit=100):
         rec["overdue_secs"] = int(max(0, now - float(rec.get("deadline_ts") or now)))
         out.append(rec)
     out.sort(key=lambda r: r.get("created_ts", 0))
-    return out[: max(1, limit)]
+    return out[: max(1, min(int(limit or 100), MAX_LIMIT))]
 
 
 def decision_stats():
+    now = time.time()
     with _lock:
+        _prune_and_expire_locked(now)
         items = [dict(v) for v in DECISIONS.values()]
     resolved = [r for r in items if r.get("status") == "resolved"]
     responses = [r["response_secs"] for r in resolved if r.get("response_secs") is not None]
+    hitl_responses = [
+        r["response_secs"] for r in resolved if r.get("hitl") and r.get("response_secs") is not None
+    ]
     return {
         "total": len(items),
         "by_status": dict(Counter(r.get("status") for r in items)),
@@ -369,15 +438,7 @@ def decision_stats():
         "min_response_secs": min(responses) if responses else None,
         "max_response_secs": max(responses) if responses else None,
         "hitl_response_secs": (
-            round(
-                sum(r["response_secs"] for r in resolved
-                    if r.get("hitl") and r.get("response_secs") is not None)
-                / max(1, len([r for r in resolved
-                              if r.get("hitl") and r.get("response_secs") is not None])),
-                1,
-            )
-            if [r for r in resolved if r.get("hitl") and r.get("response_secs") is not None]
-            else None
+            round(sum(hitl_responses) / len(hitl_responses), 1) if hitl_responses else None
         ),
         "deadline_secs_default": DEFAULT_DEADLINE_SECS,
         "ttl_secs": DECISION_TTL_SECS,
@@ -387,7 +448,7 @@ def decision_stats():
 
 
 def stats():
-    items = read_records(limit=100000)
+    items = read_records(limit=10000)
     last_ts = next((i.get("ts") for i in reversed(items) if i.get("ts")), None)
     return {
         "total": len(items),
@@ -401,7 +462,7 @@ def stats():
 
 def _authorized(headers):
     if not LOG_TOKEN:
-        return True
+        return DEV_INSECURE
     value = headers.get("Authorization", "")
     if not value.startswith("Bearer "):
         return False
@@ -411,12 +472,28 @@ def _authorized(headers):
         return False
 
 
+def _parse_limit(q, default=50):
+    raw = (q.get("limit") or [str(default)])[0]
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(val, MAX_LIMIT))
+
+
 class Handler(BaseHTTPRequestHandler):
+    def setup(self):
+        super().setup()
+        try:
+            self.request.settimeout(15)
+        except OSError:
+            pass
+
     def log_message(self, *a):
         pass
 
     def _json(self, obj, code=200, extra_headers=None):
-        body = json.dumps(obj, ensure_ascii=False).encode()
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -426,20 +503,28 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _body(self):
+        raw_len = self.headers.get("Content-Length", "0")
         try:
-            n = int(self.headers.get("Content-Length", 0))
-            return json.loads(self.rfile.read(n).decode() or "{}")
+            n = int(raw_len)
+        except (TypeError, ValueError):
+            return None, 400
+        if n < 0 or n > MAX_BODY_BYTES:
+            return None, 413 if n > MAX_BODY_BYTES else 400
+        try:
+            raw = self.rfile.read(n).decode("utf-8") if n else ""
+            return json.loads(raw or "{}"), 200
         except (ValueError, UnicodeDecodeError):
-            return None
+            return None, 400
 
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
         if u.path in ("/healthz", "/"):
-            return self._json({"status": "ok", "file": LOG_FILE,
-                               "decisions_pending": len(pending_decisions(include_all=False))})
+            return self._json({"status": "ok"})
+        if not _authorized(self.headers):
+            return self._json({"error": "unauthorized"}, 401, {"WWW-Authenticate": "Bearer"})
         if u.path == "/log":
-            lim = int((q.get("limit") or ["50"])[0])
+            lim = _parse_limit(q, default=50)
             items = read_records(limit=lim)
             return self._json({"count": len(items), "items": items})
         if u.path == "/stats":
@@ -447,7 +532,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/decision/pending":
             overdue = (q.get("overdue") or ["0"])[0] in ("1", "true", "yes")
             include_all = (q.get("all") or ["0"])[0] in ("1", "true", "yes")
-            lim = int((q.get("limit") or ["100"])[0])
+            lim = _parse_limit(q, default=100)
             items = pending_decisions(overdue_only=overdue, include_all=include_all, limit=lim)
             return self._json({
                 "count": len(items),
@@ -456,7 +541,7 @@ class Handler(BaseHTTPRequestHandler):
                 "items": items,
             })
         if u.path == "/decision/audit":
-            lim = int((q.get("limit") or ["100"])[0])
+            lim = _parse_limit(q, default=100)
             h = (q.get("hash") or [""])[0].strip().lower()
             items = read_records(limit=lim, path=decision_audit_file())
             if h:
@@ -466,60 +551,76 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urlparse(self.path)
-        body = self._body()
+        if not _authorized(self.headers):
+            return self._json({"error": "unauthorized"}, 401, {"WWW-Authenticate": "Bearer"})
+        body, status = self._body()
+        if status == 413:
+            return self._json({"error": "payload too large"}, 413)
         if body is None:
             return self._json({"error": "bad json"}, 400)
         if u.path == "/log":
             recs = body if isinstance(body, list) else [body]
             stored = append_records(recs)
             return self._json({"ok": True, "stored": stored})
-        if u.path.startswith("/decision/"):
-            if not _authorized(self.headers):
-                return self._json({"error": "unauthorized"}, 401,
-                                  {"WWW-Authenticate": "Bearer"})
-            if u.path == "/decision/pending":
-                rec, err = register_pending(body)
-                if err:
-                    return self._json({"ok": False, "error": err}, 400)
-                return self._json({"ok": True, "hash": rec["hash"],
-                                   "status": rec["status"],
-                                   "deadline_ts": rec["deadline_ts"],
-                                   "deadline_secs": rec["deadline_secs"]})
-            if u.path == "/decision/resolve":
-                out, err = resolve_decision(body)
-                if err == "hash tidak terdaftar":
-                    # fail-open: jangan gagalkan callback analis hanya karena
-                    # registry restart/kedaluwarsa. n8n tetap boleh edit pesan.
-                    return self._json({"ok": False, "found": False, "error": err}, 200)
-                if err:
-                    return self._json({"ok": False, "error": err}, 400)
-                return self._json(out)
-            if u.path == "/decision/escalate":
-                h = _clean_str(body.get("hash"), MAX_HASH_LEN).lower()
-                rec = mark_escalated(h)
-                if rec is None:
-                    return self._json({"ok": False, "error": "tidak ada pending"}, 404)
-                return self._json({"ok": True, "hash": h,
-                                   "escalated_at": rec.get("escalated_at")})
+        if u.path == "/decision/pending":
+            rec, err = register_pending(body)
+            if err:
+                return self._json({"ok": False, "error": err}, 400)
+            return self._json({
+                "ok": True,
+                "hash": rec["hash"],
+                "did": rec["did"],
+                "status": rec["status"],
+                "deadline_ts": rec["deadline_ts"],
+                "deadline_secs": rec["deadline_secs"],
+            })
+        if u.path == "/decision/resolve":
+            out, err = resolve_decision(body)
+            if err == "hash tidak terdaftar":
+                return self._json({"ok": False, "found": False, "error": err}, 200)
+            if err:
+                return self._json({"ok": False, "error": err}, 400)
+            return self._json(out)
+        if u.path == "/decision/escalate":
+            h = _clean_str(body.get("hash") or body.get("did"), MAX_HASH_LEN).lower()
+            aid = _clean_str(body.get("agent_id"), 64)
+            rec = mark_escalated(h, agent_id=aid)
+            if rec is None:
+                return self._json({"ok": False, "error": "tidak ada pending"}, 404)
+            return self._json({
+                "ok": True,
+                "hash": rec.get("hash", h),
+                "did": rec.get("did"),
+                "escalated_at": rec.get("escalated_at"),
+            })
         return self._json({"error": "not found"}, 404)
 
 
-def serve(port=PORT):
+def serve(port=PORT, bind=BIND):
+    if not LOG_TOKEN and not DEV_INSECURE:
+        raise SystemExit(
+            "FATAL: ALERT_LOG_TOKEN wajib diisi (atau set ALERT_LOG_DEV_INSECURE=1 untuk dev lokal)."
+        )
     _ensure_dir()
     _ensure_dir(decision_file())
     _ensure_dir(decision_audit_file())
     global DECISIONS
     DECISIONS = _load_decisions()
-    srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
-    print(f"[serve] alert-log di :{port}, file={LOG_FILE}, "
-          f"keputusan={decision_file()} ({len(DECISIONS)} entri)", flush=True)
+    srv = ThreadingHTTPServer((bind, port), Handler)
+    print(
+        f"[serve] alert-log di {bind}:{port}, file={LOG_FILE}, "
+        f"keputusan={decision_file()} ({len(DECISIONS)} entri)",
+        flush=True,
+    )
     srv.serve_forever()
 
 
 if __name__ == "__main__":
     import argparse
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--serve", action="store_true")
+    ap.add_argument("--bind", default=BIND)
     ap.add_argument("--port", type=int, default=PORT)
     ap.add_argument("--stats", action="store_true")
     ap.add_argument("--decisions", action="store_true")
@@ -528,9 +629,14 @@ if __name__ == "__main__":
     if a.stats:
         print(json.dumps(stats(), indent=2, ensure_ascii=False))
     elif a.decisions:
-        print(json.dumps({"pending": pending_decisions(include_all=True),
-                          "stats": decision_stats()}, indent=2, ensure_ascii=False))
+        print(
+            json.dumps(
+                {"pending": pending_decisions(include_all=True), "stats": decision_stats()},
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
     elif a.log:
         print(json.dumps(read_records(a.log), indent=2, ensure_ascii=False))
     else:
-        serve(a.port)
+        serve(a.port, a.bind)

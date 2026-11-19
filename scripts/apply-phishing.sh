@@ -14,7 +14,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-SCRIPT_DIR="/home/ravi/Projects/soar-project/scripts"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RULE_SOURCE="$SCRIPT_DIR/phishing-rule.xml"
 LOCALFILE_SOURCE="$SCRIPT_DIR/phishing-monitor.xml"
 PHISHING_LOG="/var/log/phishing-events.log"
