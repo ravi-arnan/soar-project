@@ -1003,10 +1003,11 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
                               {inv.verdict}
                             </WuiHealth>
                           )}
-                          <WuiBadge tone="primary">
+                          <span className="text-[#D3DAE6]" aria-hidden="true">|</span>
+                          <span className="text-[11.5px] text-[#535966] font-mono">
                             {inv.agent_source}
                             {inv.model ? ` · ${inv.model}` : ''}
-                          </WuiBadge>
+                          </span>
                         </div>
                         <p className="mt-1 text-[12px] text-[#535966]">{inv.summary}</p>
                       </div>
