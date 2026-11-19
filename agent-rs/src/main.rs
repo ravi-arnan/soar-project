@@ -796,6 +796,7 @@ async fn main() -> Result<()> {
         .collect();
 
     // Filter hanya yang ada, tapi log yang tidak ada (USB belum colok itu normal)
+    #[allow(unused_mut)]
     let (mut existing, missing): (Vec<PathBuf>, Vec<PathBuf>) =
         watch_paths.into_iter().partition(|p| p.exists());
     if !missing.is_empty() {
