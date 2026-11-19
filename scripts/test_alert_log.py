@@ -171,6 +171,82 @@ class TestAlertLog(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertIn("kedaluwarsa", body.get("error", ""))
 
+    def test_info_and_non_hitl_never_enter_pending_or_sla(self):
+        # 1) Event INFO (bahkan bila dikirim hitl=True) dipaksa non-HITL / observed
+        h_info = "1" * 64
+        r_info = _post(
+            self.base + "/decision/pending",
+            {
+                "hash": h_info, "agent_id": "009", "agent_name": "nixbox",
+                "filepath": "/home/ravi/Downloads/.org.chromium.Chromium.ii4jt3",
+                "filename": ".org.chromium.Chromium.ii4jt3",
+                "severity": "INFO", "tier": "observe", "hitl": True, "deadline_secs": 900,
+            },
+            self.auth,
+        )
+        self.assertTrue(r_info["ok"])
+        self.assertEqual(r_info["status"], "observed")
+        self.assertIsNone(r_info["deadline_ts"])
+
+        # 2) Legacy record INFO dengan status=pending di state juga harus tersaring
+        h_legacy_info = "2" * 64
+        k_legacy = f"009:{h_legacy_info}"
+        self.M.DECISIONS[k_legacy] = {
+            "key": k_legacy, "hash": h_legacy_info, "did": self.M._decision_did("009", h_legacy_info),
+            "hitl": False, "agent_id": "009", "filepath": "/tmp/.org.chromium.Chromium.old",
+            "severity": "INFO", "created_ts": time.time() - 2000,
+            "deadline_ts": None, "status": "pending",
+        }
+
+        # 3) Event auto-critical (non-HITL) tetap tercatat di ?all=1 dan bisa di-resolve FP
+        h_auto = "3" * 64
+        r_auto = _post(
+            self.base + "/decision/pending",
+            {
+                "hash": h_auto, "agent_id": "009", "filepath": "/tmp/evil.exe",
+                "severity": "CRITICAL", "tier": "auto-critical", "hitl": False, "deadline_secs": 0,
+            },
+            self.auth,
+        )
+        self.assertEqual(r_auto["status"], "observed")
+
+        for q in ("", "?overdue=1", "?overdue_only=1"):
+            res = _get(self.base + "/decision/pending" + q, self.auth)
+            self.assertEqual(res["count"], 0, f"Seharusnya kosong untuk query {q!r}, dapat {res}")
+
+        all_items = _get(self.base + "/decision/pending?all=1", self.auth)["items"]
+        self.assertEqual(len(all_items), 3)
+
+        fp_res = _post(
+            self.base + "/decision/resolve",
+            {"hash": r_auto["did"], "action": "false_positive", "by": "analyst"},
+            self.auth,
+        )
+        self.assertTrue(fp_res["ok"] and fp_res["found"])
+
+    def test_overdue_alias_and_escalate_suppresses_repeat(self):
+        h_hitl = "4" * 64
+        k_hitl = f"009:{h_hitl}"
+        self.M.DECISIONS[k_hitl] = {
+            "key": k_hitl, "hash": h_hitl, "did": self.M._decision_did("009", h_hitl),
+            "hitl": True, "agent_id": "009", "filepath": "/tmp/unknown.exe",
+            "severity": "MEDIUM", "created_ts": time.time() - 1200,
+            "deadline_ts": time.time() - 300, "status": "pending",
+        }
+        ov1 = _get(self.base + "/decision/pending?overdue=1", self.auth)
+        ov2 = _get(self.base + "/decision/pending?overdue_only=1", self.auth)
+        self.assertEqual(ov1["count"], 1)
+        self.assertEqual(ov2["count"], 1)
+
+        esc = _post(
+            self.base + "/decision/escalate",
+            {"hash": ov1["items"][0]["did"], "agent_id": "009"},
+            self.auth,
+        )
+        self.assertTrue(esc["ok"])
+        self.assertEqual(_get(self.base + "/decision/pending?overdue=1", self.auth)["count"], 0)
+        self.assertEqual(_get(self.base + "/decision/pending?overdue_only=1", self.auth)["count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

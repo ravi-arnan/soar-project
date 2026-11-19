@@ -692,7 +692,14 @@ def fetch_hitl_decisions(include_all=False, limit=100):
     try:
         _code, data = _alert_log_request(f"/decision/pending{q}", method="GET")
         items = (data.get("items") or data.get("decisions") or []) if isinstance(data, dict) else []
-        pending_cnt = sum(1 for d in items if isinstance(d, dict) and d.get("status") in ("pending", "escalated"))
+        pending_cnt = sum(
+            1
+            for d in items
+            if isinstance(d, dict)
+            and d.get("hitl")
+            and str(d.get("severity") or "").upper() != "INFO"
+            and d.get("status") in ("pending", "escalated")
+        )
         return {
             "ok": True,
             "decisions": items,

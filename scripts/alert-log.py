@@ -233,7 +233,8 @@ def register_pending(payload):
     if not filepath:
         return None, "filepath wajib (sumber target aksi HITL)"
     severity = _clean_str(payload.get("severity"), 32).upper()
-    hitl = bool(payload.get("hitl"))
+    # Event INFO tidak pernah membutuhkan eskalasi atau persetujuan HITL analis.
+    hitl = bool(payload.get("hitl")) and severity != "INFO"
     try:
         deadline_secs = int(payload.get("deadline_secs") or 0)
     except (TypeError, ValueError):
@@ -280,7 +281,7 @@ def register_pending(payload):
             "created_at": prev.get("created_at", _iso(created)) if same else _iso(now),
             "deadline_ts": (created + deadline_secs) if deadline_secs else None,
             "deadline_secs": deadline_secs,
-            "status": "pending",
+            "status": "pending" if hitl else "observed",
             "escalated_ts": None,
             "resolved_ts": None,
         }
@@ -402,11 +403,13 @@ def pending_decisions(overdue_only=False, include_all=False, limit=100):
     out = []
     for rec in items:
         age = now - float(rec.get("created_ts", now))
-        if not include_all and rec.get("status") not in ("pending", "escalated"):
-            continue
+        is_hitl = bool(rec.get("hitl")) and str(rec.get("severity") or "").upper() != "INFO"
+        if not include_all:
+            if not is_hitl or rec.get("status") not in ("pending", "escalated"):
+                continue
         if overdue_only and rec.get("status") != "pending":
             continue
-        if overdue_only and (not rec.get("hitl") or not rec.get("deadline_ts")):
+        if overdue_only and (not is_hitl or not rec.get("deadline_ts")):
             continue
         if overdue_only and float(rec.get("deadline_ts") or 0) > now:
             continue
@@ -530,7 +533,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/stats":
             return self._json(stats())
         if u.path == "/decision/pending":
-            overdue = (q.get("overdue") or ["0"])[0] in ("1", "true", "yes")
+            overdue = (q.get("overdue") or q.get("overdue_only") or ["0"])[0] in ("1", "true", "yes")
             include_all = (q.get("all") or ["0"])[0] in ("1", "true", "yes")
             lim = _parse_limit(q, default=100)
             items = pending_decisions(overdue_only=overdue, include_all=include_all, limit=lim)

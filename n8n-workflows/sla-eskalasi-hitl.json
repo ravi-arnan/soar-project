@@ -38,7 +38,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const token = ($env.ALERT_LOG_TOKEN || '').trim();\nconst headers = Object.assign({ 'Accept': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {});\nlet data = null;\ntry {\n  data = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'http://host.docker.internal:8091/decision/pending?overdue_only=1',\n    headers,\n    timeout: 8000,\n  });\n} catch (e) {\n  return [];\n}\nconst items = Array.isArray(data?.items) ? data.items : (Array.isArray(data?.pending) ? data.pending : []);\nif (items.length === 0) return [];\n\nconst lines = items.slice(0, 10).map((it, idx) => {\n  const target = it.filename || it.filepath || it.hash || '-';\n  const agent = it.agent_name || it.agent_id || '-';\n  const sev = it.severity || 'MEDIUM';\n  return `${idx + 1}. [${sev}] ${target} (Agent: ${agent}, ID: ${String(it.did || it.hash || '').slice(0, 12)})`;\n});\nconst msg = [\n  'ESKALASI SLA HITL (>15 Menit Belum Direspons)',\n  `Total tertunda: ${items.length} insiden`,\n  '',\n  ...lines,\n  '',\n  'Harap analis segera merespons tombol keputusan pada pesan alert terkait atau tindak lanjuti melalui Dashboard SOAR.',\n].join('\\n');\nreturn [{ json: { count: items.length, message: msg, items } }];"
+        "jsCode": "const token = ($env.ALERT_LOG_TOKEN || '').trim();\nconst baseHeaders = Object.assign(\n  { 'Accept': 'application/json' },\n  token ? { 'Authorization': 'Bearer ' + token } : {}\n);\nlet data = null;\ntry {\n  data = await this.helpers.httpRequest({\n    method: 'GET',\n    url: 'http://host.docker.internal:8091/decision/pending?overdue=1&limit=20',\n    headers: baseHeaders,\n    timeout: 8000,\n  });\n} catch (e) {\n  return [];\n}\nconst rawItems = Array.isArray(data?.items)\n  ? data.items\n  : (Array.isArray(data?.pending) ? data.pending : []);\nconst items = rawItems.filter((it) => {\n  if (!it || it.hitl !== true) return false;\n  const sev = String(it.severity || '').toUpperCase();\n  if (!sev || sev === 'INFO') return false;\n  return String(it.status || 'pending') === 'pending';\n});\nif (items.length === 0) return [];\n\nconst postHeaders = Object.assign({ 'Content-Type': 'application/json' }, baseHeaders);\nfor (const it of items) {\n  try {\n    await this.helpers.httpRequest({\n      method: 'POST',\n      url: 'http://host.docker.internal:8091/decision/escalate',\n      headers: postHeaders,\n      body: { hash: it.did || it.hash, agent_id: it.agent_id || '' },\n      timeout: 5000,\n    });\n  } catch (e) { /* fail-open */ }\n}\n\nconst lines = items.slice(0, 10).map((it, idx) => {\n  const target = it.filename || it.filepath || it.hash || '-';\n  const agent = it.agent_name || it.agent_id || '-';\n  const sev = String(it.severity || 'MEDIUM').toUpperCase();\n  const mins = Math.floor((it.age_secs || 0) / 60);\n  return `${idx + 1}. [${sev}] ${target} (Agent: ${agent}, ${mins} mnt, ID: ${String(it.did || it.hash || '').slice(0, 12)})`;\n});\nconst msg = [\n  'ESKALASI SLA HITL (>15 Menit Belum Direspons)',\n  `Total tertunda: ${items.length} insiden`,\n  '',\n  ...lines,\n  '',\n  'Harap analis segera merespons tombol keputusan pada pesan alert terkait atau tindak lanjuti melalui Dashboard SOAR.',\n].join('\\n');\nreturn [{ json: { count: items.length, message: msg, items } }];"
       }
     },
     {
@@ -59,7 +59,23 @@
       "parameters": {
         "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
         "text": "={{ $json.message }}",
-        "additionalFields": {}
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "sla-log-4",
+      "name": "Catat Eskalasi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "onError": "continueRegularOutput",
+      "position": [
+        1020,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const token = ($env.ALERT_LOG_TOKEN || '').trim();\nconst inp = $('Cek Keputusan Lewat SLA').first().json;\nconst tg = ($input && $input.first && $input.first() && $input.first().json) || {};\nconst r = tg.result || tg;\nconst tgOk = (tg.ok === true) || Boolean(r && r.message_id);\nlet ok = false;\ntry {\n  await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'http://host.docker.internal:8091/log',\n    headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),\n    body: {\n      ts: new Date().toISOString(),\n      workflow: 'SLA Eskalasi HITL',\n      node: 'Kirim Eskalasi Telegram',\n      severity: 'HIGH',\n      title: 'Eskalasi SLA HITL',\n      count: inp.count,\n      escalated: true,\n      telegram_ok: tgOk,\n    },\n    timeout: 5000,\n  });\n  ok = true;\n} catch (e) { /* fail-open */ }\nreturn [{ json: { logged: ok, count: inp.count } }];"
       }
     }
   ],
@@ -80,6 +96,17 @@
         [
           {
             "node": "Kirim Eskalasi Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim Eskalasi Telegram": {
+      "main": [
+        [
+          {
+            "node": "Catat Eskalasi",
             "type": "main",
             "index": 0
           }
