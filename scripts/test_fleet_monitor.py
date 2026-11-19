@@ -794,5 +794,53 @@ class SecurityHardeningTests(_ApiTestCase):
         self.assertIsNone(d2.get("poll_token"))
 
 
+class ContainerStatsTests(unittest.TestCase):
+    def setUp(self):
+        self._orig = fleet_monitor.CONTAINER_STATS_FILE
+        self.tmp = tempfile.NamedTemporaryFile("w+", suffix=".json", delete=False)
+        self.tmp.close()
+        fleet_monitor.CONTAINER_STATS_FILE = self.tmp.name
+
+    def tearDown(self):
+        fleet_monitor.CONTAINER_STATS_FILE = self._orig
+        try:
+            os.unlink(self.tmp.name)
+        except OSError:
+            pass
+
+    def test_reads_fresh_container_stats(self):
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with open(self.tmp.name, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "updated_at": now_iso,
+                    "containers": {
+                        "fleet-monitor": {
+                            "mem_used_mb": 42.34,
+                            "mem_limit_mb": 512.0,
+                            "mem_pct": 8.27,
+                            "cpu_pct": 0.4,
+                        }
+                    },
+                },
+                f,
+            )
+        res = fleet_monitor._read_container_stats()
+        self.assertIsNotNone(res)
+        self.assertEqual(res["containers"]["fleet-monitor"]["mem_used_mb"], 42.3)
+        self.assertEqual(res["containers"]["fleet-monitor"]["mem_limit_mb"], 512.0)
+        self.assertEqual(res["containers"]["fleet-monitor"]["mem_pct"], 8.3)
+
+    def test_rejects_stale_or_invalid_container_stats(self):
+        stale_iso = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+        with open(self.tmp.name, "w", encoding="utf-8") as f:
+            json.dump({"updated_at": stale_iso, "containers": {"n8n": {"mem_used_mb": 100}}}, f)
+        self.assertIsNone(fleet_monitor._read_container_stats())
+
+        with open(self.tmp.name, "w", encoding="utf-8") as f:
+            f.write("{not-json")
+        self.assertIsNone(fleet_monitor._read_container_stats())
+
+
 if __name__ == "__main__":
     unittest.main()

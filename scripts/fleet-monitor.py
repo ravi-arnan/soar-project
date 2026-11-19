@@ -209,6 +209,71 @@ VT_CACHE_FILE = os.environ.get(
     "FLEET_VT_CACHE_FILE",
     os.path.join(os.path.dirname(STATE_FILE), ".fleet-vt-cache.json"),
 )
+CONTAINER_STATS_FILE = os.environ.get(
+    "FLEET_CONTAINER_STATS_FILE",
+    os.path.join(os.path.dirname(STATE_FILE) or ".", "container-stats.json"),
+)
+CONTAINER_STATS_MAX_AGE_SECS = int(os.environ.get("FLEET_CONTAINER_STATS_MAX_AGE_SECS", "180"))
+CONTAINER_STATS_MAX_BYTES = 64 * 1024
+
+
+def _read_container_stats():
+    """Baca snapshot konsumsi memori container Docker yang ditulis collector host."""
+    try:
+        with open(CONTAINER_STATS_FILE, encoding="utf-8") as f:
+            raw = f.read(CONTAINER_STATS_MAX_BYTES + 1)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+    if len(raw) > CONTAINER_STATS_MAX_BYTES:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    updated_raw = str(data.get("updated_at") or "").strip()
+    if not updated_raw:
+        return None
+    try:
+        ts_str = updated_raw[:-1] + "+00:00" if updated_raw.endswith("Z") else updated_raw
+        updated_dt = datetime.fromisoformat(ts_str)
+        if updated_dt.tzinfo is None:
+            updated_dt = updated_dt.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - updated_dt).total_seconds()
+    except ValueError:
+        return None
+    if age > CONTAINER_STATS_MAX_AGE_SECS or age < -60:
+        return None
+
+    raw_containers = data.get("containers")
+    if not isinstance(raw_containers, dict):
+        return None
+    containers = {}
+    for name, item in list(raw_containers.items())[:64]:
+        if not isinstance(name, str) or not isinstance(item, dict):
+            continue
+        clean_name = name.strip()[:128]
+        if not clean_name:
+            continue
+        try:
+            used_mb = round(float(item.get("mem_used_mb", 0) or 0), 1)
+            limit_mb = round(float(item.get("mem_limit_mb", 0) or 0), 1)
+            mem_pct = round(float(item.get("mem_pct", 0) or 0), 1)
+            cpu_pct = round(float(item.get("cpu_pct", 0) or 0), 1)
+        except (TypeError, ValueError):
+            continue
+        if used_mb < 0 or limit_mb < 0 or mem_pct < 0:
+            continue
+        containers[clean_name] = {
+            "mem_used_mb": used_mb,
+            "mem_limit_mb": limit_mb,
+            "mem_pct": mem_pct,
+            "cpu_pct": cpu_pct,
+        }
+    return {"updated_at": updated_raw, "containers": containers}
 
 
 def _load_state():
@@ -590,6 +655,7 @@ def build_fleet(cfg):
         "misp": check_http(misp_url),
         "alert_log": check_http(alert_log_url),
         "ai_circuit_breaker": AI_CIRCUIT_BREAKER.snapshot(),
+        "container_stats": _read_container_stats(),
     }
 
     # Severity summary dan total event 24 jam terakhir (selaras dengan status operasional realtime)
@@ -1054,12 +1120,13 @@ def _api_key_create(name, scopes):
     }
 
 
-def _api_key_list():
+def _api_key_list(include_revoked=False):
     try:
+        where_clause = "" if include_revoked else "WHERE revoked = 0"
         with closing(_db()) as conn:
             rows = conn.execute(
-                """SELECT id, name, prefix, scopes, created_at, last_used_at, revoked
-                FROM api_keys ORDER BY created_at DESC"""
+                f"""SELECT id, name, prefix, scopes, created_at, last_used_at, revoked
+                FROM api_keys {where_clause} ORDER BY created_at DESC"""
             ).fetchall()
         return [
             {
@@ -1086,6 +1153,45 @@ def _api_key_revoke(key_id):
     except Exception as e:
         print(f"api_key_revoke error: {e}", flush=True)
         return False
+
+
+def _api_key_rotate(key_id):
+    try:
+        raw_token = f"soar_live_{secrets.token_hex(24)}"
+        new_hash = _hash_api_key(raw_token)
+        new_prefix = f"{raw_token[:16]}...{raw_token[-4:]}"
+        new_id = f"key_{uuid.uuid4().hex[:12]}"
+        created_at = datetime.now(WITA).isoformat()
+
+        with closing(_db()) as conn, conn:
+            row = conn.execute(
+                "SELECT id, name, prefix, scopes, revoked FROM api_keys WHERE id = ?",
+                (str(key_id),),
+            ).fetchone()
+            if not row or row["revoked"]:
+                return None
+            scopes_str = row["scopes"]
+            scopes_list = [s.strip() for s in scopes_str.split(",") if s.strip()]
+            conn.execute("UPDATE api_keys SET revoked = 1 WHERE id = ?", (str(key_id),))
+            conn.execute(
+                """INSERT INTO api_keys
+                (id, name, key_hash, prefix, scopes, created_at, last_used_at, revoked)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, 0)""",
+                (new_id, row["name"], new_hash, new_prefix, scopes_str, created_at),
+            )
+            return {
+                "id": new_id,
+                "name": row["name"],
+                "token": raw_token,
+                "prefix": new_prefix,
+                "scopes": scopes_list,
+                "created_at": created_at,
+                "rotated_from": str(key_id),
+                "old_prefix": row["prefix"],
+            }
+    except Exception as e:
+        print(f"api_key_rotate error: {e}", flush=True)
+        return None
 
 
 def _verify_api_key(headers, required_scope=""):
@@ -3835,7 +3941,9 @@ class Handler(BaseHTTPRequestHandler):
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
                 self._unauthorized()
                 return
-            self._json(200, {"keys": _api_key_list()})
+            qs = parse_qs(parsed.query)
+            include_revoked = qs.get("include_revoked", ["0"])[0] in ("1", "true", "yes")
+            self._json(200, {"keys": _api_key_list(include_revoked=include_revoked)})
         elif parsed.path == "/api/users":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
                 self._unauthorized()
@@ -4291,6 +4399,48 @@ class Handler(BaseHTTPRequestHandler):
                     ip=self.client_address[0],
                 )
                 self._json(200, {"revoked": ok, "id": key_id})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/keys/rotate":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
+            data, err = self._read_json(max_bytes=8192)
+            if err:
+                return
+            try:
+                key_id = str(data.get("id", "")).strip()
+                if not key_id:
+                    self._json(400, {"error": "id key diperlukan"})
+                    return
+                rotated = _api_key_rotate(key_id)
+                if not rotated:
+                    _record_audit(
+                        "apikey.rotate",
+                        target=key_id,
+                        status="error",
+                        actor=str(data.get("actor") or "admin"),
+                        role="admin",
+                        ip=self.client_address[0],
+                    )
+                    self._json(404, {"error": "API key tidak ditemukan atau sudah dicabut"})
+                    return
+                old_prefix = rotated.pop("old_prefix", "")
+                _record_audit(
+                    "apikey.rotate",
+                    target=key_id,
+                    detail={
+                        "new_id": rotated["id"],
+                        "name": rotated["name"],
+                        "scopes": rotated["scopes"],
+                        "old_prefix": old_prefix,
+                        "new_prefix": rotated["prefix"],
+                    },
+                    actor=str(data.get("actor") or "admin"),
+                    role="admin",
+                    ip=self.client_address[0],
+                )
+                self._json(200, rotated)
             except Exception as e:
                 self._json(400, {"error": str(e)})
         elif parsed.path == "/api/users":

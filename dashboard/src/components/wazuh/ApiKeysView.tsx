@@ -30,6 +30,7 @@ interface CreatedKeyResponse {
   prefix: string;
   scopes: string[];
   created_at: string;
+  rotated_from?: string;
 }
 
 const AI_AGENT_SETUP_PROMPT = `Kamu adalah AI Security Operations Agent yang terhubung ke SOAR Fleet Control Plane.
@@ -105,9 +106,11 @@ export function ApiKeysView() {
   const [revealedKey, setRevealedKey] = useState<CreatedKeyResponse | null>(null);
   const [copiedToken, setCopiedToken] = useState(false);
 
-  // State revoke
+  // State revoke & rotate
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; name: string } | null>(null);
+  const [rotatingId, setRotatingId] = useState<string | null>(null);
+  const [rotateTarget, setRotateTarget] = useState<{ id: string; name: string } | null>(null);
 
   const loadKeys = useCallback(async () => {
     try {
@@ -330,6 +333,40 @@ export function ApiKeysView() {
     }
   };
 
+  const handleRotateKey = (id: string, name: string) => {
+    setRotateTarget({ id, name });
+  };
+
+  const executeRotateKey = async () => {
+    if (!rotateTarget) return;
+
+    try {
+      setRotatingId(rotateTarget.id);
+      const res = await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rotate', id: rotateTarget.id }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || 'Gagal melakukan rotate API Key');
+        return;
+      }
+
+      const rotated: CreatedKeyResponse = await res.json();
+      setRotateTarget(null);
+      setCopiedToken(false);
+      setRevealedKey(rotated);
+      loadKeys();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Error saat rotate: ${msg}`);
+    } finally {
+      setRotatingId(null);
+    }
+  };
+
   const handleCopyModalToken = (text: string) => {
     if (!navigator?.clipboard) return;
     navigator.clipboard.writeText(text).then(() => {
@@ -338,7 +375,8 @@ export function ApiKeysView() {
     });
   };
 
-  const activeKeysCount = keys.filter((k) => !k.revoked).length;
+  const visibleKeys = keys.filter((k) => !k.revoked);
+  const activeKeysCount = visibleKeys.length;
 
   return (
     <div className="space-y-4">
@@ -378,7 +416,7 @@ export function ApiKeysView() {
           <div className="text-[22px] font-semibold text-[#007871] font-mono tabular-nums mt-0.5 leading-tight">
             {activeKeysCount}{' '}
             <span className="text-[12px] font-sans font-normal text-[#535966]">
-              dari {keys.length} total
+              aktif
             </span>
           </div>
         </div>
@@ -506,12 +544,12 @@ export function ApiKeysView() {
       <WuiPanel
         title="Daftar API Access Keys"
         accentColor="#006BB4"
-        right={<span className="text-[11px] font-mono text-[#535966]">{keys.length} keys</span>}
+        right={<span className="text-[11px] font-mono text-[#535966]">{visibleKeys.length} keys</span>}
         bodyClassName="p-0"
       >
         {loading ? (
           <div className="p-8 text-center text-[#535966] text-[12px]">Memuat data API Keys...</div>
-        ) : keys.length === 0 ? (
+        ) : visibleKeys.length === 0 ? (
           <div className="p-8 text-center">
             <WuiIcon type="lock" size="l" className="text-[#69707D] mx-auto mb-2" />
             <div className="text-[13px] font-semibold text-[#1A1C21]">Belum ada API Key</div>
@@ -534,7 +572,7 @@ export function ApiKeysView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E9EDF3]">
-                {keys.map((k) => (
+                {visibleKeys.map((k) => (
                   <tr key={k.id} className="hover:bg-[#FAFBFD] transition-colors">
                     <td className="px-4 py-2.5 font-medium text-[#1A1C21]">
                       <div className="flex items-center gap-1.5">
@@ -571,22 +609,31 @@ export function ApiKeysView() {
                       {k.last_used_at ? formatWazuhTime(k.last_used_at) : '(Belum pernah)'}
                     </td>
                     <td className="px-4 py-2.5">
-                      <WuiHealth tone={k.revoked ? 'default' : 'success'}>
-                        {k.revoked ? 'Revoked' : 'Active'}
-                      </WuiHealth>
+                      <WuiHealth tone="success">Active</WuiHealth>
                     </td>
-                    <td className="px-4 py-2.5 text-right">
-                      {!k.revoked && (
+                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                      <div className="inline-flex items-center justify-end gap-1.5">
                         <button
+                          type="button"
+                          onClick={() => handleRotateKey(k.id, k.name)}
+                          disabled={rotatingId === k.id || revokingId === k.id}
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#006BB4] hover:bg-[#EBF5FB] rounded-[4px] transition disabled:opacity-50 cursor-pointer"
+                          title="Putar (rotate) token ini dengan token baru"
+                        >
+                          <WuiIcon type="refresh" size="s" className={rotatingId === k.id ? 'animate-spin' : ''} />
+                          <span>{rotatingId === k.id ? 'Rotating...' : 'Rotate'}</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleRevokeKey(k.id, k.name)}
-                          disabled={revokingId === k.id}
+                          disabled={revokingId === k.id || rotatingId === k.id}
                           className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#BD271E] hover:bg-[#FBECEB] rounded-[4px] transition disabled:opacity-50 cursor-pointer"
-                          title="Cabut akses token ini"
+                          title="Cabut dan hapus akses token ini"
                         >
                           <WuiIcon type="trash" size="s" />
                           <span>{revokingId === k.id ? 'Memproses...' : 'Revoke'}</span>
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -758,7 +805,7 @@ export function ApiKeysView() {
           title={
             <>
               <WuiIcon type="checkInCircleFilled" size="m" className="text-[#017D73]" />
-              <span>API Key Berhasil Dibuat</span>
+              <span>{revealedKey.rotated_from ? 'API Key Berhasil Dirotate' : 'API Key Berhasil Dibuat'}</span>
             </>
           }
           maxWidth="max-w-lg"
@@ -804,6 +851,44 @@ export function ApiKeysView() {
         </WuiModal>
       )}
 
+      {/* Rotate API Key Confirmation Modal */}
+      {rotateTarget && (
+        <WuiModal
+          title={
+            <>
+              <WuiIcon type="refresh" size="m" className="text-[#006BB4]" />
+              <span>Rotate API Key</span>
+            </>
+          }
+          onClose={() => setRotateTarget(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setRotateTarget(null)}
+                className="px-3 py-1.5 border border-[#D3DAE6] rounded-[4px] text-[12px] font-medium text-[#535966] hover:bg-[#FAFBFD] transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={executeRotateKey}
+                disabled={rotatingId === rotateTarget.id}
+                className="px-3 py-1.5 rounded-[4px] text-[12px] font-semibold text-white bg-[#006BB4] hover:bg-[#00538C] transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {rotatingId === rotateTarget.id ? <WuiIcon type="refresh" size="s" className="animate-spin" /> : null}
+                <span>Rotate Kunci</span>
+              </button>
+            </>
+          }
+        >
+          <p className="text-[12px] text-[#535966] leading-relaxed">
+            Apakah Anda yakin ingin memutar (rotate) API Key{' '}
+            <strong className="text-[#1A1C21] font-mono">{rotateTarget.name}</strong>? Token lama akan langsung dicabut dan digantikan token baru dengan nama serta scope yang sama.
+          </p>
+        </WuiModal>
+      )}
+
       {/* Revoke API Key Confirmation Modal */}
       {revokeTarget && (
         <WuiModal
@@ -837,7 +922,7 @@ export function ApiKeysView() {
         >
           <p className="text-[12px] text-[#535966] leading-relaxed">
             Apakah Anda yakin ingin mencabut (revoke) API Key{' '}
-            <strong className="text-[#1A1C21] font-mono">{revokeTarget.name}</strong>? Akses mesin atau agen yang menggunakan token ini akan langsung terputus. Tindakan ini tidak dapat dibatalkan.
+            <strong className="text-[#1A1C21] font-mono">{revokeTarget.name}</strong>? Akses mesin atau agen yang menggunakan token ini akan langsung terputus dan key dihapus dari daftar aktif. Tindakan ini tidak dapat dibatalkan.
           </p>
         </WuiModal>
       )}

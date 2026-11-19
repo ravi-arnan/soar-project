@@ -47,7 +47,16 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const payload = parsed.data as Record<string, unknown>;
-  const upstreamPath = payload.action === "revoke" ? "/api/keys/revoke" : "/api/keys";
+  const upstreamPath =
+    payload.action === "revoke"
+      ? "/api/keys/revoke"
+      : payload.action === "rotate"
+        ? "/api/keys/rotate"
+        : "/api/keys";
+  const forwardedBody = {
+    ...payload,
+    actor: user.email || user.username || "admin",
+  };
   try {
     const upstream = await fetch(`${fleetBaseUrl()}${upstreamPath}`, {
       method: "POST",
@@ -56,7 +65,7 @@ export async function POST(request: Request): Promise<Response> {
         Authorization: `Bearer ${commandToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(forwardedBody),
       cache: "no-store",
       signal: AbortSignal.timeout(10_000),
     });

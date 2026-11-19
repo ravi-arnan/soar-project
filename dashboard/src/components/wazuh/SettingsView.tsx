@@ -29,9 +29,18 @@ interface ComponentResource {
   role: string;
   memory: string;
   memPercent: string;
+  memPctNum?: number;
+  hasLiveMem?: boolean;
   status: string;
   isOk: boolean;
   port?: string;
+}
+
+function formatMemMb(mb: number): string {
+  if (mb >= 1024) {
+    return `${(mb / 1024).toFixed(2)} GB`;
+  }
+  return `${Number.isInteger(mb) ? mb : mb.toFixed(1)} MB`;
 }
 
 export function SettingsView({
@@ -69,13 +78,49 @@ export function SettingsView({
     };
   }, [userRole]);
 
+  const containerMap = health?.container_stats?.containers ?? {};
+  const resolveMem = (candidates: string[]): Pick<ComponentResource, 'memory' | 'memPercent' | 'memPctNum' | 'hasLiveMem'> => {
+    let stat = undefined;
+    for (const c of candidates) {
+      if (containerMap[c]) {
+        stat = containerMap[c];
+        break;
+      }
+    }
+    if (!stat) {
+      const entries = Object.entries(containerMap);
+      for (const c of candidates) {
+        const found = entries.find(([k]) => k.includes(c));
+        if (found) {
+          stat = found[1];
+          break;
+        }
+      }
+    }
+    if (!stat) {
+      return { memory: 'Managed', memPercent: '-', hasLiveMem: false };
+    }
+    if (stat.mem_limit_mb > 0) {
+      return {
+        memory: `${formatMemMb(stat.mem_used_mb)} / ${formatMemMb(stat.mem_limit_mb)}`,
+        memPercent: `${stat.mem_pct.toFixed(1)}%`,
+        memPctNum: stat.mem_pct,
+        hasLiveMem: true,
+      };
+    }
+    return {
+      memory: formatMemMb(stat.mem_used_mb),
+      memPercent: '-',
+      hasLiveMem: true,
+    };
+  };
+
   const components: ComponentResource[] = [
     {
       name: 'Wazuh Indexer (OpenSearch Cluster)',
       category: 'storage',
       role: 'Penyimpanan event terpusat, pengindeksan telemetri FIM & audit log riwayat',
-      memory: 'Managed',
-      memPercent: '-',
+      ...resolveMem(['single-node-wazuh.indexer-1', 'wazuh.indexer']),
       status: health?.wazuh_api ? 'Online' : 'Offline / Unreachable',
       isOk: !!health?.wazuh_api,
       port: ':9200',
@@ -84,8 +129,7 @@ export function SettingsView({
       name: 'Wazuh Manager Core (Analysisd)',
       category: 'core',
       role: 'Mesin korelasi aturan Sysmon, decoder rantai proses, dan trigger Active Response',
-      memory: 'Managed',
-      memPercent: '-',
+      ...resolveMem(['single-node-wazuh.manager-1', 'wazuh.manager']),
       status: health?.wazuh_api ? 'Online' : 'Offline / Unreachable',
       isOk: !!health?.wazuh_api,
       port: ':1514, :55000',
@@ -94,8 +138,7 @@ export function SettingsView({
       name: 'n8n Orchestrator (Otak SOAR)',
       category: 'orchestration',
       role: 'Eksekusi playbook insiden, evaluasi matriks otonomi, koroborasi VT/MB, dan callback Telegram',
-      memory: 'Managed',
-      memPercent: '-',
+      ...resolveMem(['n8n']),
       status: health?.n8n ? 'Online' : 'Offline / Unreachable',
       isOk: !!health?.n8n,
       port: ':5678',
@@ -104,8 +147,7 @@ export function SettingsView({
       name: 'Fleet Web Dashboard (Next.js Standalone)',
       category: 'core',
       role: 'Antarmuka komando pusat armada, session security gate 2FA, dan integrasi MCP',
-      memory: 'Managed',
-      memPercent: '-',
+      ...resolveMem(['fleet-dashboard']),
       status: online ? 'Online' : 'Offline',
       isOk: online,
       port: ':3000',
@@ -114,8 +156,7 @@ export function SettingsView({
       name: 'Fleet Monitor & M2M API Engine',
       category: 'microservice',
       role: 'Control plane API, sinkronisasi cache VT/MB server-side, dan SQLite API Key auth',
-      memory: 'Managed',
-      memPercent: '-',
+      ...resolveMem(['fleet-monitor']),
       status: online ? 'Online (Python stdlib)' : 'Offline',
       isOk: online,
       port: ':8080',
@@ -124,8 +165,7 @@ export function SettingsView({
       name: 'MISP Threat Intel Cache & OSINT Sync',
       category: 'microservice',
       role: 'Penyedia indeks indikator kompromi lokal dari feed CIRCL OSINT tanpa kuota',
-      memory: 'Managed',
-      memPercent: '-',
+      ...resolveMem(['misp-index']),
       status: health?.misp ? 'Online (SQLite indexed)' : 'Offline / Unreachable',
       isOk: !!health?.misp,
       port: ':8090',
@@ -134,8 +174,7 @@ export function SettingsView({
       name: 'Telegram Decision & Health Loggers',
       category: 'microservice',
       role: 'Registry keputusan HITL, audit trail analis ber-SLA 15m, dan self-aware health checker',
-      memory: 'Managed',
-      memPercent: '-',
+      ...resolveMem(['alert-log']),
       status: health?.alert_log ? 'Online (Authenticated)' : 'Offline / Unreachable',
       isOk: !!health?.alert_log,
       port: ':8091',
@@ -148,6 +187,7 @@ export function SettingsView({
         : 'Triage kontekstual dinamis (Fallback nonaktif)',
       memory: 'Offloaded API',
       memPercent: '-',
+      hasLiveMem: false,
       status: activeAi.enabled ? (health?.gemini ? 'Configured' : 'Key Missing / Fallback') : 'Disabled',
       isOk: activeAi.enabled ? !!health?.gemini : false,
       port: 'Cloud / Custom API',
@@ -321,10 +361,24 @@ export function SettingsView({
                       <td className="py-2.5 px-3 font-mono text-[11px] text-[#535966] tabular-nums">
                         {comp.port || '-'}
                       </td>
-                      <td className="py-2.5 px-3 font-mono font-semibold text-[#006BB4] tabular-nums">
+                      <td
+                        className={`py-2.5 px-3 font-mono font-semibold tabular-nums ${
+                          comp.hasLiveMem ? 'text-[#006BB4]' : 'text-[#535966]'
+                        }`}
+                      >
                         {comp.memory}
                       </td>
-                      <td className="py-2.5 px-3 font-mono text-[#535966] tabular-nums">
+                      <td
+                        className={`py-2.5 px-3 font-mono font-medium tabular-nums ${
+                          comp.memPctNum === undefined
+                            ? 'text-[#535966]'
+                            : comp.memPctNum >= 85
+                              ? 'text-[#BD271E]'
+                              : comp.memPctNum >= 70
+                                ? 'text-[#B25E09]'
+                                : 'text-[#017D73]'
+                        }`}
+                      >
                         {comp.memPercent}
                       </td>
                       <td className="py-2.5 px-4 text-right">

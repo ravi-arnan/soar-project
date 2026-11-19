@@ -1,0 +1,11 @@
+[Unit]
+Description=Run SOAR Container Memory Stats Collector every 30s
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=30s
+AccuracySec=5s
+Unit=soar-docker-stats.service
+
+[Install]
+WantedBy=timers.target

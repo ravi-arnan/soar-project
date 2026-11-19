@@ -1,0 +1,15 @@
+[Unit]
+Description=SOAR Container Memory Stats Collector (oneshot)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+User=ravi
+Group=docker
+ExecStart=/usr/local/bin/soar-docker-stats --output /home/ravi/Projects/soar-project/state/container-stats.json
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ReadWritePaths=/home/ravi/Projects/soar-project/state
+TimeoutStartSec=20

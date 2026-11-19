@@ -57,19 +57,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'same-origin',
       });
       const data = await res.json().catch(() => null);
-      setUser(null);
       if (data && typeof data.logoutUrl === 'string' && data.logoutUrl) {
         window.location.assign(data.logoutUrl);
         return;
       }
+      setUser(null);
+      setLoading(false);
     } catch {
       setUser(null);
+      setLoading(false);
     }
   }, []);
 

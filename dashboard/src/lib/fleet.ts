@@ -94,12 +94,25 @@ export interface FleetScanResult {
   files?: FleetScanFile[];
 }
 
+export interface ContainerMemStat {
+  mem_used_mb: number;
+  mem_limit_mb: number;
+  mem_pct: number;
+  cpu_pct?: number;
+}
+
+export interface ContainerStatsSnapshot {
+  updated_at: string;
+  containers: Record<string, ContainerMemStat>;
+}
+
 export interface FleetHealth {
   n8n: boolean;
   gemini: boolean;
   wazuh_api: boolean;
   misp?: boolean;
   alert_log?: boolean;
+  container_stats?: ContainerStatsSnapshot | null;
 }
 
 export interface FleetSeverityCounts {

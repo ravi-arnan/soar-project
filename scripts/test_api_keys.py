@@ -93,9 +93,13 @@ class TestApiKeys(unittest.TestCase):
         ok = fm._api_key_revoke(key_id)
         self.assertTrue(ok)
 
-        # Setelah dicabut: tidak valid
+        # Setelah dicabut: tidak valid dan otomatis tidak muncul di daftar aktif
         valid_after, _ = fm._verify_api_key(headers, "read:fleet")
         self.assertFalse(valid_after)
+        active_ids = {k["id"] for k in fm._api_key_list()}
+        self.assertNotIn(key_id, active_ids)
+        all_ids = {k["id"] for k in fm._api_key_list(include_revoked=True)}
+        self.assertIn(key_id, all_ids)
 
     def test_06_verify_wildcard_scope(self):
         created = fm._api_key_create("Super Admin Agent", ["*"])
@@ -108,6 +112,36 @@ class TestApiKeys(unittest.TestCase):
         self.assertTrue(v1)
         self.assertTrue(v2)
         self.assertTrue(v3)
+
+    def test_07_rotate_api_key(self):
+        created = fm._api_key_create("Rotatable MCP Bot", ["read:fleet", "write:actions"])
+        old_id = created["id"]
+        old_token = created["token"]
+
+        rotated = fm._api_key_rotate(old_id)
+        self.assertIsNotNone(rotated)
+        self.assertNotEqual(rotated["id"], old_id)
+        self.assertNotEqual(rotated["token"], old_token)
+        self.assertTrue(rotated["token"].startswith("soar_live_"))
+        self.assertEqual(rotated["name"], "Rotatable MCP Bot")
+        self.assertEqual(rotated["scopes"], ["read:fleet", "write:actions"])
+        self.assertEqual(rotated["rotated_from"], old_id)
+
+        # Token lama langsung tidak valid; token baru langsung valid
+        old_ok, _ = fm._verify_api_key({"Authorization": f"Bearer {old_token}"}, "read:fleet")
+        new_ok, info = fm._verify_api_key({"Authorization": f"Bearer {rotated['token']}"}, "write:actions")
+        self.assertFalse(old_ok)
+        self.assertTrue(new_ok)
+        self.assertEqual(info["id"], rotated["id"])
+
+        # Daftar aktif hanya menampilkan key baru, key lama hilang otomatis
+        active_ids = {k["id"] for k in fm._api_key_list()}
+        self.assertNotIn(old_id, active_ids)
+        self.assertIn(rotated["id"], active_ids)
+
+        # Rotate key yang sudah dicabut harus ditolak (None)
+        self.assertIsNone(fm._api_key_rotate(old_id))
+        self.assertIsNone(fm._api_key_rotate("key_does_not_exist"))
 
 
 if __name__ == "__main__":
