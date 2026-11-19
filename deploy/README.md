@@ -26,8 +26,8 @@ N8N_OWNER_API_KEY=xxx python3 deploy/n8n-setup.py --all
 ```
 
 Yang dilakukan: buat/reuse 7 credentials dari `.env` (Telegram, Wazuh basic-auth,
-GSB query-auth, urlscan header-auth, MalwareBazaar Auth, VirusTotal `x-apikey`,
-dan AlienVault OTX `X-OTX-API-KEY`) lalu import 4 workflow dengan
+GSB query-auth beserta nilai key-nya, urlscan header-auth, MalwareBazaar Auth, VirusTotal `x-apikey`,
+dan AlienVault OTX `X-OTX-API-KEY`) lalu import **5 workflow deklaratif** (`deteksi-malware`, `deteksi-phishing`, `telegram-callback-handler`, `proaktif-phishing`, dan `sla-eskalasi-hitl`) dengan
 **remap credential ID by name** — kelemahan import-from-file UI
 (file bawa ID dari mesin lama → node merah) otomatis teratasi. Idempoten:
 credential/workflow dengan nama sama di-update, bukan diduplikat.

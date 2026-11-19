@@ -73,9 +73,15 @@ selalu `e3b0c44...`, VT tak bisa menilai); download parsial
 (rename ke nama final = event Create baru, tetap lolos); debounce per path
 2 dtk → 60 dtk (`DEBOUNCE_SECS`). Test: `cargo test ignore_partial_download_18sep wait_settled_stabil_dan_hilang`.
 
-## Heartbeat Fleet Monitor
+## Heartbeat, Command Queue & Execution ACK (v1.1)
 
-Agent kirim heartbeat tiap `--heartbeat-secs` (default 60) ke Fleet Monitor (`scripts/fleet-monitor.py`, port 8080) supaya muncul hijau di dashboard 100 PC. Best-effort, tidak crash kalau fleet down.
+- Agent mengirim heartbeat tiap `--heartbeat-secs` (default 60) ke Fleet Monitor (`POST /api/heartbeat`) dan laporan on-demand scan (`POST /api/scan-result`) lengkap dengan header `Authorization: Bearer <poll_token>`.
+- Saat mem-poll `GET /api/commands?agent_id=<id>`, agent mengeksekusi aksi (`quarantine`, `restore`/`unquarantine`, `sinkhole`, `unsinkhole`, `scan`) lalu otomatis mengirim laporan hasil eksekusi (`succeeded` / `failed` + detail output) ke `POST /api/commands/ack`.
+- **Parity Lintas-OS & Keamanan**:
+  - Auto-discovery direktori `Downloads` dan `Desktop` lintas user (`/home/*`, `/Users/*`, `C:\Users\*`) saat berjalan sebagai service `root`/`SYSTEM`, dengan fallback `/var/tmp` pada server Linux headless.
+  - Penanganan pindah lintas-partisi/drive pada Linux (`EXDEV=18`) dan Windows (`ERROR_NOT_SAME_DEVICE=17`), serta pembatasan ACL `icacls` saat karantina di Windows.
+  - Deteksi `EventKind::Modify` dan `EventKind::Remove` pada berkas umpan canary ransomware (`.soar-canary.docx`, Rule `100004` Level 12) dengan worker pemrosesan konkuren terbatas (`Semaphore(4)`).
+  - Pemulihan berkas (`restore`) hanya diizinkan untuk berkas yang tercatat resmi di `manifest.json` dalam direktori karantina (menolak symlink), serta `sinkhole`/`unsinkhole` dilengkapi denylist domain infrastruktur kritis.
 
 ## Test EICAR
 

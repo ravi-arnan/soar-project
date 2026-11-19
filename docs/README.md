@@ -6,13 +6,11 @@ PDF/DOCX/PPTX adalah hasil ekspor untuk dibaca/dibagikan. Aset gambar ada di sub
 ```
 docs/
   arsitektur/    arsitektur, alur, konsep mitigasi, perbandingan dgn antivirus
-  evaluasi/      metrik & data mentah benchmark
+  evaluasi/      metrik & data mentah benchmark (termasuk 7 skenario LLM v1.1)
   ilmiah/        perbandingan penelitian, n8n vs shuffle, MITRE, relevansi 2026
-  milestone/     deliverable teknis per-milestone (HTML + PDF)
-  bimbingan/     catatan progres & materi teknis (+ lampiran/)
   demo/          kartu demo & contekan
-  panduan/       panduan diagram, deployment, runbook upgrade
-  agen-ringan/   spesifikasi & roadmap agen Rust
+  panduan/       panduan diagram, deployment, MCP AI agent, runbook upgrade
+  agen-ringan/   spesifikasi & roadmap agen Rust (soar-agent v0.3.0 / SOAR v1.1)
   diagrams/      sumber & hasil diagram
   screenshots/   tangkapan layar
   playbooks/     playbook RAG (anti-halusinasi)
@@ -29,7 +27,7 @@ docs/
 ## evaluasi/
 | Dokumen | Isi |
 |---|---|
-| `EVALUASI-METRIK.md` | Metrik kuantitatif (MTTR, FP/FN, throughput, HITL, VT cache) |
+| `EVALUASI-METRIK.md` / `.pdf` | Metrik kuantitatif (MTTR, FP/FN, throughput, HITL, VT cache, konsistensi & ketahanan prompt injection LLM 7 skenario N=35) |
 | `bench-*.json` | Data mentah hasil benchmark |
 
 ## ilmiah/
@@ -41,22 +39,7 @@ docs/
 | `RELEVANSI-2026.md` | Kajian relevansi & lanskap 2026 |
 | `MATRIKS-CONFIDENCE-OTONOMI.md` | Matriks keyakinan → otonomi + playbook respons berjenjang (M3) |
 
-## milestone/
-| Dokumen | Isi |
-|---|---|
-| `M3-MATRIKS-CONFIDENCE-OTONOMI.html` / `.pdf` | Deliverable M3: matriks confidence ke otonomi, playbook berjenjang, jaminan keselamatan, bukti uji |
-
-> Catatan: Naskah akademik pribadi (`proposal/`, `milestone/`, `referensi/`, `docs/laporan/`) dipisahkan dari repositori publik ini.
-
-## bimbingan/
-| Dokumen | Isi |
-|---|---|
-| `CATATAN-DOSPEM-2026-11-07.md` | Catatan bimbingan 7 Nov 2026 (User Management, Installer UI, Dinamisasi AI & Threat Intel) |
-| `LEMBAR-KEMAJUAN-BIMBINGAN-2026-11-07.md` / `.pdf` | Lembar kemajuan bimbingan 7 Nov 2026 |
-| `CATATAN-DOSPEM-2026-09-03.md` | Catatan bimbingan 3 Sep 2026 |
-| `LAPORAN-BIMBINGAN-2026-10-08.html` / `.pdf` | Laporan update + perbandingan milestone |
-| `BIMBINGAN-TA-SOAR.pptx` / `.pdf` | Materi bimbingan |
-| `lampiran/` | Gambar lampiran laporan bimbingan |
+> Catatan: Naskah akademik pribadi (`proposal/`, `milestone/`, `referensi/`, `docs/laporan/`, `docs/bimbingan/`) dipisahkan dari repositori publik ini.
 
 ## demo/
 | Dokumen | Isi |
