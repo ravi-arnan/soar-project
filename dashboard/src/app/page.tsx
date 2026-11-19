@@ -7,6 +7,7 @@ import { WazuhHeader } from '@/components/wazuh/WazuhHeader';
 import { WazuhSidebar } from '@/components/wazuh/WazuhSidebar';
 import { ModulesHub } from '@/components/wazuh/ModulesHub';
 import type { SettingsTabId } from '@/components/wazuh/SettingsView';
+import type { SecurityEventsTabId } from '@/components/wazuh/SecurityEventsDashboard';
 import { useFleet } from '@/lib/fleet';
 import type { HistorySource, PeriodPreset } from '@/lib/fleet';
 
@@ -114,6 +115,10 @@ function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentView, setCurrentView] = useState<string>(() => {
     const v = readUrlParam('view');
+    const st = readUrlParam('stab');
+    if (v === 'settings' && (st === 'command-history' || st === 'audit-trail')) {
+      return 'security-events';
+    }
     return v && VALID_VIEWS.has(v) ? v : 'modules';
   });
   const [selectedAgentId, setSelectedAgentId] = useState<string>(() => readUrlParam('agent') || '004');
@@ -129,9 +134,15 @@ function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 
       .filter(Boolean);
     return list.length > 0 ? list : undefined;
   });
-  const [eventsActiveTab, setEventsActiveTab] = useState<'dashboard' | 'events' | undefined>(() => {
+  const [eventsActiveTab, setEventsActiveTab] = useState<SecurityEventsTabId | undefined>(() => {
     const t = readUrlParam('tab');
-    return t === 'dashboard' || t === 'events' ? t : undefined;
+    if (t === 'dashboard' || t === 'events' || t === 'commands' || t === 'audit') {
+      return t;
+    }
+    const st = readUrlParam('stab');
+    if (st === 'command-history') return 'commands';
+    if (st === 'audit-trail') return 'audit';
+    return undefined;
   });
   const [eventsPeriod, setEventsPeriod] = useState<PeriodPreset | undefined>(() => {
     const p = readUrlParam('period');
@@ -143,13 +154,7 @@ function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 
   });
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId>(() => {
     const st = readUrlParam('stab');
-    return st === 'general' ||
-      st === 'keys' ||
-      st === 'dynamic-config' ||
-      st === 'command-history' ||
-      st === 'audit-trail'
-      ? st
-      : 'general';
+    return st === 'general' || st === 'keys' || st === 'dynamic-config' ? st : 'general';
   });
 
   useEffect(() => {
@@ -311,7 +316,7 @@ function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 
     options?: {
       severity?: string[];
       agentId?: string;
-      tab?: 'dashboard' | 'events';
+      tab?: SecurityEventsTabId;
       period?: PeriodPreset;
       source?: HistorySource;
     }
@@ -399,6 +404,7 @@ function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 
             initialAgentId={eventsAgentFilter}
             initialSeverity={eventsSeverityFilter}
             initialTab={eventsActiveTab}
+            onTabChange={setEventsActiveTab}
             initialPeriod={eventsPeriod}
             initialSource={eventsSource}
           />

@@ -4,11 +4,11 @@ import React, { useMemo, useState } from 'react';
 import { WuiIcon } from '../wui/WuiIcon';
 import { WazuhFilterBar } from './WazuhFilterBar';
 import { ExpandableCard } from './ExpandableCard';
-import { HitlPendingQueuePanel } from './AuditAndCommandsView';
+import { AuditTrailPanel, CommandQueueHistoryPanel, HitlPendingQueuePanel } from './AuditAndCommandsView';
 import { PeriodFilter } from './PeriodFilter';
 import { Pagination } from './Pagination';
 import { useAuth } from '../AuthContext';
-import { WuiModal } from '../wui/WuiPrimitives';
+import { WuiModal, WuiPanel } from '../wui/WuiPrimitives';
 import {
   formatWazuhTime,
   severityLevel,
@@ -24,6 +24,8 @@ import type {
   PeriodValue,
 } from '@/lib/fleet';
 
+export type SecurityEventsTabId = 'dashboard' | 'events' | 'commands' | 'audit';
+
 interface SecurityEventsDashboardProps {
   onSelectAgent?: (agentId: string) => void;
   /** Buka view Agents (opsional; tombol Explore agent disembunyikan bila tak ada). */
@@ -31,7 +33,8 @@ interface SecurityEventsDashboardProps {
   onRefresh?: () => void;
   initialAgentId?: string;
   initialSeverity?: string[];
-  initialTab?: 'dashboard' | 'events';
+  initialTab?: SecurityEventsTabId;
+  onTabChange?: (tab: SecurityEventsTabId) => void;
   initialPeriod?: PeriodPreset;
   initialSource?: HistorySource;
 }
@@ -72,14 +75,19 @@ export function SecurityEventsDashboard({
   initialAgentId,
   initialSeverity,
   initialTab,
+  onTabChange,
   initialPeriod,
   initialSource,
 }: SecurityEventsDashboardProps) {
   const { user } = useAuth();
   const canWrite = user?.role === 'admin' || user?.role === 'analyst';
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'events'>(
+  const [activeTab, setActiveTab] = useState<SecurityEventsTabId>(
     () => initialTab || 'dashboard'
   );
+  const selectTab = (tab: SecurityEventsTabId) => {
+    setActiveTab(tab);
+    onTabChange?.(tab);
+  };
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
@@ -244,7 +252,7 @@ export function SecurityEventsDashboard({
       setSelectedSeverities(sevs);
     }
     if (tab) {
-      setActiveTab(tab);
+      selectTab(tab);
     }
     setPage(0);
   };
@@ -388,11 +396,12 @@ export function SecurityEventsDashboard({
   return (
     <div className="space-y-4">
       {/* Subheader Tabs & Actions */}
-      <div className="flex items-center justify-between border-b border-[#D3DAE6] pb-2">
-        <div className="flex items-center gap-6 text-[13px]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D3DAE6] pb-2">
+        <div className="flex flex-wrap items-center gap-6 text-[13px]">
           <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`pb-2.5 -mb-2 font-medium transition-colors ${
+            type="button"
+            onClick={() => selectTab('dashboard')}
+            className={`pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
               activeTab === 'dashboard'
                 ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
                 : 'text-[#5A626F] hover:text-[#1A1C21]'
@@ -401,8 +410,9 @@ export function SecurityEventsDashboard({
             Dashboard
           </button>
           <button
-            onClick={() => setActiveTab('events')}
-            className={`pb-2.5 -mb-2 font-medium transition-colors ${
+            type="button"
+            onClick={() => selectTab('events')}
+            className={`pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
               activeTab === 'events'
                 ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
                 : 'text-[#5A626F] hover:text-[#1A1C21]'
@@ -410,31 +420,67 @@ export function SecurityEventsDashboard({
           >
             Events
           </button>
-        </div>
-
-        <div className="flex items-center gap-4 text-[12px]">
-          {onOpenAgents && (
+          <button
+            type="button"
+            onClick={() => selectTab('commands')}
+            className={`inline-flex items-center gap-1.5 pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
+              activeTab === 'commands'
+                ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
+                : 'text-[#5A626F] hover:text-[#1A1C21]'
+            }`}
+          >
+            <WuiIcon type="pulse" size="s" />
+            <span>Command Queue &amp; ACK</span>
+          </button>
+          {user?.role !== 'viewer' && (
             <button
-              onClick={onOpenAgents}
-              className="flex items-center gap-1.5 text-[#006BB4] hover:underline font-medium"
+              type="button"
+              onClick={() => selectTab('audit')}
+              className={`inline-flex items-center gap-1.5 pb-2.5 -mb-2 font-medium transition-colors cursor-pointer ${
+                activeTab === 'audit'
+                  ? 'border-b-2 border-[#006BB4] text-[#006BB4]'
+                  : 'text-[#5A626F] hover:text-[#1A1C21]'
+              }`}
             >
-              <WuiIcon type="spacesApp" size="s" className="ouiIcon--mono" />
-              <span>Explore agent</span>
+              <WuiIcon type="securityApp" size="s" className="ouiIcon--mono" />
+              <span>Audit Trail (SHA-256 Chain)</span>
             </button>
           )}
-          <button
-            onClick={exportCsv}
-            title="Unduh event yang tampil sebagai CSV"
-            className="flex items-center gap-1.5 text-[#006BB4] hover:underline font-medium"
-          >
-            <WuiIcon type="reportingApp" size="s" className="ouiIcon--mono" />
-            <span>Generate report</span>
-          </button>
         </div>
+
+        {(activeTab === 'dashboard' || activeTab === 'events') && (
+          <div className="flex items-center gap-4 text-[12px]">
+            {onOpenAgents && (
+              <button
+                onClick={onOpenAgents}
+                className="flex items-center gap-1.5 text-[#006BB4] hover:underline font-medium"
+              >
+                <WuiIcon type="spacesApp" size="s" className="ouiIcon--mono" />
+                <span>Explore agent</span>
+              </button>
+            )}
+            <button
+              onClick={exportCsv}
+              title="Unduh event yang tampil sebagai CSV"
+              className="flex items-center gap-1.5 text-[#006BB4] hover:underline font-medium"
+            >
+              <WuiIcon type="reportingApp" size="s" className="ouiIcon--mono" />
+              <span>Generate report</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* HITL Pending Approval Queue (SOC Dashboard Actionable Banner) */}
-      <HitlPendingQueuePanel canWrite={canWrite} onResolved={refresh} />
+      {activeTab === 'commands' ? (
+        <WuiPanel title="Persistent Command Queue &amp; Agent Execution ACK History" accentColor="#006BB4">
+          <CommandQueueHistoryPanel />
+        </WuiPanel>
+      ) : activeTab === 'audit' && user?.role !== 'viewer' ? (
+        <AuditTrailPanel />
+      ) : (
+        <>
+          {/* HITL Pending Approval Queue (SOC Dashboard Actionable Banner) */}
+          <HitlPendingQueuePanel canWrite={canWrite} onResolved={refresh} />
 
       {/* Filter and Search Bar */}
       <WazuhFilterBar
@@ -1256,6 +1302,8 @@ export function SecurityEventsDashboard({
           onRowsChange={setRowsPerPage}
         />
       </ExpandableCard>
+        </>
+      )}
 
       {/* Active Response In-App Confirmation Modal */}
       {confirmAction && (

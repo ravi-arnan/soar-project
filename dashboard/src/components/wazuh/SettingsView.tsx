@@ -6,11 +6,10 @@ import type { FleetHealth, FleetStats } from '@/lib/fleet';
 import { formatWazuhTime } from '@/lib/fleet';
 import { DEFAULT_AI_CONFIG, getProviderMeta, type AiConfig } from '@/lib/aiConfig';
 import { ApiKeysView } from './ApiKeysView';
-import { AuditTrailPanel, CommandQueueHistoryPanel } from './AuditAndCommandsView';
 import { DynamicSettingsView } from './DynamicSettingsView';
 import { WuiHealth, WuiPanel } from '../wui/WuiPrimitives';
 
-export type SettingsTabId = 'general' | 'keys' | 'dynamic-config' | 'command-history' | 'audit-trail';
+export type SettingsTabId = 'general' | 'keys' | 'dynamic-config';
 
 interface SettingsViewProps {
   health?: FleetHealth;
@@ -121,7 +120,7 @@ export function SettingsView({
       category: 'storage',
       role: 'Penyimpanan event terpusat, pengindeksan telemetri FIM & audit log riwayat',
       ...resolveMem(['single-node-wazuh.indexer-1', 'wazuh.indexer']),
-      status: health?.wazuh_api ? 'Online' : 'Offline / Unreachable',
+      status: health?.wazuh_api ? 'Online' : 'Offline',
       isOk: !!health?.wazuh_api,
       port: ':9200',
     },
@@ -130,7 +129,7 @@ export function SettingsView({
       category: 'core',
       role: 'Mesin korelasi aturan Sysmon, decoder rantai proses, dan trigger Active Response',
       ...resolveMem(['single-node-wazuh.manager-1', 'wazuh.manager']),
-      status: health?.wazuh_api ? 'Online' : 'Offline / Unreachable',
+      status: health?.wazuh_api ? 'Online' : 'Offline',
       isOk: !!health?.wazuh_api,
       port: ':1514, :55000',
     },
@@ -139,7 +138,7 @@ export function SettingsView({
       category: 'orchestration',
       role: 'Eksekusi playbook insiden, evaluasi matriks otonomi, koroborasi VT/MB, dan callback Telegram',
       ...resolveMem(['n8n']),
-      status: health?.n8n ? 'Online' : 'Offline / Unreachable',
+      status: health?.n8n ? 'Online' : 'Offline',
       isOk: !!health?.n8n,
       port: ':5678',
     },
@@ -157,7 +156,7 @@ export function SettingsView({
       category: 'microservice',
       role: 'Control plane API, sinkronisasi cache VT/MB server-side, dan SQLite API Key auth',
       ...resolveMem(['fleet-monitor']),
-      status: online ? 'Online (Python stdlib)' : 'Offline',
+      status: online ? 'Online' : 'Offline',
       isOk: online,
       port: ':8080',
     },
@@ -166,7 +165,7 @@ export function SettingsView({
       category: 'microservice',
       role: 'Penyedia indeks indikator kompromi lokal dari feed CIRCL OSINT tanpa kuota',
       ...resolveMem(['misp-index']),
-      status: health?.misp ? 'Online (SQLite indexed)' : 'Offline / Unreachable',
+      status: health?.misp ? 'Online' : 'Offline',
       isOk: !!health?.misp,
       port: ':8090',
     },
@@ -175,7 +174,7 @@ export function SettingsView({
       category: 'microservice',
       role: 'Registry keputusan HITL, audit trail analis ber-SLA 15m, dan self-aware health checker',
       ...resolveMem(['alert-log']),
-      status: health?.alert_log ? 'Online (Authenticated)' : 'Offline / Unreachable',
+      status: health?.alert_log ? 'Online' : 'Offline',
       isOk: !!health?.alert_log,
       port: ':8091',
     },
@@ -188,7 +187,7 @@ export function SettingsView({
       memory: 'Offloaded API',
       memPercent: '-',
       hasLiveMem: false,
-      status: activeAi.enabled ? (health?.gemini ? 'Configured' : 'Key Missing / Fallback') : 'Disabled',
+      status: activeAi.enabled ? (health?.gemini ? 'Online' : 'Key Missing') : 'Disabled',
       isOk: activeAi.enabled ? !!health?.gemini : false,
       port: 'Cloud / Custom API',
     },
@@ -249,44 +248,12 @@ export function SettingsView({
             <span>API Keys &amp; Agent Access</span>
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => setActiveTab('command-history')}
-          className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
-            activeTab === 'command-history'
-              ? 'border-[#006BB4] text-[#006BB4] font-semibold'
-              : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
-          }`}
-        >
-          <WuiIcon type="pulse" size="s" />
-          <span>Command Queue &amp; ACK</span>
-        </button>
-        {userRole !== 'viewer' && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('audit-trail')}
-            className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
-              activeTab === 'audit-trail'
-                ? 'border-[#006BB4] text-[#006BB4] font-semibold'
-                : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
-            }`}
-          >
-            <WuiIcon type="securityApp" size="s" className="ouiIcon--mono" />
-            <span>Audit Trail (SHA-256 Chain)</span>
-          </button>
-        )}
       </div>
 
       {activeTab === 'dynamic-config' && userRole !== 'viewer' ? (
         <DynamicSettingsView userRole={userRole} />
       ) : activeTab === 'keys' && userRole === 'admin' ? (
         <ApiKeysView />
-      ) : activeTab === 'command-history' ? (
-        <WuiPanel title="Persistent Command Queue &amp; Agent Execution ACK History" accentColor="#006BB4">
-          <CommandQueueHistoryPanel />
-        </WuiPanel>
-      ) : activeTab === 'audit-trail' && userRole !== 'viewer' ? (
-        <AuditTrailPanel />
       ) : (
         <div className="space-y-4">
           {/* Live Status Summary Strip */}
@@ -348,7 +315,7 @@ export function SettingsView({
                     <th className="py-2.5 px-3">Port / Jalur</th>
                     <th className="py-2.5 px-3">Beban Memori</th>
                     <th className="py-2.5 px-3">Rasio Limit</th>
-                    <th className="py-2.5 px-4 text-right">Status Operasional</th>
+                    <th className="py-2.5 px-4 text-left">Status Operasional</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E9EDF3]">
@@ -381,8 +348,8 @@ export function SettingsView({
                       >
                         {comp.memPercent}
                       </td>
-                      <td className="py-2.5 px-4 text-right">
-                        <WuiHealth tone={comp.isOk ? 'success' : 'warning'} className="justify-end">
+                      <td className="py-2.5 px-4 text-left">
+                        <WuiHealth tone={comp.isOk ? 'success' : 'warning'}>
                           {comp.status}
                         </WuiHealth>
                       </td>
