@@ -5,6 +5,8 @@
 **Autonomous AI-Driven Security Orchestration, Automation, and Response Platform Built on Wazuh, n8n, Rust Endpoint Agents, and Human-in-the-Loop Governance**
 
 [![Status](https://img.shields.io/badge/status-active-success)](#)
+[![Release](https://img.shields.io/badge/release-v1.1.0-006BB4)](https://github.com/ravi-arnan/soar-project/releases/tag/v1.1.0)
+[![CI](https://github.com/ravi-arnan/soar-project/actions/workflows/ci.yml/badge.svg)](https://github.com/ravi-arnan/soar-project/actions/workflows/ci.yml)
 [![Architecture](https://img.shields.io/badge/architecture-Agentic_SOAR-006BB4)](#core-focus-agentic-driven-soar)
 [![Wazuh](https://img.shields.io/badge/Wazuh-4.14.8-005792)](https://wazuh.com)
 [![n8n](https://img.shields.io/badge/n8n-2.42.5-EA4B71?logo=n8n&logoColor=white)](https://n8n.io)
@@ -74,7 +76,7 @@ To avoid operational overlap across the SOC workflow, the three primary investig
 | **Threat Intel** | IoC reputation & AI reasoning | Inspect AI verdict (`MALICIOUS`, `SUSPICIOUS`, `BENIGN`), active model reasoning, **MITRE ATT&CK** mapping, mitigation guidance, and OSINT pivots/quarantine controls for non-`INFO` artifacts. |
 | **Integrity monitoring (FIM)** | Per-file inventory & host forensics | Audit monitored files by path with full metadata (`User`, `Group`, `Size`, `Inode`, `MD5`, `SHA1`, `SHA256`, `Permissions`), per-file change history, and Syscheck baseline assessment. |
 
-Additional modules: **Overview Hub**, **Agents Management & Detail**, **Deploy agent** (and public `/install` portal), **MITRE ATT&CK Matrix**, **Network map**, **Users (RBAC)**, **API Keys (2FA + AI Agent Setup Prompt)**, and **Settings (AI Engine & Threat Intel Policy)**.
+Additional modules: **Overview Hub**, **Agents Management & Detail** (with per-agent **Command Execution ACK History** and **Poll Token Rotation / Revocation**), **Deploy agent** (and public `/install` portal with SHA-256 verification and one-time `claim_secret` pickup), **MITRE ATT&CK Matrix** (live 30-day rule telemetry), **Network map**, **Users (RBAC)**, **API Keys (Step-Up 2FA + AI Agent Setup Prompt)**, **Settings (AI Engine, Threat Intel Policy, Persistent Command Queue, and SHA-256 Hash-Chained Audit Trail)**, **Alert Triage Lifecycle** (`new`, `investigating`, `contained`, `false_positive`, `resolved`), **Web Dashboard HITL Approval Queue**, and **URL Deep-Linking**.
 
 ---
 
@@ -124,9 +126,11 @@ Newly enrolled hosts enter **Pending Approvals** and activate immediately once a
 
 ## Security & Governance
 
-- **RBAC & Zero Trust**: Supports **Cloudflare Access** SSO headers (`cf-access-authenticated-user-email`) and signed HMAC session cookies (`soar_session`) across `admin`, `analyst`, and `viewer` roles. Logging out clears server email caches, local cookies, and revokes the Cloudflare Access session via `/cdn-cgi/access/logout`.
-- **Noise Suppression & Least Privilege**: `INFO` / `BENIGN` entries suppress quarantine actions and uninformative OSINT pivot links, while `/api/commands` strictly validates absolute non-traversal file paths and domain targets for `sinkhole`.
-- **Credential Hygiene**: Runtime secrets remain strictly in `.env` (gitignored) and encrypted n8n credentials; `.env.example` contains placeholders only. Endpoint file payloads never leave the host.
+- **Cryptographic Zero-Trust & RBAC**: Verifies **Cloudflare Access** JWTs (`cf-access-jwt-assertion`) cryptographically via RS256 JWKS (`CF_ACCESS_TEAM_DOMAIN` + `CF_ACCESS_AUD`) and rejects unverified raw identity headers. Supports signed HMAC session cookies (`soar_session`), PBKDF2-HMAC-SHA256 (600,000 iterations), CSRF Origin validation, and strict HTTP security headers (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`) across `admin`, `analyst`, and `viewer` roles.
+- **Persistent Command Queue & Execution ACK**: Active Response commands (`quarantine`, `restore`, `sinkhole`, `unsinkhole`, `scan`) persist in SQLite (`commands` table) across restarts and track end-to-end execution status (`queued -> delivered -> succeeded / failed / expired`) via authenticated agent ACKs (`POST /api/commands/ack`).
+- **Tamper-Evident SHA-256 Audit Trail**: Every sensitive control-plane action (logins, RBAC user changes, API key creation/revocation, agent enrollment/rotation/revocation, command dispatch/ACK, triage updates, HITL resolution, and AI/TI settings changes) is recorded in a SHA-256 hash-chained `audit_logs` table with live chain verification (`GET /api/audit?verify=1`).
+- **Active Response Safety & Cross-Platform Parity**: Symlink rejection, canonicalized OS path denylists, protected infrastructure domain denylists, manifest-bound file restoration, Windows cross-drive (`ERROR_NOT_SAME_DEVICE=17`) and `icacls` ACL hardening, and ransomware decoy canary monitoring (`EventKind::Modify` & `EventKind::Remove`, rule `100004`).
+- **Credential Hygiene & At-Rest Encryption**: Runtime secrets remain strictly in `.env` (gitignored), stored AI/TI provider keys are encrypted at rest (`SOAR_SETTINGS_ENCRYPTION_KEY`), and endpoint file contents never leave the host.
 
 ---
 
@@ -156,11 +160,15 @@ soar-project/
 ## Local Verification & Tests
 
 ```bash
-# Dashboard unit tests, ESLint, TypeScript check, and Next.js production build
-cd dashboard && nice -n 19 npm run check
+# Dashboard unit tests (28/28), ESLint, TypeScript check, and Next.js production build
+npm --prefix dashboard run check
 
-# Backend & MCP Python unit tests
-python3 -m unittest scripts/test_dynamic_settings.py scripts/test_patch_n8n_aifailsafe.py scripts/test_user_management.py scripts/test_soar_mcp.py
+# Full Python Backend, SOC Ops, MCP, AR & Setup test suites (211/211)
+python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 -m unittest discover -s deploy -p 'test_*.py'
+
+# Rust soar-agent unit tests (19/19)
+cargo test --manifest-path agent-rs/Cargo.toml
 ```
 
 ---
