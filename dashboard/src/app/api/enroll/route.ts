@@ -52,11 +52,18 @@ export async function POST(request: Request): Promise<Response> {
 
   const payload = parsed.data as Record<string, unknown>;
   const action = payload.action;
-  if (action !== "approve" && action !== "reject") {
-    return errorResponse("Action harus bernilai 'approve' atau 'reject'", 400);
+  if (action !== "approve" && action !== "reject" && action !== "revoke" && action !== "rotate") {
+    return errorResponse("Action harus bernilai 'approve', 'reject', 'revoke', atau 'rotate'", 400);
   }
 
-  const upstreamPath = action === "approve" ? "/api/enroll/approve" : "/api/enroll/reject";
+  const upstreamPathMap: Record<string, string> = {
+    approve: "/api/enroll/approve",
+    reject: "/api/enroll/reject",
+    revoke: "/api/enroll/revoke",
+    rotate: "/api/enroll/rotate",
+  };
+  const upstreamPath = upstreamPathMap[String(action)];
+  const actor = user.username || user.email || "admin";
   try {
     const upstream = await fetch(`${fleetBaseUrl()}${upstreamPath}`, {
       method: "POST",
@@ -67,8 +74,11 @@ export async function POST(request: Request): Promise<Response> {
       },
       body: JSON.stringify({
         ...payload,
-        approved_by: user.username || user.email,
-        rejected_by: user.username || user.email,
+        approved_by: actor,
+        rejected_by: actor,
+        revoked_by: actor,
+        rotated_by: actor,
+        actor,
       }),
       cache: "no-store",
       signal: AbortSignal.timeout(10_000),

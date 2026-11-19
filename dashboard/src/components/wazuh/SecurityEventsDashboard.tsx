@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { WuiIcon } from '../wui/WuiIcon';
 import { WazuhFilterBar } from './WazuhFilterBar';
 import { ExpandableCard } from './ExpandableCard';
+import { HitlPendingQueuePanel } from './AuditAndCommandsView';
 import { PeriodFilter } from './PeriodFilter';
 import { Pagination } from './Pagination';
 import { useAuth } from '../AuthContext';
@@ -104,6 +105,41 @@ export function SecurityEventsDashboard({
     target: string;
   } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [triageFilter, setTriageFilter] = useState<string>('all');
+  const [triageOverrides, setTriageOverrides] = useState<
+    Record<string, { status: string; note: string; assignee: string }>
+  >({});
+  const [triageNoteDrafts, setTriageNoteDrafts] = useState<Record<string, string>>({});
+  const [triageSavingId, setTriageSavingId] = useState<string | null>(null);
+
+  const updateAlertTriage = async (eventKey: string, status: string, note?: string) => {
+    setTriageSavingId(eventKey);
+    try {
+      const res = await fetch('/api/triage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_key: eventKey,
+          status,
+          note: note ?? triageNoteDrafts[eventKey] ?? '',
+        }),
+      });
+      if (res.ok) {
+        setTriageOverrides((prev) => ({
+          ...prev,
+          [eventKey]: {
+            status,
+            note: note ?? triageNoteDrafts[eventKey] ?? prev[eventKey]?.note ?? '',
+            assignee: user?.email || user?.username || 'analyst',
+          },
+        }));
+      }
+    } catch {
+      // ignore network error
+    } finally {
+      setTriageSavingId(null);
+    }
+  };
 
   const handleCopyValue = (key: string, val: string) => {
     if (!navigator?.clipboard) return;
@@ -241,23 +277,32 @@ export function SecurityEventsDashboard({
   // Riwayat (sudah terfilter + terpaginasi di server) -> baris tabel ala Wazuh.
   const visibleAlerts = useMemo(
     () =>
-      historyEvents.map((e: FleetEvent) => ({
-        id: e.id || JSON.stringify([e.ts, e.agent_id, e.hash, e.path, e.url]),
-        time: formatWazuhTime(e.ts),
-        agentId: e.agent_id || '-',
-        agentName: e.agent || '-',
-        hash: e.hash || '',
-        rawPath: e.path && e.path !== '-' ? e.path : '',
-        rawUrl: e.url || '',
-        source: e.source || 'soar',
-        description: e.ai
-          ? `${e.path || '-'} - ${e.ai}`
-          : e.rule_desc || e.path || e.status || '-',
-        level: e.rule_level ?? severityLevel(e.severity),
-        ruleId: e.rule_id || (e.severity || 'INFO').toUpperCase(),
-        severity: (e.severity || 'INFO').toUpperCase(),
-      })),
-    [historyEvents]
+      historyEvents
+        .map((e: FleetEvent) => {
+          const rowId = e.id || JSON.stringify([e.ts, e.agent_id, e.hash, e.path, e.url]);
+          const ov = triageOverrides[rowId];
+          return {
+            id: rowId,
+            time: formatWazuhTime(e.ts),
+            agentId: e.agent_id || '-',
+            agentName: e.agent || '-',
+            hash: e.hash || '',
+            rawPath: e.path && e.path !== '-' ? e.path : '',
+            rawUrl: e.url || '',
+            source: e.source || 'soar',
+            description: e.ai
+              ? `${e.path || '-'} - ${e.ai}`
+              : e.rule_desc || e.path || e.status || '-',
+            level: e.rule_level ?? severityLevel(e.severity),
+            ruleId: e.rule_id || (e.severity || 'INFO').toUpperCase(),
+            severity: (e.severity || 'INFO').toUpperCase(),
+            triageStatus: ov?.status || e.triage_status || 'new',
+            triageAssignee: ov?.assignee || e.triage_assignee || '',
+            triageNote: ov?.note ?? e.triage_note ?? '',
+          };
+        })
+        .filter((r) => triageFilter === 'all' || r.triageStatus === triageFilter),
+    [historyEvents, triageOverrides, triageFilter]
   );
 
   /** Unduh event yang tampil (halaman + filter aktif) sebagai CSV. */
@@ -388,6 +433,9 @@ export function SecurityEventsDashboard({
         </div>
       </div>
 
+      {/* HITL Pending Approval Queue (SOC Dashboard Actionable Banner) */}
+      <HitlPendingQueuePanel canWrite={canWrite} onResolved={refresh} />
+
       {/* Filter and Search Bar */}
       <WazuhFilterBar
         onRefresh={refresh}
@@ -408,17 +456,36 @@ export function SecurityEventsDashboard({
         }
       />
 
-      {/* Status sumber riwayat */}
-      <div className="text-[11px] text-[#8A94A6] -mt-2">
-        Riwayat: {total.toLocaleString('en-US')} event · pipeline SOAR {sources.soar} ·
-        Wazuh {sources.wazuh}
-        {indexerMatched !== null && indexerMatched > sources.wazuh && (
-          <span className="text-[#B25E09]">
-            {' '}(dari {indexerMatched.toLocaleString('en-US')} yang cocok)
-          </span>
-        )}
-        {indexerOk === false && <span className="text-[#BD271E]"> · indexer tidak terjangkau</span>}
-        {error && <span className="text-[#BD271E]"> · {error}</span>}
+      {/* Status sumber riwayat & filter Triage */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#8A94A6] -mt-2">
+        <div>
+          Riwayat: {total.toLocaleString('en-US')} event · pipeline SOAR {sources.soar} ·
+          Wazuh {sources.wazuh}
+          {indexerMatched !== null && indexerMatched > sources.wazuh && (
+            <span className="text-[#B25E09]">
+              {' '}(dari {indexerMatched.toLocaleString('en-US')} yang cocok)
+            </span>
+          )}
+          {indexerOk === false && <span className="text-[#BD271E]"> · indexer tidak terjangkau</span>}
+          {error && <span className="text-[#BD271E]"> · {error}</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[#535966] font-medium">Triage:</span>
+          {(['all', 'new', 'investigating', 'contained', 'false_positive', 'resolved'] as const).map((st) => (
+            <button
+              key={st}
+              type="button"
+              onClick={() => setTriageFilter(st)}
+              className={`px-2 py-0.5 rounded border text-[10.5px] font-medium transition cursor-pointer ${
+                triageFilter === st
+                  ? 'bg-[#006BB4] text-white border-[#006BB4]'
+                  : 'bg-white text-[#535966] border-[#D3DAE6] hover:bg-[#FAFBFD]'
+              }`}
+            >
+              {st.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
       </div>
 
       {activeTab === 'dashboard' && (
@@ -924,6 +991,19 @@ export function SecurityEventsDashboard({
                               {mitre.id}
                             </span>
                           )}
+                          {row.triageStatus && row.triageStatus !== 'new' && (
+                            <span
+                              className={`inline-flex shrink-0 items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                                row.triageStatus === 'contained' || row.triageStatus === 'resolved'
+                                  ? 'bg-[#E6F4F3] text-[#017D73]'
+                                  : row.triageStatus === 'investigating'
+                                  ? 'bg-[#FEF6E8] text-[#B25E09]'
+                                  : 'bg-[#F0F4F8] text-[#535966]'
+                              }`}
+                            >
+                              {row.triageStatus.replace('_', ' ')}
+                            </span>
+                          )}
                           <span className="truncate">{row.description}</span>
                         </div>
                       </td>
@@ -1063,6 +1143,59 @@ export function SecurityEventsDashboard({
                                   >
                                     AlienVault <WuiIcon type="popout" size="xs" />
                                   </a>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Triage Lifecycle Bar */}
+                            <div className="px-4 py-2.5 bg-[#F8FAFC] border-b border-[#EBEFF5] flex flex-wrap items-center justify-between gap-2 text-[11.5px]">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-[#1A1C21]">Status Triage Insiden:</span>
+                                {(['new', 'investigating', 'contained', 'false_positive', 'resolved'] as const).map((st) => (
+                                  <button
+                                    key={st}
+                                    type="button"
+                                    disabled={!canWrite || triageSavingId === row.id}
+                                    onClick={() => updateAlertTriage(row.id, st)}
+                                    className={`px-2 py-0.5 rounded border text-[10.5px] font-semibold uppercase transition cursor-pointer disabled:opacity-50 ${
+                                      row.triageStatus === st
+                                        ? 'bg-[#006BB4] text-white border-[#006BB4]'
+                                        : 'bg-white text-[#535966] border-[#D3DAE6] hover:bg-[#FAFBFD]'
+                                    }`}
+                                  >
+                                    {st.replace('_', ' ')}
+                                  </button>
+                                ))}
+                                {row.triageAssignee && (
+                                  <span className="text-[11px] text-[#535966] font-mono">
+                                    · PIC: {row.triageAssignee}
+                                  </span>
+                                )}
+                              </div>
+                              {canWrite && (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    value={triageNoteDrafts[row.id] ?? row.triageNote}
+                                    onChange={(e) =>
+                                      setTriageNoteDrafts((prev) => ({ ...prev, [row.id]: e.target.value }))
+                                    }
+                                    placeholder="Catatan analis SOC..."
+                                    className="px-2 py-1 rounded border border-[#D3DAE6] bg-white text-[11px] w-56"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={triageSavingId === row.id}
+                                    onClick={() =>
+                                      updateAlertTriage(
+                                        row.id,
+                                        row.triageStatus || 'investigating',
+                                        triageNoteDrafts[row.id] ?? row.triageNote
+                                      )
+                                    }
+                                    className="px-2.5 py-1 rounded bg-[#006BB4] text-white text-[11px] font-medium hover:bg-[#00538C] cursor-pointer disabled:opacity-50"
+                                  >
+                                    Simpan Catatan
+                                  </button>
                                 </div>
                               )}
                             </div>

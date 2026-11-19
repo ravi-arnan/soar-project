@@ -76,9 +76,13 @@ fn sha256_file(path: &Path) -> Result<String> {
 
 fn extract_file_metadata(path: &Path) -> (String, String, String, String, String, String, String, String) {
     let mut size = "0".to_string();
+    #[allow(unused_mut)]
     let mut perm = "0644".to_string();
+    #[allow(unused_mut)]
     let mut uid = "1000".to_string();
+    #[allow(unused_mut)]
     let mut gid = "1000".to_string();
+    #[allow(unused_mut)]
     let mut inode = "0".to_string();
     let mut mtime = chrono::Utc::now().to_rfc3339();
     let mut uname = "root".to_string();
@@ -684,6 +688,86 @@ fn command_target_allowed(target: &Path, roots: &[PathBuf], action: &str) -> boo
     })
 }
 
+fn discover_default_watch_paths(home: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut push_unique = |p: PathBuf| {
+        let s = p.to_string_lossy().to_string();
+        if !out.contains(&s) {
+            out.push(s);
+        }
+    };
+
+    push_unique(PathBuf::from(home).join("Downloads"));
+    push_unique(PathBuf::from(home).join("Desktop"));
+
+    #[cfg(unix)]
+    let user_roots = ["/home", "/Users"];
+    #[cfg(windows)]
+    let user_roots = ["C:\\Users"];
+
+    for root in user_roots {
+        if let Ok(entries) = std::fs::read_dir(root) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                let is_dir = std::fs::symlink_metadata(&p)
+                    .map(|m| m.file_type().is_dir())
+                    .unwrap_or(false);
+                if !is_dir {
+                    continue;
+                }
+                let name = p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if matches!(name.as_str(), "default" | "default user" | "all users" | "shared") {
+                    continue;
+                }
+                push_unique(p.join("Downloads"));
+                push_unique(p.join("Desktop"));
+            }
+        }
+    }
+    out
+}
+
+fn build_command_ack_payload(
+    cmd_id: &str,
+    agent_id: &str,
+    ok: bool,
+    output: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": cmd_id,
+        "agent_id": agent_id,
+        "status": if ok { "succeeded" } else { "failed" },
+        "ok": ok,
+        "output": output,
+    })
+}
+
+async fn send_command_ack(
+    client: &reqwest::Client,
+    base: &str,
+    poll_token: &str,
+    cmd_id: &str,
+    agent_id: &str,
+    ok: bool,
+    output: &str,
+) {
+    let url = format!("{}/api/commands/ack", base.trim_end_matches('/'));
+    let payload = build_command_ack_payload(cmd_id, agent_id, ok, output);
+    if let Err(e) = client
+        .post(&url)
+        .bearer_auth(poll_token)
+        .json(&payload)
+        .send()
+        .await
+    {
+        warn!(error = %e, cmd_id = %cmd_id, "kirim ACK command gagal");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -695,15 +779,13 @@ async fn main() -> Result<()> {
         args.webhook_secret = std::env::var("N8N_WEBHOOK_SECRET").unwrap_or_default();
     }
 
-    // Watch paths default lintas-OS: USERPROFILE pada Windows, HOME pada Unix.
+    // Watch paths default lintas-OS: USERPROFILE pada Windows, HOME pada Unix,
+    // plus enumerasi user directories (/home/*, /Users/*, C:\Users\*) saat jalan sebagai service root/SYSTEM.
     #[cfg(windows)]
     let home = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Public".to_string());
     #[cfg(unix)]
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-    let default_watch = vec![
-        PathBuf::from(&home).join("Downloads").to_string_lossy().to_string(),
-        PathBuf::from(&home).join("Desktop").to_string_lossy().to_string(),
-    ];
+    let default_watch = discover_default_watch_paths(&home);
     // USB path /run/media/<user> ditangani khusus non-recursive biar tidak hang autofs, lihat bawah
     let watch_paths: Vec<PathBuf> = args
         .watch
@@ -714,10 +796,15 @@ async fn main() -> Result<()> {
         .collect();
 
     // Filter hanya yang ada, tapi log yang tidak ada (USB belum colok itu normal)
-    let (existing, missing): (Vec<PathBuf>, Vec<PathBuf>) =
+    let (mut existing, missing): (Vec<PathBuf>, Vec<PathBuf>) =
         watch_paths.into_iter().partition(|p| p.exists());
     if !missing.is_empty() {
         warn!(?missing, "watch path tidak ada, skip (USB belum colok?)");
+    }
+    #[cfg(unix)]
+    if existing.is_empty() && args.watch.is_none() && Path::new("/var/tmp").is_dir() {
+        warn!("tidak ada folder Downloads/Desktop user ditemukan, fallback ke /var/tmp");
+        existing.push(PathBuf::from("/var/tmp"));
     }
     let watch_paths = existing;
     if watch_paths.is_empty() {
@@ -938,6 +1025,7 @@ async fn main() -> Result<()> {
                     Ok(v) => {
                         if let Some(cmds) = v.get("commands").and_then(|c| c.as_array()) {
                             for cmd in cmds {
+                                let cmd_id = cmd.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
                                 let action = cmd.get("action").and_then(|a| a.as_str()).unwrap_or("");
                                 let target = cmd.get("target").and_then(|t| t.as_str()).unwrap_or("");
                                 if target.is_empty() {
@@ -947,26 +1035,56 @@ async fn main() -> Result<()> {
                                     let mut roots = command_roots.clone();
                                     roots.extend(command_mounts.lock().unwrap().iter().cloned());
                                     if !command_target_allowed(Path::new(target), &roots, action) {
-                                        warn!(action = %action, target = %target, "target command ditolak (bukan absolut / traversal / di luar watch root)");
+                                        let msg = "target command ditolak (bukan absolut / traversal / di luar watch root)";
+                                        warn!(action = %action, target = %target, "{msg}");
+                                        send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, false, msg).await;
                                         continue;
                                     }
                                 }
                                 match action {
                                     "quarantine" => match do_quarantine(target) {
-                                        Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah dashboard OK"),
-                                        Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
+                                        Ok(d) => {
+                                            info!(action = %action, target = %target, dest = %d, "perintah dashboard OK");
+                                            send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, true, &d).await;
+                                        }
+                                        Err(e) => {
+                                            let msg = e.to_string();
+                                            warn!(action = %action, target = %target, error = %msg, "perintah dashboard gagal");
+                                            send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, false, &msg).await;
+                                        }
                                     },
                                     "restore" | "unquarantine" => match do_restore(target) {
-                                        Ok(d) => info!(action = %action, target = %target, detail = %d, "perintah restore OK"),
-                                        Err(e) => warn!(action = %action, target = %target, error = %e, "perintah restore gagal"),
+                                        Ok(d) => {
+                                            info!(action = %action, target = %target, detail = %d, "perintah restore OK");
+                                            send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, true, &d).await;
+                                        }
+                                        Err(e) => {
+                                            let msg = e.to_string();
+                                            warn!(action = %action, target = %target, error = %msg, "perintah restore gagal");
+                                            send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, false, &msg).await;
+                                        }
                                     },
                                     "sinkhole" => match do_sinkhole(target) {
-                                        Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah dashboard OK"),
-                                        Err(e) => warn!(action = %action, target = %target, error = %e, "perintah dashboard gagal"),
+                                        Ok(d) => {
+                                            info!(action = %action, target = %target, dest = %d, "perintah dashboard OK");
+                                            send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, true, &d).await;
+                                        }
+                                        Err(e) => {
+                                            let msg = e.to_string();
+                                            warn!(action = %action, target = %target, error = %msg, "perintah dashboard gagal");
+                                            send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, false, &msg).await;
+                                        }
                                     },
                                     "unsinkhole" => match do_unsinkhole(target) {
-                                        Ok(d) => info!(action = %action, target = %target, dest = %d, "perintah unsinkhole OK"),
-                                        Err(e) => warn!(action = %action, target = %target, error = %e, "perintah unsinkhole gagal"),
+                                        Ok(d) => {
+                                            info!(action = %action, target = %target, dest = %d, "perintah unsinkhole OK");
+                                            send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, true, &d).await;
+                                        }
+                                        Err(e) => {
+                                            let msg = e.to_string();
+                                            warn!(action = %action, target = %target, error = %msg, "perintah unsinkhole gagal");
+                                            send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, false, &msg).await;
+                                        }
                                     },
                                     "scan" => {
                                         let c = hb_scan_client.clone();
@@ -975,14 +1093,25 @@ async fn main() -> Result<()> {
                                         let nm = hb_name.clone();
                                         let tgt = target.to_string();
                                         let tok = poll_token.clone();
+                                        let cid = cmd_id.clone();
                                         tokio::spawn(async move {
                                             match do_scan(&c, &b, &tok, &id, &nm, &tgt, "on-demand").await {
-                                                Ok(d) => info!(action = "scan", target = %tgt, detail = %d, "perintah dashboard OK"),
-                                                Err(e) => warn!(action = "scan", target = %tgt, error = %e, "perintah dashboard gagal"),
+                                                Ok(d) => {
+                                                    info!(action = "scan", target = %tgt, detail = %d, "perintah dashboard OK");
+                                                    send_command_ack(&c, &b, &tok, &cid, &id, true, &d).await;
+                                                }
+                                                Err(e) => {
+                                                    let msg = e.to_string();
+                                                    warn!(action = "scan", target = %tgt, error = %msg, "perintah dashboard gagal");
+                                                    send_command_ack(&c, &b, &tok, &cid, &id, false, &msg).await;
+                                                }
                                             }
                                         });
                                     }
-                                    _ => warn!(action = %action, "aksi queue tak dikenal, lewati"),
+                                    _ => {
+                                        warn!(action = %action, "aksi queue tak dikenal, lewati");
+                                        send_command_ack(&client, base, &poll_token, &cmd_id, &hb_id, false, "aksi queue tak dikenal").await;
+                                    }
                                 }
                             }
                         }
@@ -2216,5 +2345,26 @@ mod tests {
         assert!(is_cross_device_error(&std::io::Error::from_raw_os_error(18)));
         assert!(is_cross_device_error(&std::io::Error::from_raw_os_error(17)));
         assert!(!is_cross_device_error(&std::io::Error::from_raw_os_error(2)));
+    }
+
+    #[test]
+    fn command_ack_payload_includes_status_and_output() {
+        let p = build_command_ack_payload("cmd_abc123", "009", true, "quarantined ok");
+        assert_eq!(p["id"], "cmd_abc123");
+        assert_eq!(p["agent_id"], "009");
+        assert_eq!(p["status"], "succeeded");
+        assert_eq!(p["ok"], true);
+        assert_eq!(p["output"], "quarantined ok");
+
+        let p_fail = build_command_ack_payload("cmd_abc124", "009", false, "permission denied");
+        assert_eq!(p_fail["status"], "failed");
+        assert_eq!(p_fail["ok"], false);
+    }
+
+    #[test]
+    fn discover_default_watch_paths_includes_home_and_deduplicates() {
+        let paths = discover_default_watch_paths("/root");
+        assert!(paths.iter().any(|p| p.ends_with("Downloads")));
+        assert!(paths.iter().any(|p| p.ends_with("Desktop")));
     }
 }

@@ -47,6 +47,7 @@ if _SCRIPTS_DIR not in sys.path:
 from fleet import installers as _fleet_installers  # noqa: E402
 from fleet import locks as _fleet_locks  # noqa: E402
 from fleet import security as _fleet_sec  # noqa: E402
+from fleet import soc_ops as _fleet_soc  # noqa: E402
 
 AI_CIRCUIT_BREAKER = _fleet_sec.AiCircuitBreaker()
 _STATE_LAST_SAVE = 0.0
@@ -895,10 +896,33 @@ def _event_store_init():
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_agent_inv_verdict ON agent_investigations(verdict, ts)"
             )
+            _fleet_soc.init_soc_tables(conn)
         print(f"event store siap: {EVENTS_DB}", flush=True)
         _event_store_load_recent()
+        _command_store_load_queued()
     except Exception as e:
         print(f"event store init gagal (riwayat nonaktif): {e}", flush=True)
+
+
+def _command_store_load_queued():
+    """Muat antrean command berstatus 'queued' dari SQLite ke memory buffer COMMANDS."""
+    loaded = _fleet_soc.load_queued_commands(_db)
+    with _fleet_locks.COMMANDS_LOCK:
+        for aid, items in loaded.items():
+            COMMANDS[aid] = items[-COMMANDS_MAX:]
+
+
+def _record_audit(action, target="", status="ok", detail="", actor="system", role="", ip=""):
+    return _fleet_soc.append_audit_log(
+        _db,
+        action=action,
+        target=target,
+        status=status,
+        detail=detail,
+        actor=actor,
+        role=role,
+        ip=ip,
+    )
 
 
 def _event_store_load_recent():
@@ -2008,6 +2032,116 @@ def _enroll_request_reject(req_id, rejected_by="admin"):
         )
 
     return {"request_id": clean_id, "status": "rejected", "updated_at": now_iso}
+
+
+def _enroll_agent_revoke(agent_id, revoked_by="admin", reason="", remove_heartbeat=False):
+    aid = str(agent_id or "").strip()
+    if not _valid_agent_id(aid):
+        raise ValueError("agent_id tidak valid")
+    now_iso = datetime.now(WITA).isoformat()
+    found = False
+    with _fleet_locks.STATE_LOCK:
+        if aid in FLEET_AGENT_POLL_TOKENS:
+            FLEET_AGENT_POLL_TOKENS.pop(aid, None)
+            found = True
+        if aid in HEARTBEATS:
+            found = True
+            if remove_heartbeat:
+                HEARTBEATS.pop(aid, None)
+            else:
+                HEARTBEATS[aid]["last_seen"] = 0
+                HEARTBEATS[aid]["revoked"] = True
+            _save_state(force=True)
+    with _fleet_locks.COMMANDS_LOCK:
+        COMMANDS.pop(aid, None)
+
+    try:
+        with closing(_db()) as conn, conn:
+            cur = conn.execute(
+                "UPDATE enrolled_agents SET status = 'revoked' WHERE agent_id = ?",
+                (aid,),
+            )
+            if cur.rowcount > 0:
+                found = True
+            conn.execute(
+                """UPDATE agent_enrollment_requests
+                   SET status = 'revoked', updated_at = ?, approved_by = ?
+                   WHERE agent_id = ? AND status = 'approved'""",
+                (now_iso, revoked_by, aid),
+            )
+            conn.execute(
+                """UPDATE commands
+                   SET status = 'expired', completed_at = ?, output = 'Agent token revoked'
+                   WHERE agent_id = ? AND status = 'queued'""",
+                (now_iso, aid),
+            )
+    except Exception as e:
+        print(f"enroll_agent_revoke db error: {e}", flush=True)
+
+    if not found:
+        raise ValueError(f"Agent '{aid}' tidak ditemukan")
+
+    return {
+        "agent_id": aid,
+        "status": "revoked",
+        "revoked_at": now_iso,
+        "revoked_by": revoked_by,
+        "reason": str(reason or "").strip()[:256],
+        "removed_from_roster": bool(remove_heartbeat),
+    }
+
+
+def _enroll_agent_rotate_token(agent_id, rotated_by="admin"):
+    aid = str(agent_id or "").strip()
+    if not _valid_agent_id(aid):
+        raise ValueError("agent_id tidak valid")
+    with _fleet_locks.STATE_LOCK:
+        hb = dict(HEARTBEATS.get(aid) or {})
+        in_tokens = aid in FLEET_AGENT_POLL_TOKENS
+
+    db_row = None
+    try:
+        with closing(_db()) as conn:
+            db_row = conn.execute(
+                "SELECT * FROM enrolled_agents WHERE agent_id = ?", (aid,)
+            ).fetchone()
+    except Exception:
+        pass
+
+    if not (in_tokens or hb or db_row):
+        raise ValueError(f"Agent '{aid}' tidak ditemukan")
+
+    new_token = secrets.token_hex(24)
+    now_iso = datetime.now(WITA).isoformat()
+    hostname = (db_row["hostname"] if db_row else None) or hb.get("name") or f"agent-{aid}"
+    name = (db_row["name"] if db_row else None) or hb.get("name") or f"agent-{aid}"
+    os_name = (db_row["os"] if db_row else None) or hb.get("os") or "linux"
+    ip_addr = (db_row["ip"] if db_row else None) or hb.get("ip") or ""
+
+    with closing(_db()) as conn, conn:
+        conn.execute(
+            """INSERT INTO enrolled_agents
+               (agent_id, hostname, name, poll_token, os, ip, enrolled_at, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+               ON CONFLICT(agent_id) DO UPDATE SET
+                   poll_token = excluded.poll_token,
+                   status = 'active'""",
+            (aid, hostname, name, new_token, os_name, ip_addr, now_iso),
+        )
+
+    with _fleet_locks.STATE_LOCK:
+        FLEET_AGENT_POLL_TOKENS[aid] = new_token
+        if aid in HEARTBEATS:
+            HEARTBEATS[aid].pop("revoked", None)
+
+    return {
+        "agent_id": aid,
+        "agent_name": name,
+        "poll_token": new_token,
+        "token_prefix": f"{new_token[:8]}...{new_token[-4:]}",
+        "rotated_at": now_iso,
+        "rotated_by": rotated_by,
+    }
 
 
 def _generate_linux_installer_script(server_origin):
@@ -3386,8 +3520,9 @@ def build_event_history(
     else:
         filtered = merged_all
 
+    page_events = _fleet_soc.enrich_events_with_triage(_db, filtered[offset : offset + limit])
     return {
-        "events": filtered[offset : offset + limit],
+        "events": page_events,
         "total": len(filtered),
         "limit": limit,
         "offset": offset,
@@ -3517,7 +3652,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with _fleet_locks.EVENTS_LOCK:
                 ev_copy = list(reversed(EVENTS))
-            self._json(200, {"events": ev_copy})
+            self._json(200, {"events": _fleet_soc.enrich_events_with_triage(_db, ev_copy)})
         elif parsed.path == "/api/events/history":
             ok, _ = self._require_command_or_scope("read:intel")
             if not ok:
@@ -3582,7 +3717,70 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with _fleet_locks.COMMANDS_LOCK:
                 cmds = COMMANDS.pop(aid, [])
+            _fleet_soc.mark_commands_delivered(_db, aid, cmds)
             self._json(200, {"commands": cmds})
+        elif parsed.path == "/api/commands/history":
+            ok, _ = self._require_command_or_scope("read:fleet")
+            if not ok:
+                return
+            qs = parse_qs(parsed.query)
+            aid = (qs.get("agent_id", [""])[0] or "").strip() or None
+            status_filter = (qs.get("status", [""])[0] or "").strip() or None
+            limit_val = (qs.get("limit", ["100"])[0] or "100").strip()
+            self._json(
+                200,
+                _fleet_soc.list_command_history(
+                    _db, agent_id=aid, status=status_filter, limit=limit_val
+                ),
+            )
+        elif parsed.path == "/api/audit":
+            ok, _ = self._require_command_or_scope("read:fleet")
+            if not ok:
+                return
+            qs = parse_qs(parsed.query)
+            limit_val = (qs.get("limit", ["100"])[0] or "100").strip()
+            action_filter = (qs.get("action", [""])[0] or "").strip() or None
+            actor_filter = (qs.get("actor", [""])[0] or "").strip() or None
+            status_filter = (qs.get("status", [""])[0] or "").strip() or None
+            q_filter = (qs.get("q", [""])[0] or "").strip() or None
+            verify_flag = (qs.get("verify", ["1"])[0] or "1").lower() not in ("0", "false", "no")
+            self._json(
+                200,
+                _fleet_soc.query_audit_logs(
+                    _db,
+                    limit=limit_val,
+                    action=action_filter,
+                    actor=actor_filter,
+                    status=status_filter,
+                    q=q_filter,
+                    verify=verify_flag,
+                ),
+            )
+        elif parsed.path == "/api/triage":
+            ok, _ = self._require_command_or_scope("read:intel")
+            if not ok:
+                return
+            qs = parse_qs(parsed.query)
+            status_filter = (qs.get("status", [""])[0] or "").strip() or None
+            assignee_filter = (qs.get("assignee", [""])[0] or "").strip() or None
+            limit_val = (qs.get("limit", ["500"])[0] or "500").strip()
+            self._json(
+                200,
+                _fleet_soc.list_triage(
+                    _db, status=status_filter, assignee=assignee_filter, limit=limit_val
+                ),
+            )
+        elif parsed.path == "/api/hitl/decisions":
+            ok, _ = self._require_command_or_scope("read:intel")
+            if not ok:
+                return
+            qs = parse_qs(parsed.query)
+            inc_all = (qs.get("all", ["0"])[0] or "0").lower() in ("1", "true", "yes")
+            limit_val = (qs.get("limit", ["100"])[0] or "100").strip()
+            self._json(
+                200,
+                _fleet_soc.fetch_hitl_decisions(include_all=inc_all, limit=limit_val),
+            )
         elif parsed.path == "/api/vt-cache":
             ok, _ = self._require_command_or_scope("read:intel")
             if not ok:
@@ -4060,6 +4258,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(scopes, list):
                     scopes = ["read:fleet", "read:intel"]
                 created = _api_key_create(name, scopes)
+                _record_audit(
+                    "apikey.create",
+                    target=created["id"],
+                    detail={"name": created["name"], "scopes": created["scopes"], "prefix": created["prefix"]},
+                    actor=str(data.get("actor") or "admin"),
+                    role="admin",
+                    ip=self.client_address[0],
+                )
                 self._json(201, created)
             except Exception as e:
                 self._json(400, {"error": str(e)})
@@ -4076,6 +4282,14 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(400, {"error": "id key diperlukan"})
                     return
                 ok = _api_key_revoke(key_id)
+                _record_audit(
+                    "apikey.revoke",
+                    target=key_id,
+                    status="ok" if ok else "error",
+                    actor=str(data.get("actor") or "admin"),
+                    role="admin",
+                    ip=self.client_address[0],
+                )
                 self._json(200, {"revoked": ok, "id": key_id})
             except Exception as e:
                 self._json(400, {"error": str(e)})
@@ -4088,6 +4302,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 action = data.get("action", "create")
+                actor = str(data.get("actor") or "admin")
                 if action == "create":
                     created = _user_create(
                         username=data.get("username", ""),
@@ -4097,19 +4312,52 @@ class Handler(BaseHTTPRequestHandler):
                         name=data.get("name", ""),
                     )
                     cf_sync = _sync_cloudflare_access_policy()
+                    _record_audit(
+                        "user.create",
+                        target=created["username"],
+                        detail={"id": created["id"], "role": created["role"], "email": created.get("email", "")},
+                        actor=actor,
+                        role="admin",
+                        ip=self.client_address[0],
+                    )
                     self._json(201, {"success": True, "user": created, "cloudflare_sync": cf_sync})
                 elif action == "update":
                     user_id = data.get("id") or data.get("user_id")
                     updated = _user_update(user_id, data)
                     cf_sync = _sync_cloudflare_access_policy()
+                    _record_audit(
+                        "user.update",
+                        target=str(user_id),
+                        detail={"username": updated.get("username"), "role": updated.get("role"), "active": updated.get("active")},
+                        actor=actor,
+                        role="admin",
+                        ip=self.client_address[0],
+                    )
                     self._json(200, {"success": True, "user": updated, "cloudflare_sync": cf_sync})
                 elif action == "delete":
                     user_id = data.get("id") or data.get("user_id")
                     ok = _user_delete(user_id)
                     cf_sync = _sync_cloudflare_access_policy() if ok else _cf_sync_status_summary()
+                    _record_audit(
+                        "user.delete",
+                        target=str(user_id),
+                        status="ok" if ok else "error",
+                        actor=actor,
+                        role="admin",
+                        ip=self.client_address[0],
+                    )
                     self._json(200, {"success": ok, "id": user_id, "cloudflare_sync": cf_sync})
                 elif action == "sync_cloudflare":
                     cf_sync = _sync_cloudflare_access_policy()
+                    _record_audit(
+                        "cloudflare.sync",
+                        target=str(cf_sync.get("policy_name") or "access_policy"),
+                        status="ok" if cf_sync.get("synced") else str(cf_sync.get("status") or "error"),
+                        detail=cf_sync.get("detail", ""),
+                        actor=actor,
+                        role="admin",
+                        ip=self.client_address[0],
+                    )
                     if cf_sync.get("configured") and cf_sync.get("status") == "error":
                         self._json(502, {"success": False, "error": cf_sync.get("detail"), "cloudflare_sync": cf_sync})
                     else:
@@ -4135,14 +4383,38 @@ class Handler(BaseHTTPRequestHandler):
                 password = str(data.get("password", ""))
                 rl_key = f"{self.client_address[0]}:{username.lower()}"
                 if not _check_login_rate_limit(rl_key):
+                    _record_audit(
+                        "auth.login.failed",
+                        target=username,
+                        status="denied",
+                        detail="rate_limited",
+                        actor=username or "anonymous",
+                        ip=self.client_address[0],
+                    )
                     self._json(429, {"error": "Terlalu banyak percobaan login gagal. Coba lagi nanti."})
                     return
                 user = _user_authenticate(username, password)
                 if not user:
                     _record_login_failure(rl_key)
+                    _record_audit(
+                        "auth.login.failed",
+                        target=username,
+                        status="denied",
+                        detail="invalid_credentials",
+                        actor=username or "anonymous",
+                        ip=self.client_address[0],
+                    )
                     self._json(401, {"error": "Username atau password salah atau akun nonaktif"})
                     return
                 _clear_login_failures(rl_key)
+                _record_audit(
+                    "auth.login.success",
+                    target=user.get("username", username),
+                    status="ok",
+                    actor=user.get("email") or user.get("username") or username,
+                    role=user.get("role", ""),
+                    ip=self.client_address[0],
+                )
                 self._json(200, {"success": True, "user": user})
             except Exception as e:
                 self._json(400, {"error": str(e)})
@@ -4180,6 +4452,14 @@ class Handler(BaseHTTPRequestHandler):
                 custom_name = data.get("agent_name")
                 approved_by = str(data.get("approved_by", "admin")).strip()
                 res = _enroll_request_approve(req_id, custom_id, custom_name, approved_by)
+                _record_audit(
+                    "enroll.approve",
+                    target=res["agent_id"],
+                    detail={"request_id": req_id, "agent_name": res["agent_name"]},
+                    actor=approved_by,
+                    role="admin",
+                    ip=self.client_address[0],
+                )
                 self._json(200, {"success": True, "agent": res})
             except ValueError as ve:
                 self._json(400, {"error": str(ve)})
@@ -4196,6 +4476,65 @@ class Handler(BaseHTTPRequestHandler):
                 req_id = str(data.get("request_id", "")).strip()
                 rejected_by = str(data.get("rejected_by", "admin")).strip()
                 res = _enroll_request_reject(req_id, rejected_by)
+                _record_audit(
+                    "enroll.reject",
+                    target=req_id,
+                    actor=rejected_by,
+                    role="admin",
+                    ip=self.client_address[0],
+                )
+                self._json(200, {"success": True, "result": res})
+            except ValueError as ve:
+                self._json(400, {"error": str(ve)})
+            except Exception as e:
+                self._json(500, {"error": str(e)})
+        elif parsed.path == "/api/enroll/revoke":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
+            data, err = self._read_json(max_bytes=8192)
+            if err:
+                return
+            try:
+                aid = str(data.get("agent_id", "")).strip()
+                revoked_by = str(data.get("revoked_by") or data.get("actor") or "admin").strip()
+                reason = str(data.get("reason", "")).strip()
+                remove_hb = bool(data.get("remove_heartbeat", False))
+                res = _enroll_agent_revoke(
+                    aid, revoked_by=revoked_by, reason=reason, remove_heartbeat=remove_hb
+                )
+                _record_audit(
+                    "enroll.revoke",
+                    target=aid,
+                    detail={"reason": reason, "removed_from_roster": remove_hb},
+                    actor=revoked_by,
+                    role="admin",
+                    ip=self.client_address[0],
+                )
+                self._json(200, {"success": True, "result": res})
+            except ValueError as ve:
+                self._json(400, {"error": str(ve)})
+            except Exception as e:
+                self._json(500, {"error": str(e)})
+        elif parsed.path == "/api/enroll/rotate":
+            if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
+            data, err = self._read_json(max_bytes=8192)
+            if err:
+                return
+            try:
+                aid = str(data.get("agent_id", "")).strip()
+                rotated_by = str(data.get("rotated_by") or data.get("actor") or "admin").strip()
+                res = _enroll_agent_rotate_token(aid, rotated_by=rotated_by)
+                _record_audit(
+                    "enroll.rotate",
+                    target=aid,
+                    detail={"agent_name": res["agent_name"], "token_prefix": res["token_prefix"]},
+                    actor=rotated_by,
+                    role="admin",
+                    ip=self.client_address[0],
+                )
                 self._json(200, {"success": True, "result": res})
             except ValueError as ve:
                 self._json(400, {"error": str(ve)})
@@ -4211,6 +4550,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 updated_by = str(data.get("updated_by", "admin")).strip()
                 res = _update_system_settings(data, updated_by)
+                _record_audit(
+                    "settings.update",
+                    target="ai_and_threat_intel",
+                    detail={"sections": [k for k in ("ai", "threat_intel") if k in data]},
+                    actor=updated_by,
+                    role="admin",
+                    ip=self.client_address[0],
+                )
                 self._json(200, {"success": True, "settings": res})
             except Exception as e:
                 self._json(400, {"error": str(e)})
@@ -4321,17 +4668,196 @@ class Handler(BaseHTTPRequestHandler):
             if not registered:
                 self._json(404, {"error": "agent tidak terdaftar"})
                 return
+            now_iso = datetime.now(WITA).isoformat()
             with _fleet_locks.COMMANDS_LOCK:
                 if aid not in COMMANDS and len(COMMANDS) >= COMMANDS_MAX_AGENTS:
                     self._json(429, {"error": "queue agent penuh"})
                     return
+                persisted = _fleet_soc.persist_queued_command(
+                    _db, {**command, "ts": now_iso}, now_iso=now_iso
+                )
                 q = COMMANDS.setdefault(aid, [])
-                q.append({**command, "ts": datetime.now(WITA).isoformat()})
+                q.append(persisted)
                 del q[:-COMMANDS_MAX]
+            _record_audit(
+                "command.queue",
+                target=f"{aid}:{command['action']}",
+                detail={"id": persisted["id"], "target": command["target"]},
+                actor=command.get("by", "dashboard"),
+                ip=self.client_address[0],
+            )
             self._json(
                 200,
                 {"status": "queued", "agent_id": aid, "action": command["action"]},
             )
+        elif parsed.path == "/api/commands/ack":
+            data, err = self._read_json(max_bytes=16384)
+            if err:
+                return
+            try:
+                aid = str(data.get("agent_id", "")).strip()
+                if not _valid_agent_id(aid):
+                    self._json(400, {"error": "agent_id tidak valid"})
+                    return
+                if not _is_agent_or_command_authorized(self.headers, aid):
+                    self._unauthorized()
+                    return
+                cmd_id = str(data.get("id") or data.get("command_id") or "").strip()
+                status_val = data.get("status", "")
+                ok_val = data.get("ok")
+                output_val = data.get("output") or data.get("detail") or data.get("error") or ""
+                with _fleet_locks.COMMANDS_LOCK:
+                    updated, ack_err = _fleet_soc.ack_command(
+                        _db,
+                        agent_id=aid,
+                        cmd_id=cmd_id,
+                        status=status_val,
+                        ok=ok_val,
+                        output=output_val,
+                        in_memory_commands=COMMANDS,
+                    )
+                if ack_err or not updated:
+                    code = 404 if "tidak ditemukan" in str(ack_err) else 400
+                    self._json(code, {"error": ack_err or "gagal ACK command"})
+                    return
+                _record_audit(
+                    "command.ack",
+                    target=f"{aid}:{updated.get('action', '')}",
+                    status="ok" if updated.get("status") == "succeeded" else "error",
+                    detail={"id": updated.get("id"), "status": updated.get("status"), "output": updated.get("output", "")[:240]},
+                    actor=f"agent:{aid}",
+                    role="agent",
+                    ip=self.client_address[0],
+                )
+                self._json(200, {"ok": True, "command": updated})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
+        elif parsed.path == "/api/triage":
+            valid_key, key_info = _verify_api_key(self.headers, "write:actions")
+            if not valid_key:
+                valid_key, key_info = _verify_api_key(self.headers, "write:investigations")
+            if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
+            data, err = self._read_json(max_bytes=32768)
+            if err:
+                return
+            try:
+                keys = data.get("event_keys") or data.get("event_key")
+                status_val = data.get("status", "")
+                assignee = data.get("assignee")
+                note = data.get("note")
+                actor = (
+                    f"api_key:{key_info['name']}"
+                    if valid_key and key_info
+                    else str(data.get("updated_by") or data.get("actor") or "analyst")
+                )
+                res = _fleet_soc.upsert_triage(
+                    _db,
+                    event_keys=keys,
+                    status=status_val,
+                    assignee=assignee,
+                    note=note,
+                    updated_by=actor,
+                )
+                _record_audit(
+                    "triage.update",
+                    target=str(keys)[:120],
+                    detail={"status": status_val, "updated": res["updated"], "assignee": assignee or ""},
+                    actor=actor,
+                    ip=self.client_address[0],
+                )
+                self._json(200, res)
+            except ValueError as ve:
+                self._json(400, {"error": str(ve)})
+            except Exception as e:
+                self._json(500, {"error": str(e)})
+        elif parsed.path == "/api/hitl/resolve":
+            valid_key, key_info = _verify_api_key(self.headers, "write:actions")
+            if not valid_key and not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
+                self._unauthorized()
+                return
+            data, err = self._read_json(max_bytes=16384)
+            if err:
+                return
+            try:
+                actor = (
+                    f"api_key:{key_info['name']}"
+                    if valid_key and key_info
+                    else str(data.get("by") or data.get("actor") or "dashboard-analyst")
+                )
+                payload = {
+                    "did": str(data.get("did") or "").strip(),
+                    "hash": str(data.get("hash") or "").strip(),
+                    "agent_id": str(data.get("agent_id") or "").strip(),
+                    "action": str(data.get("action") or "").strip().lower(),
+                    "by": actor,
+                    "note": str(data.get("note") or "").strip()[:512],
+                    "dst": True,
+                }
+                code, resolved = _fleet_soc.resolve_hitl_decision(payload)
+                ar_dispatched = None
+                if code == 200 and isinstance(resolved, dict) and resolved.get("ok") and not resolved.get("duplicate"):
+                    r_action = str(resolved.get("action") or payload["action"]).lower()
+                    raw_aid = str(resolved.get("agent_id") or payload["agent_id"]).strip()
+                    r_aid = raw_aid.zfill(3) if raw_aid.isdigit() else raw_aid
+                    r_path = str(resolved.get("filepath") or "").strip()
+                    r_hash = str(resolved.get("hash") or payload["hash"]).strip().lower()
+                    if r_action == "quarantine" and r_aid and r_path:
+                        with _fleet_locks.STATE_LOCK:
+                            is_rust = r_aid in FLEET_AGENT_POLL_TOKENS
+                        if is_rust:
+                            try:
+                                cmd_obj = _validate_command(
+                                    {"agent_id": r_aid, "action": "quarantine", "target": r_path, "by": f"hitl:{actor}"}
+                                )
+                                now_iso = datetime.now(WITA).isoformat()
+                                with _fleet_locks.COMMANDS_LOCK:
+                                    persisted = _fleet_soc.persist_queued_command(
+                                        _db, {**cmd_obj, "ts": now_iso}, now_iso=now_iso
+                                    )
+                                    q = COMMANDS.setdefault(r_aid, [])
+                                    q.append(persisted)
+                                    del q[:-COMMANDS_MAX]
+                                ar_dispatched = {
+                                    "channel": "rust_command_queue",
+                                    "command_id": persisted["id"],
+                                    "agent_id": r_aid,
+                                    "action": "quarantine",
+                                    "target": r_path,
+                                }
+                            except Exception as cmd_exc:
+                                ar_dispatched = {"channel": "rust_command_queue", "error": str(cmd_exc)}
+                    triage_st = (
+                        "contained"
+                        if r_action == "quarantine"
+                        else "false_positive"
+                        if r_action == "false_positive"
+                        else "investigating"
+                    )
+                    t_keys = [k for k in (f"{r_aid}:{r_hash}" if (r_aid and r_hash) else "", r_hash) if k]
+                    if t_keys:
+                        try:
+                            _fleet_soc.upsert_triage(
+                                _db,
+                                event_keys=t_keys,
+                                status=triage_st,
+                                assignee=actor,
+                                note=payload["note"] or f"HITL resolved: {r_action}",
+                                updated_by=actor,
+                            )
+                        except Exception:
+                            pass
+                    _record_audit(
+                        "hitl.resolve",
+                        target=f"{r_aid}:{r_hash[:16]}",
+                        detail={"action": r_action, "filepath": r_path, "ar_dispatched": ar_dispatched},
+                        actor=actor,
+                        ip=self.client_address[0],
+                    )
+                self._json(code, {"ok": code == 200, "resolved": resolved, "ar_dispatched": ar_dispatched})
+            except Exception as e:
+                self._json(400, {"error": str(e)})
         else:
             self._json(404, {"error": "not found"})
 

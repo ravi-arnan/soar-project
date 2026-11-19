@@ -15,6 +15,10 @@ SPEC.loader.exec_module(poller)
 
 
 class TestTgCallbackPoller(unittest.TestCase):
+    def setUp(self):
+        poller.ALLOWED_CHAT_IDS = set()
+        poller.ALLOWED_USER_IDS = set()
+
     def test_forward_success(self):
         mock_resp = MagicMock()
         mock_resp.status = 200

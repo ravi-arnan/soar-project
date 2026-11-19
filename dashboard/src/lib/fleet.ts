@@ -61,6 +61,12 @@ export interface FleetEvent {
   inode?: string | number;
   md5?: string;
   sha1?: string;
+  // Field triage lifecycle (v1.1 / WS6)
+  triage_status?: 'new' | 'investigating' | 'contained' | 'false_positive' | 'resolved' | string;
+  triage_assignee?: string;
+  triage_note?: string;
+  triage_updated_by?: string;
+  triage_updated_at?: string;
 }
 
 /** Satu file dalam laporan scan on-demand (`/api/scan-results`). */

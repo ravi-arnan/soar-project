@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { agentStatus, formatWazuhTime, formatClock, severityLevel } from '@/lib/fleet';
 import { postCommand } from '@/lib/commands';
 import { ExpandableCard } from './ExpandableCard';
+import { AgentCredentialLifecyclePanel, CommandQueueHistoryPanel } from './AuditAndCommandsView';
 import { PeriodFilter } from './PeriodFilter';
 import { useAuth } from '../AuthContext';
 import { WuiHealth } from '../wui/WuiPrimitives';
@@ -726,6 +727,22 @@ export function AgentDetailView({
       <ExpandableCard title="Karantina file">
         <QuarantinePanel agentId={agentId} canQuarantine={canWrite && agent?.type === 'rust'} events={events} />
       </ExpandableCard>
+
+      {/* Riwayat antrean command & status ACK eksekusi pada agent ini */}
+      <ExpandableCard title="Command Queue &amp; Execution ACK History">
+        <CommandQueueHistoryPanel agentIdFilter={agentId} compact />
+      </ExpandableCard>
+
+      {/* Lifecycle kredensial agent Rust (Rotate / Revoke poll_token oleh Admin) */}
+      {user?.role === 'admin' && agent?.type === 'rust' && (
+        <ExpandableCard title="Agent Credential &amp; Lifecycle Management">
+          <AgentCredentialLifecyclePanel
+            agentId={agentId}
+            agentName={agent?.name || `agent-${agentId}`}
+            canManage={user?.role === 'admin'}
+          />
+        </ExpandableCard>
+      )}
     </div>
   );
 }

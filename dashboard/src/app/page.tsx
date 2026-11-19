@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import dynamic from 'next/dynamic';
 import { AuthProvider, LoginGate, useAuth } from '@/components/AuthContext';
 import { WazuhHeader } from '@/components/wazuh/WazuhHeader';
 import { WazuhSidebar } from '@/components/wazuh/WazuhSidebar';
 import { ModulesHub } from '@/components/wazuh/ModulesHub';
+import type { SettingsTabId } from '@/components/wazuh/SettingsView';
 import { useFleet } from '@/lib/fleet';
 import type { HistorySource, PeriodPreset } from '@/lib/fleet';
 
@@ -85,16 +86,104 @@ function DashboardShell() {
   return <AuthenticatedDashboard userRole={role} />;
 }
 
+const VALID_VIEWS = new Set([
+  'modules',
+  'security-events',
+  'integrity-monitoring',
+  'threat-intel',
+  'mitre',
+  'network-map',
+  'agents',
+  'agent-detail',
+  'deploy-agent',
+  'settings',
+  'api-keys',
+  'users',
+]);
+
+function readUrlParam(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return new URLSearchParams(window.location.search).get(key);
+  } catch {
+    return null;
+  }
+}
+
 function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 'viewer' }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<string>('modules');
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('004');
-  const [eventsAgentFilter, setEventsAgentFilter] = useState<string | undefined>(undefined);
-  const [eventsSeverityFilter, setEventsSeverityFilter] = useState<string[] | undefined>(undefined);
-  const [eventsActiveTab, setEventsActiveTab] = useState<'dashboard' | 'events' | undefined>(undefined);
-  const [eventsPeriod, setEventsPeriod] = useState<PeriodPreset | undefined>(undefined);
-  const [eventsSource, setEventsSource] = useState<HistorySource | undefined>(undefined);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'keys' | 'dynamic-config'>('general');
+  const [currentView, setCurrentView] = useState<string>(() => {
+    const v = readUrlParam('view');
+    return v && VALID_VIEWS.has(v) ? v : 'modules';
+  });
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(() => readUrlParam('agent') || '004');
+  const [eventsAgentFilter, setEventsAgentFilter] = useState<string | undefined>(
+    () => readUrlParam('events_agent') || undefined
+  );
+  const [eventsSeverityFilter, setEventsSeverityFilter] = useState<string[] | undefined>(() => {
+    const raw = readUrlParam('severity');
+    if (!raw) return undefined;
+    const list = raw
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    return list.length > 0 ? list : undefined;
+  });
+  const [eventsActiveTab, setEventsActiveTab] = useState<'dashboard' | 'events' | undefined>(() => {
+    const t = readUrlParam('tab');
+    return t === 'dashboard' || t === 'events' ? t : undefined;
+  });
+  const [eventsPeriod, setEventsPeriod] = useState<PeriodPreset | undefined>(() => {
+    const p = readUrlParam('period');
+    return p === '24h' || p === '7d' || p === '30d' || p === '90d' || p === 'all' ? p : undefined;
+  });
+  const [eventsSource, setEventsSource] = useState<HistorySource | undefined>(() => {
+    const s = readUrlParam('source');
+    return s === 'all' || s === 'soar' || s === 'wazuh' ? s : undefined;
+  });
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTabId>(() => {
+    const st = readUrlParam('stab');
+    return st === 'general' ||
+      st === 'keys' ||
+      st === 'dynamic-config' ||
+      st === 'command-history' ||
+      st === 'audit-trail'
+      ? st
+      : 'general';
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams();
+    if (currentView && currentView !== 'modules') params.set('view', currentView);
+    if (currentView === 'agent-detail' && selectedAgentId) params.set('agent', selectedAgentId);
+    if (currentView === 'security-events') {
+      if (eventsAgentFilter) params.set('events_agent', eventsAgentFilter);
+      if (eventsSeverityFilter && eventsSeverityFilter.length > 0) {
+        params.set('severity', eventsSeverityFilter.join(','));
+      }
+      if (eventsActiveTab) params.set('tab', eventsActiveTab);
+      if (eventsPeriod) params.set('period', eventsPeriod);
+      if (eventsSource && eventsSource !== 'all') params.set('source', eventsSource);
+    }
+    if (currentView === 'settings' && settingsInitialTab !== 'general') {
+      params.set('stab', settingsInitialTab);
+    }
+    const qs = params.toString();
+    const nextUrl = `${window.location.pathname}${qs ? `?${qs}` : ''}`;
+    if (`${window.location.pathname}${window.location.search}` !== nextUrl) {
+      window.history.replaceState(null, '', nextUrl);
+    }
+  }, [
+    currentView,
+    selectedAgentId,
+    eventsAgentFilter,
+    eventsSeverityFilter,
+    eventsActiveTab,
+    eventsPeriod,
+    eventsSource,
+    settingsInitialTab,
+  ]);
 
   // Baca preferensi refreshMs via useSyncExternalStore (deterministik SSR=5000, bebas hydration mismatch).
   const [refreshOverride, setRefreshOverride] = useState<number | null>(null);

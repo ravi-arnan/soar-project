@@ -112,3 +112,79 @@ test("Cloudflare Access JWT RS256 signature, audience, and expiry verification",
   const expRes = await verifyCloudflareAccessJwt(expiredJwt, "team.cloudflareaccess.com", "aud-soar-123", now, [jwk]);
   assert.equal(expRes.valid, false);
 });
+
+test("WS6 proxy routes enforce authentication, RBAC viewer restrictions, and CSRF origin checks", async () => {
+  const { GET: getAudit } = await import("../audit/route.ts");
+  const { POST: postTriage } = await import("../triage/route.ts");
+  const { POST: postHitl } = await import("../hitl/route.ts");
+  const { POST: postEnroll } = await import("../enroll/route.ts");
+
+  process.env.DASHBOARD_LOGIN_TOKEN = secret;
+  process.env.FLEET_COMMAND_TOKEN = "cmd-" + "k".repeat(48);
+  process.env.DASHBOARD_ALLOWED_ORIGINS = "http://localhost:3000";
+
+  const viewerToken = createSessionToken(secret, {
+    username: "viewer1",
+    role: "viewer",
+    email: "viewer1@soar.local",
+  });
+  const analystToken = createSessionToken(secret, {
+    username: "analyst1",
+    role: "analyst",
+    email: "analyst1@soar.local",
+  });
+
+  // 1. Unauthenticated audit GET -> 401
+  const unauthAudit = await getAudit(new Request("http://localhost:3000/api/audit"));
+  assert.equal(unauthAudit.status, 401);
+
+  // 2. Viewer audit GET -> 403
+  const viewerAudit = await getAudit(
+    new Request("http://localhost:3000/api/audit", {
+      headers: { cookie: `soar_session=${viewerToken}` },
+    }),
+  );
+  assert.equal(viewerAudit.status, 403);
+
+  // 3. Viewer triage POST -> 403
+  const viewerTriage = await postTriage(
+    new Request("http://localhost:3000/api/triage", {
+      method: "POST",
+      headers: {
+        origin: "http://localhost:3000",
+        "content-type": "application/json",
+        cookie: `soar_session=${viewerToken}`,
+      },
+      body: JSON.stringify({ event_key: "evt1", status: "resolved" }),
+    }),
+  );
+  assert.equal(viewerTriage.status, 403);
+
+  // 4. Viewer HITL resolve POST -> 403
+  const viewerHitl = await postHitl(
+    new Request("http://localhost:3000/api/hitl", {
+      method: "POST",
+      headers: {
+        origin: "http://localhost:3000",
+        "content-type": "application/json",
+        cookie: `soar_session=${viewerToken}`,
+      },
+      body: JSON.stringify({ did: "did1", action: "quarantine" }),
+    }),
+  );
+  assert.equal(viewerHitl.status, 403);
+
+  // 5. Analyst enroll rotate POST -> 403 (admin only)
+  const analystRotate = await postEnroll(
+    new Request("http://localhost:3000/api/enroll", {
+      method: "POST",
+      headers: {
+        origin: "http://localhost:3000",
+        "content-type": "application/json",
+        cookie: `soar_session=${analystToken}`,
+      },
+      body: JSON.stringify({ action: "rotate", agent_id: "009" }),
+    }),
+  );
+  assert.equal(analystRotate.status, 403);
+});

@@ -6,8 +6,11 @@ import type { FleetHealth, FleetStats } from '@/lib/fleet';
 import { formatWazuhTime } from '@/lib/fleet';
 import { DEFAULT_AI_CONFIG, getProviderMeta, type AiConfig } from '@/lib/aiConfig';
 import { ApiKeysView } from './ApiKeysView';
+import { AuditTrailPanel, CommandQueueHistoryPanel } from './AuditAndCommandsView';
 import { DynamicSettingsView } from './DynamicSettingsView';
 import { WuiHealth, WuiPanel } from '../wui/WuiPrimitives';
+
+export type SettingsTabId = 'general' | 'keys' | 'dynamic-config' | 'command-history' | 'audit-trail';
 
 interface SettingsViewProps {
   health?: FleetHealth;
@@ -16,7 +19,7 @@ interface SettingsViewProps {
   online: boolean;
   refreshMs: number;
   onRefreshMsChange: (ms: number) => void;
-  initialTab?: 'general' | 'keys' | 'dynamic-config';
+  initialTab?: SettingsTabId;
   userRole?: 'admin' | 'analyst' | 'viewer';
 }
 
@@ -41,7 +44,7 @@ export function SettingsView({
   initialTab = 'general',
   userRole = 'viewer',
 }: SettingsViewProps) {
-  const [activeTab, setActiveTab] = useState<'general' | 'keys' | 'dynamic-config'>(initialTab);
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab);
   const [prevInitialTab, setPrevInitialTab] = useState(initialTab);
   const [activeAi, setActiveAi] = useState<AiConfig>(DEFAULT_AI_CONFIG);
 
@@ -206,12 +209,44 @@ export function SettingsView({
             <span>API Keys &amp; Agent Access</span>
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => setActiveTab('command-history')}
+          className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
+            activeTab === 'command-history'
+              ? 'border-[#006BB4] text-[#006BB4] font-semibold'
+              : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
+          }`}
+        >
+          <WuiIcon type="pulse" size="s" />
+          <span>Command Queue &amp; ACK</span>
+        </button>
+        {userRole !== 'viewer' && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('audit-trail')}
+            className={`flex items-center gap-1.5 pb-2.5 -mb-px font-medium transition-colors cursor-pointer border-b-2 ${
+              activeTab === 'audit-trail'
+                ? 'border-[#006BB4] text-[#006BB4] font-semibold'
+                : 'border-transparent text-[#535966] hover:text-[#1A1C21]'
+            }`}
+          >
+            <WuiIcon type="securityApp" size="s" className="ouiIcon--mono" />
+            <span>Audit Trail (SHA-256 Chain)</span>
+          </button>
+        )}
       </div>
 
       {activeTab === 'dynamic-config' && userRole !== 'viewer' ? (
         <DynamicSettingsView userRole={userRole} />
       ) : activeTab === 'keys' && userRole === 'admin' ? (
         <ApiKeysView />
+      ) : activeTab === 'command-history' ? (
+        <WuiPanel title="Persistent Command Queue &amp; Agent Execution ACK History" accentColor="#006BB4">
+          <CommandQueueHistoryPanel />
+        </WuiPanel>
+      ) : activeTab === 'audit-trail' && userRole !== 'viewer' ? (
+        <AuditTrailPanel />
       ) : (
         <div className="space-y-4">
           {/* Live Status Summary Strip */}
