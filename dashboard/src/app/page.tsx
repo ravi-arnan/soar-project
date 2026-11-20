@@ -6,6 +6,7 @@ import { AuthProvider, LoginGate, useAuth } from '@/components/AuthContext';
 import { WazuhHeader } from '@/components/wazuh/WazuhHeader';
 import { WazuhSidebar } from '@/components/wazuh/WazuhSidebar';
 import { ModulesHub } from '@/components/wazuh/ModulesHub';
+import { WuiCallOut, WuiPageHeader } from '@/components/wui/WuiPrimitives';
 import type { SettingsTabId } from '@/components/wazuh/SettingsView';
 import type { SecurityEventsTabId } from '@/components/wazuh/SecurityEventsDashboard';
 import { useFleet } from '@/lib/fleet';
@@ -15,6 +16,39 @@ function ViewSkeleton() {
   return (
     <div className="p-8 text-center text-[#535966] text-sm bg-white border border-[#D3DAE6] rounded-[4px]">
       Memuat modul...
+    </div>
+  );
+}
+
+function AccessDeniedView({
+  title,
+  userRole,
+  onBack,
+}: {
+  title: string;
+  userRole: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className="space-y-4 max-w-3xl mx-auto py-8">
+      <WuiPageHeader
+        title={title}
+        description="Fitur administrasi tingkat tinggi SOAR Control Plane."
+      />
+      <WuiCallOut title="Akses Dibatasi (Hanya Administrator)" tone="warning">
+        <p className="text-[12px] text-[#535966] mt-1 leading-relaxed">
+          Halaman <strong>{title}</strong> hanya dapat diakses dan dikelola oleh personel dengan hak akses <strong>Administrator</strong>. Akun Anda saat ini memiliki peran <strong>{userRole}</strong>.
+        </p>
+        <div className="mt-3.5">
+          <button
+            type="button"
+            onClick={onBack}
+            className="h-8 px-3.5 bg-[#006BB4] hover:bg-[#005593] text-white text-[12px] font-medium rounded-[4px] transition-colors cursor-pointer"
+          >
+            Kembali ke Beranda Modules
+          </button>
+        </div>
+      </WuiCallOut>
     </div>
   );
 }
@@ -373,6 +407,7 @@ function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 
             stats={stats}
             agents={agents}
             health={health}
+            userRole={userRole}
             onNavigate={(modKey, opts) => {
               if (modKey === 'agents') setCurrentView('agents');
               else if (modKey === 'scan-on-demand') {
@@ -471,9 +506,29 @@ function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 
           />
         )}
 
-        {currentView === 'users' && userRole === 'admin' && <UserManagementView />}
+        {currentView === 'users' && (
+          userRole === 'admin' ? (
+            <UserManagementView />
+          ) : (
+            <AccessDeniedView
+              title="User Management"
+              userRole={userRole}
+              onBack={() => setCurrentView('modules')}
+            />
+          )
+        )}
 
-        {currentView === 'api-keys' && userRole === 'admin' && <ApiKeysView />}
+        {currentView === 'api-keys' && (
+          userRole === 'admin' ? (
+            <ApiKeysView />
+          ) : (
+            <AccessDeniedView
+              title="API Keys & Agent Access"
+              userRole={userRole}
+              onBack={() => setCurrentView('modules')}
+            />
+          )
+        )}
 
         {currentView === 'settings' && (
           <SettingsView

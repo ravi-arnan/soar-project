@@ -2261,6 +2261,18 @@ def _generate_macos_installer_script(server_origin):
 def _generate_windows_installer_script(server_origin):
     return _fleet_installers.generate_windows_installer_script(server_origin)
 
+
+def _generate_linux_update_script(server_origin):
+    return _fleet_installers.generate_linux_update_script(server_origin)
+
+
+def _generate_macos_update_script(server_origin):
+    return _fleet_installers.generate_macos_update_script(server_origin)
+
+
+def _generate_windows_update_script(server_origin):
+    return _fleet_installers.generate_windows_update_script(server_origin)
+
 DEFAULT_AI_CONFIG = {
     "enabled": True,
     "provider": "google",
@@ -3976,16 +3988,33 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             status_filter = qs.get("status", [""])[0].strip() or None
             self._json(200, {"requests": _enroll_requests_list(status_filter)})
-        elif parsed.path in ("/api/enroll/script/linux", "/api/enroll/script/windows", "/api/enroll/script/macos"):
+        elif parsed.path in (
+            "/api/enroll/script/linux",
+            "/api/enroll/script/windows",
+            "/api/enroll/script/macos",
+            "/api/update/script/linux",
+            "/api/update/script/windows",
+            "/api/update/script/macos",
+        ):
             origin = _fleet_sec.sanitize_public_origin(
                 raw_host=self.headers.get("X-Forwarded-Host") or self.headers.get("Host", ""),
                 x_proto=self.headers.get("X-Forwarded-Proto", ""),
             )
-            script_map = {
-                "linux": _generate_linux_installer_script,
-                "windows": _generate_windows_installer_script,
-                "macos": _generate_macos_installer_script,
-            }
+            qs = parse_qs(parsed.query)
+            action = (qs.get("action", [""])[0].strip() or qs.get("mode", [""])[0].strip()).lower()
+            is_update = action == "update" or parsed.path.startswith("/api/update/script")
+            if is_update:
+                script_map = {
+                    "linux": _generate_linux_update_script,
+                    "windows": _generate_windows_update_script,
+                    "macos": _generate_macos_update_script,
+                }
+            else:
+                script_map = {
+                    "linux": _generate_linux_installer_script,
+                    "windows": _generate_windows_installer_script,
+                    "macos": _generate_macos_installer_script,
+                }
             target_os = parsed.path.rsplit("/", 1)[-1]
             script = script_map[target_os](origin).encode("utf-8")
             self.send_response(200)

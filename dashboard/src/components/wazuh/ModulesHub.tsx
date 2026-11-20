@@ -27,6 +27,7 @@ interface ModulesHubProps {
   stats: FleetStats;
   agents: FleetAgent[];
   health?: FleetHealth;
+  userRole?: 'admin' | 'analyst' | 'viewer';
 }
 
 interface ModuleItem {
@@ -49,7 +50,9 @@ export const ModulesHub = React.memo(function ModulesHub({
   stats,
   agents,
   health,
+  userRole = 'viewer',
 }: ModulesHubProps) {
+  const isAdmin = userRole === 'admin';
   const linux = useMemo(
     () => agents.filter((a) => (a.os || '').toLowerCase().includes('linux')).length,
     [agents]
@@ -180,22 +183,26 @@ export const ModulesHub = React.memo(function ModulesHub({
             description: `Hub-and-spoke topology of ${stats.active}/${stats.total} active agents. Interactive node exploration.`,
             icon: 'graphApp',
           },
-          {
-            id: 'users',
-            title: 'User management',
-            description: 'Kelola akun personel SOC dan otorisasi berjenjang (Admin, Analyst, Viewer).',
-            icon: 'usersRolesApp',
-          },
-          {
-            id: 'api-keys',
-            title: 'API keys',
-            description: 'Penerbitan dan audit token akses M2M untuk AI agent dan integrasi workflow eksternal.',
-            icon: 'lock',
-          },
+          ...(isAdmin
+            ? [
+                {
+                  id: 'users',
+                  title: 'User management',
+                  description: 'Kelola akun personel SOC dan otorisasi berjenjang (Admin, Analyst, Viewer).',
+                  icon: 'usersRolesApp' as WuiIconType,
+                },
+                {
+                  id: 'api-keys',
+                  title: 'API keys',
+                  description: 'Penerbitan dan audit token akses M2M untuk AI agent dan integrasi workflow eksternal.',
+                  icon: 'lock' as WuiIconType,
+                },
+              ]
+            : []),
         ],
       },
     ],
-    [stats, linux, windows, mac, stackOk]
+    [stats, linux, windows, mac, stackOk, isAdmin]
   );
 
   return (

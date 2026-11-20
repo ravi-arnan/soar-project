@@ -107,6 +107,8 @@ export function sessionFromRequest(request: Request): string | null {
 }
 
 const emailRoleCache = new Map<string, { user: SessionUser; expires: number }>();
+const cfJwtCache = new Map<string, { email: string; expires: number }>();
+const lastTouchCache = new Map<string, number>();
 
 /** Hapus cache role email Cloudflare Access (dipanggil saat logout). */
 export function clearCachedEmailSession(email?: string | null): void {
@@ -114,6 +116,7 @@ export function clearCachedEmailSession(email?: string | null): void {
   if (normalized) {
     emailRoleCache.delete(normalized);
   }
+  cfJwtCache.clear();
 }
 
 // --- Cloudflare Access JWT (RS256) JWKS Verification ---
@@ -199,9 +202,15 @@ async function verifiedCloudflareEmail(request: Request, now: number): Promise<s
 
   if (teamDomain && expectedAud) {
     if (!cfJwt) return null;
+    const cachedJwt = cfJwtCache.get(cfJwt);
+    if (cachedJwt && cachedJwt.expires > now) {
+      if (cfEmailHeader && cfEmailHeader !== cachedJwt.email) return null;
+      return cachedJwt.email;
+    }
     const verified = await verifyCloudflareAccessJwt(cfJwt, teamDomain, expectedAud, now);
     if (!verified.valid || !verified.email) return null;
     if (cfEmailHeader && cfEmailHeader !== verified.email) return null;
+    cfJwtCache.set(cfJwt, { email: verified.email, expires: now + 5 * 60_000 });
     return verified.email;
   }
 
@@ -213,15 +222,22 @@ async function verifiedCloudflareEmail(request: Request, now: number): Promise<s
   return null;
 }
 
-/** Catat timestamp login terakhir di backend fleet-monitor (best-effort, non-fatal). */
-export async function touchUserLastLogin(identity: {
+/** Catat timestamp login terakhir di backend fleet-monitor (best-effort, non-blocking, throttled). */
+export function touchUserLastLogin(identity: {
   username?: string;
   email?: string;
-}): Promise<void> {
+}): void {
+  const key = (identity.email || identity.username || "").toLowerCase();
+  const now = Date.now();
+  const lastTouch = lastTouchCache.get(key) || 0;
+  // Throttle agar tidak menulis ke SQLite lebih dari sekali per 5 menit
+  if (now - lastTouch < 5 * 60_000) return;
+  lastTouchCache.set(key, now);
+
   const commandToken = process.env.FLEET_COMMAND_TOKEN;
   if (!commandToken || (!identity.username && !identity.email)) return;
   try {
-    await fetch(`${fleetBaseUrl()}/api/users`, {
+    fetch(`${fleetBaseUrl()}/api/users`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -235,7 +251,7 @@ export async function touchUserLastLogin(identity: {
       }),
       cache: "no-store",
       signal: AbortSignal.timeout(1500),
-    });
+    }).catch(() => {});
   } catch {
     // Non-fatal
   }
@@ -262,8 +278,8 @@ export async function resolveAuthorizedSession(
         email: cfEmail,
         name: "SOAR Administrator",
       };
-      await touchUserLastLogin({ username: "admin", email: cfEmail });
-      emailRoleCache.set(cfEmail, { user: adminUser, expires: now + 60_000 });
+      touchUserLastLogin({ username: "admin", email: cfEmail });
+      emailRoleCache.set(cfEmail, { user: adminUser, expires: now + 5 * 60_000 });
       return adminUser;
     }
 
@@ -289,8 +305,8 @@ export async function resolveAuthorizedSession(
               email: data.user.email || cfEmail,
               name: data.user.name || data.user.username,
             };
-            await touchUserLastLogin({ username: user.username, email: cfEmail });
-            emailRoleCache.set(cfEmail, { user, expires: now + 60_000 });
+            touchUserLastLogin({ username: user.username, email: cfEmail });
+            emailRoleCache.set(cfEmail, { user, expires: now + 5 * 60_000 });
             return user;
           }
         }
@@ -305,7 +321,7 @@ export async function resolveAuthorizedSession(
       email: cfEmail,
       name: cfEmail,
     };
-    emailRoleCache.set(cfEmail, { user: fallbackUser, expires: now + 30_000 });
+    emailRoleCache.set(cfEmail, { user: fallbackUser, expires: now + 5 * 60_000 });
     return fallbackUser;
   }
 

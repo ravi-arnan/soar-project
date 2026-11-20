@@ -299,3 +299,190 @@ Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger @($Trigger1,
 Start-ScheduledTask -TaskName $TaskName
 Write-Host "[+] Instalasi Windows selesai. Agent ID: $AgentId ($AgentName)."
 """
+
+
+def generate_linux_update_script(server_origin):
+    host = _safe_host_from_origin(server_origin)
+    return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+# SOAR Agent Automated One-Line Updater (Linux)
+SERVER_URL="{server_origin}"
+SERVER_HOST="{host}"
+TOKEN_DIR="/etc/soar-agent"
+BINARY_PATH="/usr/local/bin/soar-agent"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "[!] Jalankan updater dengan sudo: curl -sSL ${{SERVER_URL}}/api/enroll/script?os=linux\\&action=update | sudo bash"
+  exit 1
+fi
+
+echo "============================================================"
+echo "  SOAR Endpoint Agent Updater (Linux)"
+echo "  Control Plane: ${{SERVER_URL}}"
+echo "============================================================"
+
+if [ ! -f "$BINARY_PATH" ] && [ ! -f "${{TOKEN_DIR}}/fleet.token" ]; then
+  echo "[!] SOAR Agent belum terpasang di sistem ini."
+  echo "    Untuk instalasi baru, jalankan:"
+  echo "    curl -sSL ${{SERVER_URL}}/api/enroll/script?os=linux | sudo bash"
+  exit 1
+fi
+
+echo "[1/4] Menghentikan service soar-agent sementara..."
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl stop soar-agent 2>/dev/null || true
+elif command -v rc-service >/dev/null 2>&1; then
+  rc-service soar-agent stop 2>/dev/null || true
+fi
+
+echo "[2/4] Mengunduh biner soar-agent versi terbaru..."
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+curl -fsSL -o "${{TMP_DIR}}/soar-agent" "${{SERVER_URL}}/api/installer/download/soar-agent"
+
+echo "[3/4] Memverifikasi integritas checksum SHA-256..."
+EXPECTED_SHA="$(curl -fsSL "${{SERVER_URL}}/api/installer/checksum/soar-agent" 2>/dev/null | tr -d '[:space:]' || true)"
+if [ -n "$EXPECTED_SHA" ] && [ "${{#EXPECTED_SHA}}" -eq 64 ]; then
+  echo "${{EXPECTED_SHA}}  ${{TMP_DIR}}/soar-agent" | sha256sum -c -
+fi
+install -d -m 0755 /usr/local/bin
+install -m 0755 "${{TMP_DIR}}/soar-agent" "$BINARY_PATH"
+
+echo "[4/4] Memulai kembali service soar-agent..."
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl restart soar-agent
+  echo "[+] Pembaruan selesai! Service soar-agent berhasil diperbarui dan berjalan."
+elif command -v rc-service >/dev/null 2>&1; then
+  rc-service soar-agent restart
+  echo "[+] Pembaruan selesai! Service soar-agent berhasil diperbarui dan berjalan."
+else
+  echo "[+] Biner soar-agent diperbarui di ${{BINARY_PATH}}."
+fi
+"""
+
+
+def generate_windows_update_script(server_origin):
+    host = _safe_host_from_origin(server_origin)
+    return f"""# SOAR Agent Automated One-Line Updater (Windows PowerShell)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$ServerUrl = "{server_origin}"
+$ServerHost = "{host}"
+$InstallDir = "$env:ProgramFiles\\soar-agent"
+$BinPath = "$InstallDir\\soar-agent.exe"
+$TokenDir = "$env:ProgramData\\soar-agent"
+$TokenFile = "$TokenDir\\fleet.token"
+$TaskName = "SOAR Agent"
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {{
+    throw "Jalankan PowerShell sebagai Administrator untuk memperbarui SOAR Agent."
+}}
+
+Write-Host "============================================================"
+Write-Host "  SOAR Endpoint Agent Updater (Windows)"
+Write-Host "  Control Plane: $ServerUrl"
+Write-Host "============================================================"
+
+if (-not (Test-Path $BinPath) -and -not (Test-Path $TokenFile)) {{
+    throw "SOAR Agent belum terpasang di sistem ini. Gunakan perintah instalasi baru untuk mendaftarkan endpoint."
+}}
+
+Write-Host "[1/4] Menghentikan task & proses soar-agent sementara..."
+try {{ Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue }} catch {{}}
+try {{ Stop-Process -Name "soar-agent" -Force -ErrorAction SilentlyContinue }} catch {{}}
+Start-Sleep -Seconds 1
+
+Write-Host "[2/4] Mengunduh biner soar-agent.exe terbaru..."
+$TempFile = [System.IO.Path]::GetTempFileName() + ".exe"
+Invoke-WebRequest -Uri "$ServerUrl/api/installer/download/soar-agent.exe" -OutFile $TempFile -UseBasicParsing
+
+Write-Host "[3/4] Memverifikasi integritas checksum SHA-256..."
+try {{
+    $ExpectedSha = (Invoke-WebRequest -Uri "$ServerUrl/api/installer/checksum/soar-agent.exe" -UseBasicParsing).Content.Trim().ToLower()
+    if ($ExpectedSha.Length -eq 64) {{
+        $ActualSha = (Get-FileHash -Path $TempFile -Algorithm SHA256).Hash.ToLower()
+        if ($ActualSha -ne $ExpectedSha) {{
+            Remove-Item $TempFile -Force -ErrorAction SilentlyContinue
+            throw "Verifikasi SHA-256 binary gagal! Binary tidak cocok dengan checksum server."
+        }}
+    }}
+}} catch {{
+    if ($_.Exception.Message -like "*SHA-256*") {{ throw }}
+}}
+
+Write-Host "[4/4] Memasang binary baru & menjalankan kembali Scheduled Task..."
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+Move-Item -Path $TempFile -Destination $BinPath -Force
+try {{
+    Start-ScheduledTask -TaskName $TaskName
+    Write-Host "[+] Pembaruan selesai! Scheduled Task '$TaskName' berhasil dijalankan kembali."
+}} catch {{
+    Write-Host "[!] Scheduled Task belum dapat dimulai: $($_.Exception.Message)"
+}}
+"""
+
+
+def generate_macos_update_script(server_origin):
+    host = _safe_host_from_origin(server_origin)
+    return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+# SOAR Agent Automated One-Line Updater (macOS)
+SERVER_URL="{server_origin}"
+SERVER_HOST="{host}"
+TOKEN_DIR="/etc/soar-agent"
+BINARY_PATH="/usr/local/bin/soar-agent"
+PLIST_PATH="/Library/LaunchDaemons/io.soar.agent.plist"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "[!] Jalankan updater dengan sudo: curl -sSL ${{SERVER_URL}}/api/enroll/script?os=macos\\&action=update | sudo bash"
+  exit 1
+fi
+
+echo "============================================================"
+echo "  SOAR Endpoint Agent Updater (macOS)"
+echo "  Control Plane: ${{SERVER_URL}}"
+echo "============================================================"
+
+ARCH_VAL="$(uname -m)"
+BIN_ASSET="soar-agent-macos-arm64"
+if [ "$ARCH_VAL" = "x86_64" ]; then
+  BIN_ASSET="soar-agent-macos-x86_64"
+fi
+
+if [ ! -f "$BINARY_PATH" ] && [ ! -f "${{TOKEN_DIR}}/fleet.token" ]; then
+  echo "[!] SOAR Agent belum terpasang di sistem ini."
+  echo "    Untuk instalasi baru, jalankan:"
+  echo "    curl -sSL ${{SERVER_URL}}/api/enroll/script?os=macos | sudo bash"
+  exit 1
+fi
+
+echo "[1/4] Menghentikan LaunchDaemon sementara..."
+launchctl unload "$PLIST_PATH" 2>/dev/null || true
+
+echo "[2/4] Mengunduh biner ${{BIN_ASSET}} terbaru..."
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+curl -fsSL -o "${{TMP_DIR}}/soar-agent" "${{SERVER_URL}}/api/installer/download/${{BIN_ASSET}}"
+
+echo "[3/4] Memverifikasi integritas checksum SHA-256..."
+EXPECTED_SHA="$(curl -fsSL "${{SERVER_URL}}/api/installer/checksum/${{BIN_ASSET}}" 2>/dev/null | tr -d '[:space:]' || true)"
+if [ -n "$EXPECTED_SHA" ] && [ "${{#EXPECTED_SHA}}" -eq 64 ]; then
+  echo "${{EXPECTED_SHA}}  ${{TMP_DIR}}/soar-agent" | shasum -a 256 -c -
+fi
+install -d -m 0755 /usr/local/bin
+install -m 0755 "${{TMP_DIR}}/soar-agent" "$BINARY_PATH"
+
+echo "[4/4] Memulai kembali LaunchDaemon..."
+if [ -f "$PLIST_PATH" ]; then
+  launchctl load -w "$PLIST_PATH"
+  echo "[+] Pembaruan selesai! LaunchDaemon io.soar.agent aktif kembali."
+else
+  echo "[+] Binary berhasil diperbarui ke ${{BINARY_PATH}}."
+fi
+"""
+

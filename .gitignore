@@ -61,3 +61,7 @@ deploy/bundle/soar-agent
 
 # Local session handoff notes
 HANDOFF.md
+
+# Local API keys
+api_key_*.txt
+api_key.txt

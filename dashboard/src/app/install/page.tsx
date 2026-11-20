@@ -53,7 +53,7 @@ export default function PublicAgentInstallPage() {
             Deploy new agent
           </h1>
           <p className="text-[13px] text-[#535966] mt-1">
-            Ikuti langkah berikut untuk memasang dan mendaftarkan endpoint agent SOAR (Linux, Windows, macOS, atau Wazuh Agent).
+            Ikuti langkah berikut untuk memasang baru atau memperbarui endpoint agent SOAR (Linux, Windows, macOS, atau Wazuh Agent).
           </p>
         </div>
 

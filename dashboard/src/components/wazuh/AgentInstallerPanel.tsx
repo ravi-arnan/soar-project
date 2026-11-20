@@ -5,6 +5,7 @@ import { WuiIcon, type WuiIconType } from '../wui/WuiIcon';
 import { WuiCodeBlock } from '../wui/WuiPrimitives';
 
 export type InstallerTarget = 'linux' | 'windows' | 'macos' | 'universal';
+export type InstallerMode = 'install' | 'update';
 type UniversalTarget = 'debian' | 'rhel' | 'macos-pkg' | 'windows-msi' | 'freebsd';
 
 interface AgentInstallerPanelProps {
@@ -61,6 +62,44 @@ function buildUniversalCommands(
   };
 }
 
+function buildUniversalUpdateCommands(): Record<
+  UniversalTarget,
+  { label: string; code: string; verify: string; note: string }
+> {
+  return {
+    debian: {
+      label: 'Debian / Ubuntu / Mint (APT)',
+      code: `sudo apt-get update && sudo apt-get --only-upgrade install -y wazuh-agent && sudo systemctl daemon-reload && sudo systemctl restart wazuh-agent`,
+      verify: 'sudo systemctl status wazuh-agent',
+      note: 'Memperbarui paket wazuh-agent ke versi repositori terbaru dan me-restart service.',
+    },
+    rhel: {
+      label: 'RHEL / Rocky / Alma / Fedora (RPM)',
+      code: `sudo yum check-update; sudo yum upgrade -y wazuh-agent && sudo systemctl daemon-reload && sudo systemctl restart wazuh-agent`,
+      verify: 'sudo systemctl status wazuh-agent',
+      note: 'Memperbarui paket RPM wazuh-agent ke versi repositori terbaru.',
+    },
+    'macos-pkg': {
+      label: 'macOS Official Wazuh PKG (arm64 / Intel)',
+      code: `ARCH=$(uname -m | sed 's/x86_64/intel64/') && curl -so wazuh-agent.pkg "https://packages.wazuh.com/4.x/macos/wazuh-agent-4.14.8-1.\${ARCH}.pkg" && sudo installer -pkg wazuh-agent.pkg -target / && sudo /Library/Ossec/bin/wazuh-control restart`,
+      verify: 'sudo /Library/Ossec/bin/wazuh-control status',
+      note: 'Memperbarui paket PKG Wazuh Agent resmi di macOS.',
+    },
+    'windows-msi': {
+      label: 'Windows Official Wazuh MSI',
+      code: `Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.14.8-1.msi -OutFile $env:TEMP\\wazuh-agent.msi; msiexec.exe /i $env:TEMP\\wazuh-agent.msi /qn REINSTALL=ALL REINSTALLMODE=vomus; Restart-Service WazuhSvc`,
+      verify: 'Get-Service WazuhSvc',
+      note: 'Memperbarui instalasi MSI Wazuh Agent resmi di Windows.',
+    },
+    freebsd: {
+      label: 'FreeBSD / Solaris / AIX / Source',
+      code: `pkg upgrade -y wazuh-agent && sudo service wazuh-agent restart`,
+      verify: 'sudo service wazuh-agent status',
+      note: 'Memperbarui paket wazuh-agent pada FreeBSD.',
+    },
+  };
+}
+
 function StepNumber({ num }: { num: number }) {
   return (
     <div className="w-6 h-6 rounded-full bg-[#006BB4] text-white text-[12px] font-semibold tabular-nums flex items-center justify-center shrink-0">
@@ -70,6 +109,7 @@ function StepNumber({ num }: { num: number }) {
 }
 
 export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProps) {
+  const [mode, setMode] = useState<InstallerMode>('install');
   const [targetOs, setTargetOs] = useState<InstallerTarget>('linux');
   const [universalTarget, setUniversalTarget] = useState<UniversalTarget>('debian');
   const [managerHost, setManagerHost] = useState<string>('WAZUH_MANAGER_IP');
@@ -84,6 +124,7 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
   }, []);
 
   const UNIVERSAL_COMMANDS = useMemo(() => buildUniversalCommands(managerHost), [managerHost]);
+  const UNIVERSAL_UPDATE_COMMANDS = useMemo(() => buildUniversalUpdateCommands(), []);
 
   const commandsByOs: Record<
     Exclude<InstallerTarget, 'universal'>,
@@ -122,6 +163,46 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
     },
   };
 
+  const updateCommandsByOs: Record<
+    Exclude<InstallerTarget, 'universal'>,
+    {
+      code: string;
+      helper: string;
+      verify: string;
+      scriptLabel: string;
+      binHref: string;
+      binLabel: string;
+    }
+  > = {
+    linux: {
+      code: `curl -sSL ${installerOrigin}/api/enroll/script?os=linux&action=update | sudo bash`,
+      helper: 'Jalankan sebagai root atau sudo. Memperbarui biner soar-agent di /usr/local/bin/soar-agent dan me-restart service tanpa mengubah token atau meminta persetujuan ulang.',
+      verify: 'sudo systemctl status soar-agent',
+      scriptLabel: 'update-soar-agent.sh',
+      binHref: '/api/installer/download/soar-agent',
+      binLabel: 'soar-agent (Linux x86_64)',
+    },
+    windows: {
+      code: `irm ${installerOrigin}/api/enroll/script?os=windows&action=update | iex`,
+      helper: 'Buka PowerShell sebagai Administrator. Menghentikan sementara Scheduled Task, mengganti soar-agent.exe di Program Files, dan menjalankan kembali task tanpa menyentuh token.',
+      verify: 'Get-ScheduledTask -TaskName "SOAR Agent"',
+      scriptLabel: 'update-soar-agent.ps1',
+      binHref: '/api/installer/download/soar-agent.exe',
+      binLabel: 'soar-agent.exe (Windows x64)',
+    },
+    macos: {
+      code: `curl -sSL ${installerOrigin}/api/enroll/script?os=macos&action=update | sudo bash`,
+      helper: 'Jalankan di Terminal dengan sudo. Memperbarui biner LaunchDaemon dan memuat ulang service tanpa mengubah token pendaftaran.',
+      verify: 'sudo launchctl print system/io.soar.agent',
+      scriptLabel: 'update-soar-agent-macos.sh',
+      binHref: '/api/installer/download/soar-agent-macos',
+      binLabel: 'soar-agent (macOS)',
+    },
+  };
+
+  const activeUniversalCommands = mode === 'update' ? UNIVERSAL_UPDATE_COMMANDS : UNIVERSAL_COMMANDS;
+  const activeCommandsByOs = mode === 'update' ? updateCommandsByOs : commandsByOs;
+
   const serverDisplay =
     targetOs === 'universal'
       ? `${managerHost} (TCP :1514 / :1515)`
@@ -129,11 +210,57 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
 
   const activeVerify =
     targetOs === 'universal'
-      ? UNIVERSAL_COMMANDS[universalTarget].verify
-      : commandsByOs[targetOs].verify;
+      ? activeUniversalCommands[universalTarget].verify
+      : activeCommandsByOs[targetOs].verify;
 
   return (
-    <section className="bg-white border border-[#D3DAE6] rounded-[4px] p-6">
+    <section className="bg-white border border-[#D3DAE6] rounded-[4px] p-6 space-y-6">
+      {/* Mode Switcher Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#D3DAE6] pb-4">
+        <div className="flex items-center gap-1.5 p-0.5 bg-[#F4F5F7] border border-[#D3DAE6] rounded-[4px]">
+          <button
+            type="button"
+            onClick={() => setMode('install')}
+            className={`h-7 px-3 text-[12px] font-medium rounded-[3px] transition-all cursor-pointer flex items-center gap-1.5 ${
+              mode === 'install'
+                ? 'bg-[#006BB4] text-white shadow-xs'
+                : 'text-[#535966] hover:text-[#1A1C21] hover:bg-white/60'
+            }`}
+          >
+            <span>Instalasi Baru (New Agent)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('update')}
+            className={`h-7 px-3 text-[12px] font-medium rounded-[3px] transition-all cursor-pointer flex items-center gap-1.5 ${
+              mode === 'update'
+                ? 'bg-[#006BB4] text-white shadow-xs'
+                : 'text-[#535966] hover:text-[#1A1C21] hover:bg-white/60'
+            }`}
+          >
+            <WuiIcon type="refresh" size="s" />
+            <span>Pembaruan Agen (Update Agent)</span>
+          </button>
+        </div>
+        <div className="text-[12px] text-[#535966]">
+          {mode === 'install'
+            ? 'Mendaftarkan endpoint baru ke cluster SOAR'
+            : 'Perbarui biner endpoint aktif tanpa menghapus token atau approval ulang'}
+        </div>
+      </div>
+
+      {mode === 'update' && (
+        <div className="p-3.5 bg-[#F4F9FD] border border-[#006BB4]/30 rounded-[4px] text-[12px] text-[#1A1C21] flex items-start gap-2.5">
+          <WuiIcon type="check" size="m" className="text-[#006BB4] mt-0.5 shrink-0" />
+          <div className="space-y-0.5">
+            <div className="font-semibold text-[#006BB4]">Pembaruan In-Place Cepat (One-Line Command)</div>
+            <div className="text-[#535966] leading-relaxed">
+              Perintah pembaruan akan mengunduh biner <span className="font-mono text-[#1A1C21]">soar-agent</span> versi terbaru, memvalidasi integritas checksum SHA-256, dan me-restart background service. Konfigurasi token pendaftaran (<span className="font-mono text-[#1A1C21]">fleet.token</span>) dan Agent ID di endpoint tetap terjaga aman tanpa memerlukan persetujuan (approval) ulang dari Admin.
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-6">
         {/* Step 1: Select OS */}
         <div className="flex gap-4">
@@ -147,7 +274,9 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
                 Select the operating system
               </h2>
               <p className="text-[12px] text-[#535966] mt-0.5">
-                Pilih platform target endpoint yang akan dihubungkan ke SOAR &amp; Wazuh Manager.
+                {mode === 'install'
+                  ? 'Pilih platform target endpoint yang akan dihubungkan ke SOAR & Wazuh Manager.'
+                  : 'Pilih sistem operasi endpoint yang ingin diperbarui biner agennya.'}
               </p>
             </div>
 
@@ -197,7 +326,7 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
                   onChange={(e) => setUniversalTarget(e.target.value as UniversalTarget)}
                   className="w-full h-8 px-2.5 border border-[#D3DAE6] rounded-[4px] bg-white text-[12px] text-[#1A1C21] outline-none focus:border-[#006BB4]"
                 >
-                  {Object.entries(UNIVERSAL_COMMANDS).map(([key, item]) => (
+                  {Object.entries(activeUniversalCommands).map(([key, item]) => (
                     <option key={key} value={key}>
                       {item.label}
                     </option>
@@ -208,7 +337,7 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
           </div>
         </div>
 
-        {/* Step 2: Server & Enrollment */}
+        {/* Step 2: Server & Policy */}
         <div className="flex gap-4">
           <div className="flex flex-col items-center">
             <StepNumber num={2} />
@@ -217,10 +346,14 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
           <div className="flex-1 min-w-0 pb-2 space-y-2.5">
             <div>
               <h2 className="text-[14px] font-semibold text-[#1A1C21]">
-                Server address &amp; enrollment policy
+                {mode === 'install'
+                  ? 'Server address & enrollment policy'
+                  : 'Server address & token policy'}
               </h2>
               <p className="text-[12px] text-[#535966] mt-0.5">
-                Alamat server tujuan yang disisipkan ke skrip instalasi.
+                {mode === 'install'
+                  ? 'Alamat server tujuan yang disisipkan ke skrip instalasi.'
+                  : 'Alamat server tujuan untuk pengunduhan biner dan verifikasi checksum.'}
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl text-[12px]">
@@ -231,11 +364,17 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
                 </div>
               </div>
               <div>
-                <div className="text-[#535966] font-medium mb-1">Otorisasi pendaftaran</div>
+                <div className="text-[#535966] font-medium mb-1">
+                  {mode === 'install' ? 'Otorisasi pendaftaran' : 'Kebijakan pendaftaran'}
+                </div>
                 <div className="h-8 px-3 bg-[#FAFBFD] border border-[#D3DAE6] rounded-[4px] flex items-center text-[#1A1C21]">
                   {targetOs === 'universal'
-                    ? 'Wazuh Manager Authd (:1515)'
-                    : 'Persetujuan Admin (Pending Approvals)'}
+                    ? mode === 'install'
+                      ? 'Wazuh Manager Authd (:1515)'
+                      : 'Wazuh Repository Upgrade'
+                    : mode === 'install'
+                      ? 'Persetujuan Admin (Pending Approvals)'
+                      : 'Pertahankan Token & ID Lama (Tanpa Approval)'}
                 </div>
               </div>
             </div>
@@ -251,41 +390,49 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
           <div className="flex-1 min-w-0 pb-2 space-y-2.5">
             <div>
               <h2 className="text-[14px] font-semibold text-[#1A1C21]">
-                Remember to run the command as administrator
+                {mode === 'install'
+                  ? 'Remember to run the command as administrator'
+                  : 'Run update command as administrator'}
               </h2>
               <p className="text-[12px] text-[#535966] mt-0.5">
-                Salin dan jalankan perintah berikut pada perangkat target untuk memasang dan mendaftarkan agent.
+                {mode === 'install'
+                  ? 'Salin dan jalankan perintah berikut pada perangkat target untuk memasang dan mendaftarkan agent.'
+                  : 'Salin dan jalankan perintah berikut pada perangkat target untuk memperbarui biner dan me-restart service.'}
               </p>
             </div>
 
             {targetOs !== 'universal' ? (
               <div className="space-y-2">
                 <WuiCodeBlock
-                  code={commandsByOs[targetOs].code}
-                  helperText={commandsByOs[targetOs].helper}
+                  code={activeCommandsByOs[targetOs].code}
+                  helperText={activeCommandsByOs[targetOs].helper}
                 />
                 <div className="flex flex-wrap items-center gap-4 text-[12px] pt-1">
                   <span className="text-[#535966]">Unduhan langsung:</span>
                   <a
-                    href={`/api/enroll/script?os=${targetOs}`}
+                    href={
+                      mode === 'update'
+                        ? `/api/enroll/script?os=${targetOs}&action=update`
+                        : `/api/enroll/script?os=${targetOs}`
+                    }
                     className="text-[#006BB4] hover:underline font-mono text-[11.5px] inline-flex items-center gap-1"
                   >
                     <WuiIcon type="download" size="s" />
-                    <span>{commandsByOs[targetOs].scriptLabel}</span>
+                    <span>{activeCommandsByOs[targetOs].scriptLabel}</span>
                   </a>
                   <a
-                    href={commandsByOs[targetOs].binHref}
+                    href={activeCommandsByOs[targetOs].binHref}
                     className="text-[#006BB4] hover:underline font-mono text-[11.5px] inline-flex items-center gap-1"
                   >
                     <WuiIcon type="download" size="s" />
-                    <span>{commandsByOs[targetOs].binLabel}</span>
+                    <span>{activeCommandsByOs[targetOs].binLabel}</span>
                   </a>
                 </div>
               </div>
             ) : (
               <WuiCodeBlock
-                code={UNIVERSAL_COMMANDS[universalTarget].code}
-                helperText={UNIVERSAL_COMMANDS[universalTarget].note}
+                code={activeUniversalCommands[universalTarget].code}
+                helperText={activeUniversalCommands[universalTarget].note}
               />
             )}
           </div>
@@ -299,12 +446,18 @@ export function AgentInstallerPanel({ installerOrigin }: AgentInstallerPanelProp
           <div className="flex-1 min-w-0 space-y-2.5">
             <div>
               <h2 className="text-[14px] font-semibold text-[#1A1C21]">
-                Approve and verify agent connection
+                {mode === 'install'
+                  ? 'Approve and verify agent connection'
+                  : 'Verify updated agent connection'}
               </h2>
               <p className="text-[12px] text-[#535966] mt-0.5">
                 {targetOs === 'universal'
-                  ? 'Setelah instalasi selesai, pastikan service Wazuh Agent berjalan dan host tampil aktif di menu Agents.'
-                  : 'Saat skrip menunggu persetujuan, buka menu Deploy agent -> Pending approvals di dashboard admin (soar.raviarnan.dev) lalu klik Approve. Setelah disetujui, cek status service dengan perintah:'}
+                  ? mode === 'install'
+                    ? 'Setelah instalasi selesai, pastikan service Wazuh Agent berjalan dan host tampil aktif di menu Agents.'
+                    : 'Setelah pembaruan selesai, pastikan service Wazuh Agent berjalan aktif.'
+                  : mode === 'install'
+                    ? 'Saat skrip menunggu persetujuan, buka menu Deploy agent -> Pending approvals di dashboard admin (soar.raviarnan.dev) lalu klik Approve. Setelah disetujui, cek status service dengan perintah:'
+                    : 'Pembaruan biner diterapkan langsung pada background service. Pastikan service agent berjalan aktif dengan perintah berikut (endpoint akan otomatis mengirim heartbeat versi baru ke server):'}
               </p>
             </div>
             <div className="max-w-xl">

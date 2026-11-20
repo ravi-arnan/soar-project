@@ -211,7 +211,7 @@ export function AgentDeploymentView({ onBackToAgents, userRole = 'viewer' }: Age
     <div className="space-y-4">
       <WuiPageHeader
         title="Deploy new agent"
-        description="Pemasangan agent endpoint SOAR tanpa konfigurasi token manual. Jalankan perintah di workstation target lalu setujui pendaftaran pada antrean di bawah."
+        description="Pemasangan baru & pembaruan agent endpoint SOAR tanpa konfigurasi manual. Jalankan perintah di workstation target lalu pantau status service atau setujui pendaftaran baru pada antrean di bawah."
         actions={
           onBackToAgents && (
             <button

@@ -123,6 +123,24 @@ class TestAgentEnrollment(unittest.TestCase):
         self.assertIn("/api/enroll/request", ps_script)
         self.assertIn("Invoke-RestMethod", ps_script)
 
+        # Test update scripts
+        sh_update = fm._generate_linux_update_script(origin)
+        self.assertIn(origin, sh_update)
+        self.assertIn("/api/installer/download/soar-agent", sh_update)
+        self.assertIn("systemctl restart soar-agent", sh_update)
+        self.assertNotIn("/api/enroll/request", sh_update)
+
+        ps_update = fm._generate_windows_update_script(origin)
+        self.assertIn(origin, ps_update)
+        self.assertIn("soar-agent.exe", ps_update)
+        self.assertIn("Start-ScheduledTask", ps_update)
+        self.assertNotIn("/api/enroll/request", ps_update)
+
+        mac_update = fm._generate_macos_update_script(origin)
+        self.assertIn(origin, mac_update)
+        self.assertIn("launchctl", mac_update)
+        self.assertNotIn("/api/enroll/request", mac_update)
+
 
 if __name__ == "__main__":
     unittest.main()

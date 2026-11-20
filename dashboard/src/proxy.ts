@@ -6,7 +6,9 @@ const ALLOWED_INSTALLER_API_PATHS = [
   '/api/enroll/script',
   '/api/enroll/request',
   '/api/enroll/status',
+  '/api/update/script',
   '/api/installer/download/',
+  '/api/installer/checksum/',
   '/api/heartbeat',
 ];
 

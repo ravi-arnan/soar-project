@@ -609,50 +609,43 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
         </div>
 
         <div className="flex items-center gap-1 overflow-x-auto text-[11px]">
-          <button
-            type="button"
-            onClick={() => setFilterSeverity('ALL')}
-            className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
-              filterSeverity === 'ALL'
-                ? 'bg-[#006BB4] text-white'
-                : 'bg-[#FAFBFD] border border-[#D3DAE6] text-[#535966] hover:text-[#1A1C21]'
-            }`}
-          >
-            Semua ({intel.items.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterSeverity('MALICIOUS')}
-            className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
-              filterSeverity === 'MALICIOUS'
-                ? 'bg-[#BD271E] text-white'
-                : 'bg-[#FBECEB] border border-[#F3C5C3] text-[#BD271E]'
-            }`}
-          >
-            Malicious ({intel.crit + intel.high})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterSeverity('SUSPICIOUS')}
-            className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
-              filterSeverity === 'SUSPICIOUS'
-                ? 'bg-[#8A5300] text-white'
-                : 'bg-[#FFF8E5] border border-[#F6DF98] text-[#8A5300]'
-            }`}
-          >
-            Suspicious ({intel.med})
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterSeverity('BENIGN')}
-            className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
-              filterSeverity === 'BENIGN'
-                ? 'bg-[#017D73] text-white'
-                : 'bg-[#E6F4F3] border border-[#BBDEDB] text-[#017D73]'
-            }`}
-          >
-            Benign ({Math.max(0, intel.items.length - (intel.crit + intel.high + intel.med))})
-          </button>
+          {(
+            [
+              {
+                id: 'ALL',
+                label: `Semua (${intel.items.length})`,
+                color: 'text-[#535966] hover:text-[#1A1C21]',
+              },
+              {
+                id: 'MALICIOUS',
+                label: `Malicious (${intel.crit + intel.high})`,
+                color: 'text-[#BD271E]',
+              },
+              {
+                id: 'SUSPICIOUS',
+                label: `Suspicious (${intel.med})`,
+                color: 'text-[#8A5300]',
+              },
+              {
+                id: 'BENIGN',
+                label: `Benign (${Math.max(0, intel.items.length - (intel.crit + intel.high + intel.med))})`,
+                color: 'text-[#017D73]',
+              },
+            ] as const
+          ).map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              onClick={() => setFilterSeverity(chip.id)}
+              className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
+                filterSeverity === chip.id
+                  ? 'bg-[#006BB4] text-white'
+                  : `bg-[#FAFBFD] border border-[#D3DAE6] ${chip.color} hover:bg-[#F5F7FA]`
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -928,11 +921,11 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
             <div className="flex items-center gap-1 overflow-x-auto text-[11px]">
               {(
                 [
-                  { id: 'ALL', label: `Semua (${invStats.total})` },
-                  { id: 'MALICIOUS', label: `Malicious (${invStats.mal})` },
-                  { id: 'SUSPICIOUS', label: `Suspicious (${invStats.susp})` },
-                  { id: 'NEEDS_REVIEW', label: `Review (${invStats.review})` },
-                  { id: 'BENIGN', label: `Benign (${invStats.benign})` },
+                  { id: 'ALL', label: `Semua (${invStats.total})`, color: 'text-[#535966] hover:text-[#1A1C21]' },
+                  { id: 'MALICIOUS', label: `Malicious (${invStats.mal})`, color: 'text-[#BD271E]' },
+                  { id: 'SUSPICIOUS', label: `Suspicious (${invStats.susp})`, color: 'text-[#8A5300]' },
+                  { id: 'NEEDS_REVIEW', label: `Review (${invStats.review})`, color: 'text-[#535966]' },
+                  { id: 'BENIGN', label: `Benign (${invStats.benign})`, color: 'text-[#017D73]' },
                 ] as const
               ).map((chip) => (
                 <button
@@ -942,7 +935,7 @@ export function ThreatIntelView({ onOpenAiSettings }: ThreatIntelViewProps) {
                   className={`px-2.5 py-1.5 rounded-[4px] font-medium transition whitespace-nowrap cursor-pointer ${
                     invVerdictFilter === chip.id
                       ? 'bg-[#006BB4] text-white'
-                      : 'bg-[#FAFBFD] border border-[#D3DAE6] text-[#535966] hover:text-[#1A1C21]'
+                      : `bg-[#FAFBFD] border border-[#D3DAE6] ${chip.color} hover:bg-[#F5F7FA]`
                   }`}
                 >
                   {chip.label}

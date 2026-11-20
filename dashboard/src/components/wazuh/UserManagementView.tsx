@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { WuiIcon } from '../wui/WuiIcon';
 import { formatWazuhTime } from '@/lib/fleet';
-import { WuiBadge, WuiCallOut, WuiHealth, WuiModal, WuiPageHeader, WuiPanel } from '../wui/WuiPrimitives';
+import { WuiBadge, WuiCallOut, WuiModal, WuiPageHeader, WuiPanel } from '../wui/WuiPrimitives';
 
 export interface UserItem {
   id: string;
@@ -377,19 +377,9 @@ export function UserManagementView() {
       {cfSync && (
         <div className="bg-white border border-[#D3DAE6] rounded-[4px] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[12px]">
           <div className="flex flex-wrap items-center gap-2">
-            <WuiHealth
-              tone={
-                !cfSync.configured
-                  ? 'warning'
-                  : (cfSync.status || cfSync.last_status) === 'error'
-                  ? 'danger'
-                  : (cfSync.status || cfSync.last_status) === 'synced' || cfSync.synced
-                  ? 'success'
-                  : 'primary'
-              }
-            >
+            <span className="font-medium text-[#1A1C21]">
               Cloudflare Access Auto-Sync
-            </WuiHealth>
+            </span>
             <span className="text-[#535966]">
               {!cfSync.configured
                 ? 'Belum aktif: set CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, dan CLOUDFLARE_ACCESS_POLICY_ID di .env server.'

@@ -13,7 +13,9 @@ export async function GET(request: Request): Promise<Response> {
     macos: "/api/enroll/script/macos",
   };
   const scriptPath = scriptPaths[osParam] || "/api/enroll/script/linux";
-  const upstreamUrl = `${fleetBaseUrl()}${scriptPath}`;
+  const actionParam = (url.searchParams.get("action") || url.searchParams.get("mode") || "").toLowerCase();
+  const queryStr = actionParam ? `?action=${encodeURIComponent(actionParam)}` : "";
+  const upstreamUrl = `${fleetBaseUrl()}${scriptPath}${queryStr}`;
 
   const rawHost = (request.headers.get("x-forwarded-host") || request.headers.get("host") || "").split(",")[0]?.trim() || "";
   const safeHost = SAFE_HOST_RE.test(rawHost) ? rawHost : "";
