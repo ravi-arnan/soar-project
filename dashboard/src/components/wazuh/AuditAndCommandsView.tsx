@@ -54,20 +54,37 @@ function statusBadgeStyle(status: string): string {
   switch (status) {
     case 'succeeded':
     case 'ok':
-      return 'bg-[#E6F4F3] text-[#017D73] border-[#B2DFDB]';
+      return 'bg-white text-[#017D73] border-[#D3DAE6]';
     case 'delivered':
     case 'investigating':
-      return 'bg-[#EBF5FB] text-[#006BB4] border-[#B8D5E5]';
+      return 'bg-white text-[#006BB4] border-[#D3DAE6]';
     case 'queued':
     case 'pending':
-      return 'bg-[#FEF6E8] text-[#B25E09] border-[#F5D9A8]';
+      return 'bg-white text-[#B25E09] border-[#D3DAE6]';
     case 'failed':
     case 'denied':
     case 'error':
     case 'escalated':
-      return 'bg-[#FDF3F2] text-[#BD271E] border-[#F5C2C0]';
+      return 'bg-white text-[#BD271E] border-[#D3DAE6]';
     default:
-      return 'bg-[#F0F4F8] text-[#535966] border-[#D3DAE6]';
+      return 'bg-white text-[#535966] border-[#D3DAE6]';
+  }
+}
+
+function severityBadgeStyle(severity?: string): string {
+  const s = (severity || '').toUpperCase();
+  switch (s) {
+    case 'CRITICAL':
+      return 'bg-white text-[#BD271E] border-[#D3DAE6]';
+    case 'HIGH':
+      return 'bg-white text-[#D9381E] border-[#D3DAE6]';
+    case 'MEDIUM':
+      return 'bg-white text-[#8A5300] border-[#D3DAE6]';
+    case 'LOW':
+      return 'bg-white text-[#017D73] border-[#D3DAE6]';
+    case 'INFO':
+    default:
+      return 'bg-white text-[#006BB4] border-[#D3DAE6]';
   }
 }
 
@@ -612,9 +629,7 @@ export function HitlPendingQueuePanel({
   return (
     <div className="bg-white border border-[#D3DAE6] rounded-[4px] overflow-hidden">
       <div
-        className={`px-4 py-2.5 border-b border-[#D3DAE6] flex flex-wrap items-center justify-between gap-2 ${
-          pendingCount > 0 ? 'bg-[#FEF6E8]' : 'bg-[#FAFBFD]'
-        }`}
+        className="px-4 py-2.5 border-b border-[#D3DAE6] flex flex-wrap items-center justify-between gap-2 bg-[#FAFBFD]"
       >
         <div className="flex items-center gap-2 text-[12.5px] font-semibold text-[#1A1C21]">
           <WuiIcon
@@ -687,7 +702,11 @@ export function HitlPendingQueuePanel({
                       {d.filepath}
                     </td>
                     <td className="py-2 px-3">
-                      <span className="px-1.5 py-0.5 rounded bg-[#FEF08A] text-[#854D0E] font-semibold text-[10.5px]">
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded border text-[10.5px] font-semibold uppercase ${severityBadgeStyle(
+                          d.severity
+                        )}`}
+                      >
                         {d.severity || 'HIGH'}
                       </span>
                     </td>
