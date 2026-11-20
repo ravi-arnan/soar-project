@@ -71,22 +71,6 @@ function statusBadgeStyle(status: string): string {
   }
 }
 
-function severityBadgeStyle(severity?: string): string {
-  const s = (severity || '').toUpperCase();
-  switch (s) {
-    case 'CRITICAL':
-      return 'bg-white text-[#BD271E] border-[#D3DAE6]';
-    case 'HIGH':
-      return 'bg-white text-[#D9381E] border-[#D3DAE6]';
-    case 'MEDIUM':
-      return 'bg-white text-[#8A5300] border-[#D3DAE6]';
-    case 'LOW':
-      return 'bg-white text-[#017D73] border-[#D3DAE6]';
-    case 'INFO':
-    default:
-      return 'bg-white text-[#006BB4] border-[#D3DAE6]';
-  }
-}
 
 export function CommandQueueHistoryPanel({
   agentIdFilter,
@@ -701,25 +685,13 @@ export function HitlPendingQueuePanel({
                     <td className="py-2 px-3 font-mono text-[#1A1C21] max-w-[320px] truncate" title={d.filepath}>
                       {d.filepath}
                     </td>
-                    <td className="py-2 px-3">
-                      <span
-                        className={`inline-block px-1.5 py-0.5 rounded border text-[10.5px] font-semibold uppercase ${severityBadgeStyle(
-                          d.severity
-                        )}`}
-                      >
-                        {d.severity || 'HIGH'}
-                      </span>
+                    <td className="py-2 px-3 font-semibold text-[#1A1C21] uppercase text-[11px]">
+                      {d.severity || 'HIGH'}
                     </td>
-                    <td className="py-2 px-3">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded border text-[10.5px] font-semibold uppercase ${statusBadgeStyle(
-                          d.status
-                        )}`}
-                      >
-                        {d.status}
-                      </span>
+                    <td className="py-2 px-3 text-[11px] text-[#1A1C21]">
+                      <span className="font-semibold uppercase">{d.status}</span>
                       {isPending && typeof d.age_secs === 'number' && (
-                        <span className="ml-1.5 text-[10.5px] font-mono text-[#535966]">
+                        <span className="ml-1.5 font-mono text-[#535966]">
                           ({Math.round(d.age_secs / 60)}m)
                         </span>
                       )}
