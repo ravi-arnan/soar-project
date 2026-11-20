@@ -731,7 +731,7 @@ export function HitlPendingQueuePanel({
                             type="button"
                             disabled={isBusy}
                             onClick={() => resolveDecision(d, 'quarantine')}
-                            className="px-2 py-1 rounded border border-[#BD271E] bg-[#BD271E] text-white hover:bg-[#9E1F18] text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                            className="px-2 py-1 rounded border border-[#D3DAE6] bg-white text-[#BD271E] hover:bg-[#FAFBFD] hover:border-[#BD271E] text-[11px] font-semibold cursor-pointer disabled:opacity-50"
                           >
                             Karantina (Approve)
                           </button>
@@ -739,7 +739,7 @@ export function HitlPendingQueuePanel({
                             type="button"
                             disabled={isBusy}
                             onClick={() => resolveDecision(d, 'false_positive')}
-                            className="px-2 py-1 rounded border border-[#D3DAE6] bg-white text-[#535966] hover:bg-[#FAFBFD] text-[11px] font-medium cursor-pointer disabled:opacity-50"
+                            className="px-2 py-1 rounded border border-[#D3DAE6] bg-white text-[#535966] hover:bg-[#FAFBFD] hover:text-[#1A1C21] text-[11px] font-medium cursor-pointer disabled:opacity-50"
                           >
                             False Positive
                           </button>
@@ -747,7 +747,7 @@ export function HitlPendingQueuePanel({
                             type="button"
                             disabled={isBusy}
                             onClick={() => resolveDecision(d, 'acknowledged')}
-                            className="px-2 py-1 rounded border border-[#B8D5E5] bg-[#F0F7FC] text-[#006BB4] hover:bg-[#E1EFF8] text-[11px] font-medium cursor-pointer disabled:opacity-50"
+                            className="px-2 py-1 rounded border border-[#D3DAE6] bg-white text-[#006BB4] hover:bg-[#FAFBFD] hover:border-[#006BB4] text-[11px] font-medium cursor-pointer disabled:opacity-50"
                           >
                             Acknowledge
                           </button>
