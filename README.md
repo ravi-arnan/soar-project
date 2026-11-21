@@ -134,6 +134,65 @@ Newly enrolled hosts enter **Pending Approvals** and activate immediately once a
 
 ---
 
+## Benchmarks & Empirical Evaluation
+
+All metrics below are measured directly against live deployments (`scripts/benchmark-soar.py` and `scripts/benchmark-llm-consistency.py`), with raw JSON datasets stored in [`docs/evaluasi/`](docs/evaluasi/).
+
+| Metric | Measured Result | Sample / Scope | Source |
+|--------|-----------------|----------------|--------|
+| **Malware Auto-Containment MTTR** | **1.68s** mean (median `1.42s`, range `1.21-2.42s`) | `N=15`, warm VT cache, Wazuh FIM -> quarantine | [`EVALUASI-METRIK.md`](docs/evaluasi/EVALUASI-METRIK.md) |
+| **Rust `soar-agent` Malware MTTR** | **0.04s** mean (median `0.03s`, P95 `0.05s`) | `N=30`, warm VT cache, local HTTP quarantine | [`bench-rust-mttr-malware.json`](docs/evaluasi/bench-rust-mttr-malware.json) |
+| **Phishing Domain Sinkhole MTTR** | **2.13s** mean (range `1.83-2.44s`) | `N=5`, Google Safe Browsing fast path | [`EVALUASI-METRIK.md`](docs/evaluasi/EVALUASI-METRIK.md) |
+| **End-to-End Verdict Pipeline Latency** | **3.00s** mean (P95 `4.09s`, `0/30` timeouts) | `N=30`, live VT + OTX lookup -> `fleet-log` | [`bench-mttr-fleet-20260915-N30.json`](docs/evaluasi/bench-mttr-fleet-20260915-N30.json) |
+| **HITL Automated Dispatch Overhead** | **21.05s** Telegram prep + **0.07s** Wazuh AR dispatch | `N=5` (automated portion; ~18s is cloud LLM call) | [`bench-mttr-hitl-20261008.json`](docs/evaluasi/bench-mttr-hitl-20261008.json) |
+| **False-Positive Suppression Rate** | **100%** (`8/8` benign files suppressed to `0` alerts/AR) | `N=8` mixed extensions vs `8` raw Wazuh FIM alerts | [`EVALUASI-METRIK.md`](docs/evaluasi/EVALUASI-METRIK.md) |
+| **Sustained Webhook Throughput** | **34.11 alerts/s** (`142.12 ms` avg) / **29.49 alerts/s** (`soar-agent`) | `N=20`, concurrency `5` | [`bench-load.json`](docs/evaluasi/bench-load.json), [`bench-rust-load.json`](docs/evaluasi/bench-rust-load.json) |
+| **VT Verdict Cache Hit Rate** | **41.7%** (`10/24` lookups, saves free-tier 4 req/min quota) | `N=12` cold/hot runs | [`bench-vt-cold-vs-cache-20261008.json`](docs/evaluasi/bench-vt-cold-vs-cache-20261008.json) |
+| **LLM Guardrail & Prompt-Injection Resilience** | **100%** rule adherence (`34/35` API successes, Jaccard `0.450`) | `7` scenarios x `N=5` (incl. malicious filename injection) | [`bench-llm-consistency-20261022.json`](docs/evaluasi/bench-llm-consistency-20261022.json) |
+| **Rust Endpoint Agent Footprint** | **~5.4 MB** Linux / **~12 MB** Windows binary, **~7-10 MB** RSS | >90% RAM reduction vs traditional Wazuh agent (~80-150 MB) | [`PERBANDINGAN-PENELITIAN.md`](docs/ilmiah/PERBANDINGAN-PENELITIAN.md) |
+
+---
+
+## Platform & Research Comparison
+
+Detailed empirical comparisons are documented in [`docs/ilmiah/N8N-VS-SHUFFLE.md`](docs/ilmiah/N8N-VS-SHUFFLE.md) and [`docs/ilmiah/PERBANDINGAN-PENELITIAN.md`](docs/ilmiah/PERBANDINGAN-PENELITIAN.md).
+
+### n8n vs Shuffle SOAR (Empirical Architecture Selection)
+
+| Dimension | Weight | n8n (This Project) | Shuffle SOAR |
+|-----------|--------|--------------------|--------------|
+| **Code Execution Flexibility** | High | **4/5** (JS/TS Code nodes, HTTP + parse + cache in one node) | 2/5 (requires custom Python Shuffle Apps per logic block) |
+| **State & Cache Persistence** | High | **5/5** (built-in `staticData` + paired `fleet-monitor` SQLite cache) | 1/5 (no built-in workflow state persistence) |
+| **Built-In Security Integrations** | Medium | 2/5 (custom HTTP integrations for Wazuh/VT/GSB/MISP) | **4/5** (built-in security apps out of the box) |
+| **Observability & Debugging** | Medium | **4/5** (execution history, pin data, `/metrics`) | 3/5 (execution history, no native Prometheus endpoint) |
+| **Deployment & Memory Overhead** | Medium | **4/5** (~370 MB RAM, single container + SQLite) | 2/5 (~800 MB RAM, Elasticsearch/PostgreSQL + multi-container) |
+| **Human-in-the-Loop (HITL)** | Medium | **4/5** (Telegram inline callbacks + Web Dashboard queue + SLA) | 3/5 (app-based callback handling) |
+| **Weighted Overall Score** | | **3.8 / 5** | **2.5 / 5** |
+
+### Positioning vs Existing Open-Source & Commercial SOAR
+
+- **vs Rule-Only Wazuh / 1-Way Alerting**: Raw FIM rules alert on every new file; VT/MalwareBazaar/MISP gating suppresses 100% of benign noise while isolating high-confidence threats autonomously.
+- **vs Commercial SOAR (Cortex XSOAR, Splunk SOAR)**: Commercial platforms target large enterprise SOCs with broad SaaS/IAM/cloud connectors at high licensing cost. This project targets SMEs and research labs with zero software license cost, transparent self-hosted workflows, reversible containment (`quarantine` + `restore`, `sinkhole` + `unsinkhole`), and native MCP agent access.
+- **MITRE ATT&CK Coverage**: Covers endpoint malware execution (`T1204.002`, `T1059`, `T1027`, `T1036`), phishing initial access (`T1566.002`, `T1189`), LOLBin & pre-encryption ransomware chains (`T1059.001`, `T1059.006`, `T1105`, `T1140`, `T1197`, `T1218.005/.010/.011`, `T1490`), persistence (`T1547.001`, `T1053.005`), and active remediation (`T1484`, `T1070.004`, `T1499`). See [`docs/ilmiah/MITRE-ATTACK-MAPPING.md`](docs/ilmiah/MITRE-ATTACK-MAPPING.md).
+
+---
+
+## Documentation Index
+
+English guides live in [`docs/en/`](docs/en/), while extended academic evaluation and thesis engineering notes in [`docs/`](docs/) are maintained in Indonesian:
+
+| Document | Language | Purpose |
+|----------|----------|---------|
+| [`docs/en/ARCHITECTURE.md`](docs/en/ARCHITECTURE.md) | English | v1.1.0+ architecture, control plane, MCP, and tiered autonomy model |
+| [`docs/en/DEPLOYMENT.md`](docs/en/DEPLOYMENT.md) | English | Server bootstrap, `.env` configuration, endpoint enrollment, and verification |
+| [`docs/evaluasi/EVALUASI-METRIK.md`](docs/evaluasi/EVALUASI-METRIK.md) | Indonesian | Quantitative evaluation methodology, MTTR, FP/FN, throughput, and LLM tests |
+| [`docs/ilmiah/N8N-VS-SHUFFLE.md`](docs/ilmiah/N8N-VS-SHUFFLE.md) | Indonesian | Empirical scoring and trade-off analysis between n8n and Shuffle |
+| [`docs/ilmiah/PERBANDINGAN-PENELITIAN.md`](docs/ilmiah/PERBANDINGAN-PENELITIAN.md) | Indonesian | Literature and open-source SOAR feature matrix (15 reference systems) |
+| [`docs/ilmiah/MITRE-ATTACK-MAPPING.md`](docs/ilmiah/MITRE-ATTACK-MAPPING.md) | Indonesian | Playbook and Wazuh/Sysmon rule mapping to MITRE ATT&CK v15.1 |
+| [`docs/panduan/PANDUAN-AI-AGENT-MCP.md`](docs/panduan/PANDUAN-AI-AGENT-MCP.md) | Indonesian | Connecting external AI agents via `scripts/soar_mcp_server.py` |
+
+---
+
 ## Repository Structure
 
 ```text
