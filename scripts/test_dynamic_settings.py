@@ -456,6 +456,68 @@ class TestDynamicSettings(unittest.TestCase):
         self.assertEqual(len(saved_out), 2)
         self.assertEqual(len(saved_out[0]["models"]), 600)
 
+    def test_13_openai_uses_max_completion_tokens_and_retries_unsupported_temperature(self):
+        import io
+        import json as _json
+        import urllib.error
+        from unittest.mock import patch
+
+        sent_bodies = []
+
+        class _FakeResp:
+            def __init__(self, payload):
+                self._raw = _json.dumps(payload).encode("utf-8")
+
+            def read(self):
+                return self._raw
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=25):
+            body = _json.loads(req.data.decode("utf-8"))
+            sent_bodies.append(body)
+            if "temperature" in body:
+                err_json = _json.dumps(
+                    {
+                        "error": {
+                            "message": "Unsupported value: 'temperature' does not support 0 with this model.",
+                            "type": "invalid_request_error",
+                            "param": "temperature",
+                            "code": "unsupported_value",
+                        }
+                    }
+                ).encode("utf-8")
+                raise urllib.error.HTTPError(
+                    req.full_url,
+                    400,
+                    "Bad Request",
+                    {},
+                    io.BytesIO(err_json),
+                )
+            return _FakeResp({"choices": [{"message": {"content": "OK"}}]})
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            res = fm._invoke_ai_provider(
+                "openai",
+                "gpt-5.6-luna",
+                "Balas OK",
+                api_key="sk-proj-test-key-1234567890",
+                temperature=0,
+                max_tokens=512,
+            )
+
+        self.assertTrue(res["success"])
+        self.assertEqual(res["response"], "OK")
+        self.assertEqual(len(sent_bodies), 2)
+        self.assertIn("max_completion_tokens", sent_bodies[0])
+        self.assertNotIn("max_tokens", sent_bodies[0])
+        self.assertEqual(sent_bodies[0]["max_completion_tokens"], 512)
+        self.assertNotIn("temperature", sent_bodies[1])
+
 
 if __name__ == "__main__":
     unittest.main()

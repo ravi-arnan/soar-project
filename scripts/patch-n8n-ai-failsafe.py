@@ -185,13 +185,42 @@ const callProvider = async (cfg) => {
   const headers = { 'Content-Type': 'application/json' };
   if (key) headers['Authorization'] = 'Bearer ' + key;
   const messages = sysInst ? [{ role: 'system', content: sysInst }, { role: 'user', content: prompt }] : [{ role: 'user', content: prompt }];
-  const resp = await this.helpers.httpRequest({
-    method: 'POST',
-    url,
-    headers,
-    body: JSON.stringify({ model, max_tokens: maxTokens, temperature, messages }),
-    timeout: 35000,
-  });
+  const body = { model, temperature, messages };
+  if (prov === 'openai') {
+    body.max_completion_tokens = maxTokens;
+  } else {
+    body.max_tokens = maxTokens;
+  }
+  let resp = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      resp = await this.helpers.httpRequest({
+        method: 'POST',
+        url,
+        headers,
+        body: JSON.stringify(body),
+        timeout: 35000,
+      });
+      break;
+    } catch (err) {
+      const msgLower = String((err && err.message) || err).toLowerCase();
+      let adjusted = false;
+      if ('max_tokens' in body && msgLower.includes('max_tokens') && msgLower.includes('max_completion_tokens')) {
+        body.max_completion_tokens = body.max_tokens;
+        delete body.max_tokens;
+        adjusted = true;
+      } else if ('max_completion_tokens' in body && msgLower.includes('max_completion_tokens') && (msgLower.includes('unsupported') || msgLower.includes('not supported'))) {
+        body.max_tokens = body.max_completion_tokens;
+        delete body.max_completion_tokens;
+        adjusted = true;
+      }
+      if ('temperature' in body && msgLower.includes('temperature') && (msgLower.includes('unsupported') || msgLower.includes('not supported') || msgLower.includes('does not support'))) {
+        delete body.temperature;
+        adjusted = true;
+      }
+      if (!adjusted || attempt === 2) throw err;
+    }
+  }
   return { text: cleanText(resp?.choices?.[0]?.message?.content), usedModel: prov + ':' + model };
 };
 

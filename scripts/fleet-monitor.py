@@ -2842,38 +2842,73 @@ def _invoke_ai_provider(
         messages.append({"role": "user", "content": clean_prompt})
         body_data = {
             "model": model_id,
-            "max_tokens": tok,
             "temperature": temp,
             "messages": messages,
         }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(body_data).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=25) as resp:
-                res_json = json.loads(resp.read().decode("utf-8"))
-                msg = res_json.get("choices", [{}])[0].get("message", {})
-                text = (msg.get("content") if isinstance(msg, dict) else "") or ""
-                latency = int((time.time() - start_t) * 1000)
-                if not str(text).strip():
-                    AI_CIRCUIT_BREAKER.record_failure(prov, "empty response")
-                    return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} mengembalikan respons kosong"}
-                AI_CIRCUIT_BREAKER.record_success(prov)
-                return {
-                    "success": True,
-                    "model": model_id,
-                    "provider": prov,
-                    "latency_ms": latency,
-                    "response": str(text).strip(),
-                }
-        except Exception as e:
-            err_msg = _format_http_error(e, effective_key)
-            immediate = isinstance(e, urllib.error.HTTPError) and e.code in (401, 402, 403)
-            AI_CIRCUIT_BREAKER.record_failure(prov, err_msg, immediate_open=immediate)
-            return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} error: {err_msg}"}
+        if prov == "openai":
+            body_data["max_completion_tokens"] = tok
+        else:
+            body_data["max_tokens"] = tok
+
+        last_exc = None
+        last_err_msg = ""
+        res_json = None
+        for _attempt in range(3):
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(body_data).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=25) as resp:
+                    res_json = json.loads(resp.read().decode("utf-8"))
+                break
+            except Exception as e:
+                last_exc = e
+                last_err_msg = _format_http_error(e, effective_key)
+                if isinstance(e, urllib.error.HTTPError) and e.code == 400:
+                    err_lower = last_err_msg.lower()
+                    adjusted = False
+                    if "max_tokens" in body_data and "max_tokens" in err_lower and "max_completion_tokens" in err_lower:
+                        body_data["max_completion_tokens"] = body_data.pop("max_tokens")
+                        adjusted = True
+                    elif (
+                        "max_completion_tokens" in body_data
+                        and "max_completion_tokens" in err_lower
+                        and ("unsupported" in err_lower or "not supported" in err_lower)
+                    ):
+                        body_data["max_tokens"] = body_data.pop("max_completion_tokens")
+                        adjusted = True
+                    if (
+                        "temperature" in body_data
+                        and "temperature" in err_lower
+                        and ("unsupported" in err_lower or "not supported" in err_lower or "does not support" in err_lower)
+                    ):
+                        body_data.pop("temperature", None)
+                        adjusted = True
+                    if adjusted:
+                        continue
+                break
+
+        if res_json is not None:
+            msg = res_json.get("choices", [{}])[0].get("message", {})
+            text = (msg.get("content") if isinstance(msg, dict) else "") or ""
+            latency = int((time.time() - start_t) * 1000)
+            if not str(text).strip():
+                AI_CIRCUIT_BREAKER.record_failure(prov, "empty response")
+                return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} mengembalikan respons kosong"}
+            AI_CIRCUIT_BREAKER.record_success(prov)
+            return {
+                "success": True,
+                "model": model_id,
+                "provider": prov,
+                "latency_ms": latency,
+                "response": str(text).strip(),
+            }
+        immediate = isinstance(last_exc, urllib.error.HTTPError) and last_exc.code in (401, 402, 403)
+        AI_CIRCUIT_BREAKER.record_failure(prov, last_err_msg, immediate_open=immediate)
+        return {"success": False, "provider": prov, "model": model_id, "error": f"{prov} error: {last_err_msg}"}
 
     # Custom tanpa base URL: mode simulasi lokal untuk pengujian offline
     return {

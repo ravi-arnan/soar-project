@@ -289,6 +289,38 @@ class AiNodeTest(unittest.TestCase):
         self.assertEqual(out["r"]["llm_model"], "experiential:gpt-6-luna:free")
         self.assertIsNone(out["r"]["llm_error"])
 
+    def test_runtime_config_openai_sends_max_completion_tokens(self):
+        out = run_js(
+            r"""
+(async () => {
+  const bodies = [];
+  const helpers = { httpRequest: async (opts) => {
+    if (opts.url.includes('/api/settings/runtime-config')) {
+      return {
+        ai: {
+          enabled: true,
+          provider: 'openai',
+          model: 'gpt-5.6-luna',
+          api_key: 'sk-oai',
+          fallback_enabled: false,
+          max_tokens: 900,
+        },
+      };
+    }
+    const parsed = JSON.parse(opts.body);
+    bodies.push(parsed);
+    return { choices: [{ message: { content: 'OK' } }] };
+  }};
+  const r = (await callNode(CODE.ai, __BASE__, {}, helpers, { FLEET_COMMAND_TOKEN: 'tok' }))[0].json;
+  console.log(JSON.stringify({ r, bodies }));
+})();
+""".replace("__BASE__", json.dumps(self.BASE))
+        )
+        self.assertEqual(len(out["bodies"]), 1)
+        self.assertEqual(out["bodies"][0]["max_completion_tokens"], 900)
+        self.assertNotIn("max_tokens", out["bodies"][0])
+        self.assertEqual(out["r"]["ai_response"], "OK")
+
 
 class TemplateTest(unittest.TestCase):
     def test_normal_lengkap(self):

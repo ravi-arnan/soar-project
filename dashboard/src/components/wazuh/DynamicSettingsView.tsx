@@ -579,7 +579,7 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
           base_url: saved.base_url || '',
           saved_key_id: saved.id,
           temperature: 0,
-          max_tokens: 128,
+          max_tokens: 512,
           system_instruction: 'Kamu adalah endpoint diagnostik. Balas hanya dengan satu kata: OK',
         }),
       });
