@@ -2,7 +2,7 @@ import { fleetBaseUrl, originAllowed, readBoundedJson } from "../../../../lib/re
 import { resolveAuthorizedSession } from "../../../../lib/session.ts";
 
 export const runtime = "nodejs";
-const MAX_BODY_BYTES = 256 * 1024;
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
 function errorResponse(message: string, status: number): Response {
   return Response.json({ error: message }, { status });

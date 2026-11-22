@@ -274,6 +274,8 @@ function ProviderConfigFields({
 export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsViewProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingSavedKeys, setSavingSavedKeys] = useState(false);
+  const [savedKeysFeedback, setSavedKeysFeedback] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -477,6 +479,69 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
     }
   };
 
+  const persistSavedKeys = async (
+    nextSavedKeys: SavedAiKey[],
+    options?: {
+      extraAiFields?: Partial<AiConfig>;
+      successText?: string;
+    }
+  ): Promise<boolean> => {
+    if (userRole !== 'admin') {
+      const msg = 'Hanya akun dengan peran Admin yang dapat mengubah Saved API Keys.';
+      setSavedKeysFeedback({ tone: 'danger', text: msg });
+      setError(msg);
+      return false;
+    }
+    setSavingSavedKeys(true);
+    setSavedKeysFeedback(null);
+    setError(null);
+    try {
+      const res = await fetch('/api/settings/threat-intel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ai_config: {
+            saved_api_keys: nextSavedKeys,
+            ...(options?.extraAiFields || {}),
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        const errText = data.error || `Gagal menyimpan Saved API Keys (HTTP ${res.status}).`;
+        setSavedKeysFeedback({ tone: 'danger', text: errText });
+        setError(errText);
+        return false;
+      }
+      const serverAi = data.settings?.ai_config as AiConfig | undefined;
+      setAiConfig((prev) => ({
+        ...prev,
+        ...(options?.extraAiFields || {}),
+        ...(options?.extraAiFields?.primary_saved_key_id && serverAi
+          ? { api_key: serverAi.api_key || prev.api_key, has_api_key: serverAi.has_api_key ?? prev.has_api_key }
+          : {}),
+        ...(options?.extraAiFields?.fallback_saved_key_id && serverAi
+          ? {
+              fallback_api_key: serverAi.fallback_api_key || prev.fallback_api_key,
+              has_fallback_api_key: serverAi.has_fallback_api_key ?? prev.has_fallback_api_key,
+            }
+          : {}),
+        saved_api_keys: Array.isArray(serverAi?.saved_api_keys) ? serverAi.saved_api_keys : nextSavedKeys,
+      }));
+      if (options?.successText) {
+        setSavedKeysFeedback({ tone: 'success', text: options.successText });
+      }
+      return true;
+    } catch (err) {
+      const errText = `Gagal menyimpan Saved API Keys: ${err instanceof Error ? err.message : String(err)}`;
+      setSavedKeysFeedback({ tone: 'danger', text: errText });
+      setError(errText);
+      return false;
+    } finally {
+      setSavingSavedKeys(false);
+    }
+  };
+
   const handleFetchSavedKeyModels = async (saved: SavedAiKey) => {
     const result = await fetchModelsFromServer({
       keyTag: `saved:${saved.id}`,
@@ -486,18 +551,17 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
       saved_key_id: saved.id,
     });
     if (!result.ok) {
+      setSavedKeysFeedback({ tone: 'danger', text: result.statusText });
       setError(result.statusText);
       return;
     }
     const nowIso = new Date().toISOString();
-    updateAi((prev) => ({
-      ...prev,
-      saved_api_keys: (prev.saved_api_keys || []).map((sk) =>
-        sk.id === saved.id ? { ...sk, models: result.models, models_updated_at: nowIso } : sk
-      ),
-    }));
-    setSuccessMsg(`Berhasil memuat ${result.statusText} untuk profil '${saved.name}'. Klik Simpan Perubahan untuk menyimpan.`);
-    setTimeout(() => setSuccessMsg(null), 5000);
+    const nextSavedKeys = savedKeys.map((sk) =>
+      sk.id === saved.id ? { ...sk, models: result.models, models_updated_at: nowIso } : sk
+    );
+    await persistSavedKeys(nextSavedKeys, {
+      successText: `Berhasil memuat dan menyimpan ${result.statusText} untuk '${saved.name}'.`,
+    });
   };
 
   const handleTestSavedKey = async (saved: SavedAiKey) => {
@@ -547,7 +611,7 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
     }
   };
 
-  const handleSaveSlotToSavedKeys = (slot: 'primary' | 'fallback') => {
+  const handleSaveSlotToSavedKeys = async (slot: 'primary' | 'fallback') => {
     const isPrimary = slot === 'primary';
     const provider = isPrimary ? aiConfig.provider : aiConfig.fallback_provider;
     const model = isPrimary ? aiConfig.model : aiConfig.fallback_model;
@@ -568,17 +632,22 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
       models,
       models_updated_at: models.length > 0 ? new Date().toISOString() : '',
     };
-    updateAi((prev) => ({
-      ...prev,
-      ...(isPrimary ? { primary_saved_key_id: id } : { fallback_saved_key_id: id }),
-      saved_api_keys: [...(prev.saved_api_keys || []), entry],
-    }));
+    const nextSavedKeys = [...savedKeys, entry];
+    const extraAiFields: Partial<AiConfig> = isPrimary
+      ? { primary_saved_key_id: id }
+      : { fallback_saved_key_id: id };
+    await persistSavedKeys(nextSavedKeys, {
+      extraAiFields,
+      successText: `Profil '${entry.name}' berhasil disimpan ke Saved API Keys.`,
+    });
   };
 
-  const handleAddNewSavedKey = () => {
+  const handleAddNewSavedKey = async () => {
     const meta = getProviderMeta(newSavedKey.provider);
     if (!newSavedKey.api_key.trim() && newSavedKey.provider !== 'custom') {
-      setError('Masukkan API Key sebelum menyimpan profil baru.');
+      const msg = 'Masukkan API Key sebelum menyimpan profil baru.';
+      setSavedKeysFeedback({ tone: 'danger', text: msg });
+      setError(msg);
       return;
     }
     const id = `key_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
@@ -593,11 +662,10 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
       models: newSavedKey.models,
       models_updated_at: newSavedKey.models.length > 0 ? new Date().toISOString() : '',
     };
-    setError(null);
-    updateAi((prev) => ({
-      ...prev,
-      saved_api_keys: [...(prev.saved_api_keys || []), entry],
-    }));
+    const ok = await persistSavedKeys([...savedKeys, entry], {
+      successText: `API key '${entry.name}' berhasil disimpan ke server.`,
+    });
+    if (!ok) return;
     setNewSavedKey({
       name: '',
       provider: 'experiential',
@@ -610,10 +678,35 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
     setShowAddSavedKey(false);
   };
 
-  const handleSwitchToSavedKey = (slot: 'primary' | 'fallback', savedId: string) => {
+  const handleUpdateSavedKeyModel = async (sk: SavedAiKey, nextModel: string) => {
+    const nextSavedKeys = savedKeys.map((item) => (item.id === sk.id ? { ...item, model: nextModel } : item));
+    const extraAiFields: Partial<AiConfig> = {
+      ...(aiConfig.primary_saved_key_id === sk.id ? { model: nextModel } : {}),
+      ...(aiConfig.fallback_saved_key_id === sk.id ? { fallback_model: nextModel } : {}),
+    };
+    await persistSavedKeys(nextSavedKeys, {
+      extraAiFields,
+      successText: `Model '${sk.name}' diperbarui ke '${nextModel}'.`,
+    });
+  };
+
+  const handleDeleteSavedKey = async (sk: SavedAiKey) => {
+    const nextSavedKeys = savedKeys.filter((item) => item.id !== sk.id);
+    const extraAiFields: Partial<AiConfig> = {
+      ...(aiConfig.primary_saved_key_id === sk.id ? { primary_saved_key_id: '' } : {}),
+      ...(aiConfig.fallback_saved_key_id === sk.id ? { fallback_saved_key_id: '' } : {}),
+    };
+    await persistSavedKeys(nextSavedKeys, {
+      extraAiFields,
+      successText: `API key '${sk.name}' telah dihapus.`,
+    });
+  };
+
+  const handleSwitchToSavedKey = async (slot: 'primary' | 'fallback', savedId: string) => {
     const found = savedKeys.find((k) => k.id === savedId);
     if (!found) return;
-    updateAi((prev) => applySavedKeyToSlot(prev, slot, found));
+    const nextAi = applySavedKeyToSlot(aiConfig, slot, found);
+    setAiConfig(nextAi);
     if (found.models && found.models.length > 0) {
       setSlotModels((prev) => ({ ...prev, [slot]: found.models || [] }));
       const freeCount = found.models.filter((m) => m.free).length;
@@ -628,6 +721,25 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
       setSlotModels((prev) => ({ ...prev, [slot]: [] }));
       setSlotModelsStatus((prev) => ({ ...prev, [slot]: null }));
     }
+    const extraAiFields: Partial<AiConfig> =
+      slot === 'primary'
+        ? {
+            provider: nextAi.provider,
+            model: nextAi.model,
+            custom_base_url: nextAi.custom_base_url,
+            primary_saved_key_id: nextAi.primary_saved_key_id,
+          }
+        : {
+            fallback_enabled: nextAi.fallback_enabled,
+            fallback_provider: nextAi.fallback_provider,
+            fallback_model: nextAi.fallback_model,
+            fallback_base_url: nextAi.fallback_base_url,
+            fallback_saved_key_id: nextAi.fallback_saved_key_id,
+          };
+    await persistSavedKeys(savedKeys, {
+      extraAiFields,
+      successText: `Profil '${found.name}' aktif sebagai ${slot === 'primary' ? 'Primary' : 'Fallback'}.`,
+    });
   };
 
   const handleSaveAll = async (e: React.FormEvent) => {
@@ -900,6 +1012,8 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
             </button>
           </div>
 
+          {savedKeysFeedback && <WuiCallOut tone={savedKeysFeedback.tone}>{savedKeysFeedback.text}</WuiCallOut>}
+
           {showAddSavedKey && (
             <div className="p-3 bg-white border border-[#D3DAE6] rounded-[4px] space-y-3 text-[12px]">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1030,10 +1144,11 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
               <div className="flex justify-end">
                 <button
                   type="button"
+                  disabled={savingSavedKeys}
                   onClick={handleAddNewSavedKey}
-                  className="h-7 px-3 bg-[#006BB4] hover:bg-[#00538C] text-white rounded-[4px] text-[11px] font-medium cursor-pointer"
+                  className="h-7 px-3 bg-[#006BB4] hover:bg-[#00538C] text-white rounded-[4px] text-[11px] font-medium cursor-pointer disabled:opacity-50"
                 >
-                  Simpan ke Daftar
+                  {savingSavedKeys ? 'Menyimpan...' : 'Simpan ke Daftar'}
                 </button>
               </div>
             </div>
@@ -1090,17 +1205,8 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
                             {models.length > 0 && (
                               <select
                                 value={sk.model || ''}
-                                onChange={(e) => {
-                                  const nextModel = e.target.value;
-                                  updateAi((prev) => ({
-                                    ...prev,
-                                    ...(prev.primary_saved_key_id === sk.id ? { model: nextModel } : {}),
-                                    ...(prev.fallback_saved_key_id === sk.id ? { fallback_model: nextModel } : {}),
-                                    saved_api_keys: (prev.saved_api_keys || []).map((item) =>
-                                      item.id === sk.id ? { ...item, model: nextModel } : item
-                                    ),
-                                  }));
-                                }}
+                                disabled={savingSavedKeys}
+                                onChange={(e) => handleUpdateSavedKeyModel(sk, e.target.value)}
                                 aria-label={`Pilih model untuk ${sk.name}`}
                                 className="h-6 px-1.5 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white font-mono max-w-[230px]"
                               >
@@ -1189,17 +1295,11 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
                             </button>
                             <button
                               type="button"
-                              onClick={() =>
-                                updateAi((prev) => ({
-                                  ...prev,
-                                  primary_saved_key_id: prev.primary_saved_key_id === sk.id ? '' : prev.primary_saved_key_id,
-                                  fallback_saved_key_id: prev.fallback_saved_key_id === sk.id ? '' : prev.fallback_saved_key_id,
-                                  saved_api_keys: (prev.saved_api_keys || []).filter((item) => item.id !== sk.id),
-                                }))
-                              }
+                              disabled={savingSavedKeys}
+                              onClick={() => handleDeleteSavedKey(sk)}
                               title="Hapus Saved API Key"
                               aria-label={`Hapus ${sk.name}`}
-                              className="w-7 h-7 inline-flex items-center justify-center border border-[#D3DAE6] rounded-[4px] bg-white hover:bg-[#FDECEB] text-[#BD271E] transition-colors cursor-pointer"
+                              className="w-7 h-7 inline-flex items-center justify-center border border-[#D3DAE6] rounded-[4px] bg-white hover:bg-[#FDECEB] text-[#BD271E] transition-colors cursor-pointer disabled:opacity-50"
                             >
                               <WuiIcon type="trash" size="s" />
                             </button>

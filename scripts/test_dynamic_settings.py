@@ -408,6 +408,54 @@ class TestDynamicSettings(unittest.TestCase):
         self.assertFalse(res_bad["success"])
         self.assertIn("Ditolak", res_bad["error"])
 
+    def test_12_large_saved_keys_payload_over_64kb_persists(self):
+        import http.client
+        import json as _json
+        import threading
+        from http.server import HTTPServer
+
+        many_models = [{"id": f"provider/model-{i:04d}:free", "label": f"Model {i}", "free": True} for i in range(600)]
+        big_saved = [
+            {
+                "id": f"key_big_{idx}",
+                "name": f"Provider Big {idx}",
+                "provider": "custom",
+                "model": "provider/model-0000:free",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": f"sk-or-secret-{idx}-abcdef123456",
+                "models": many_models,
+            }
+            for idx in range(2)
+        ]
+        raw_body = _json.dumps({"ai_config": {"saved_api_keys": big_saved}}).encode("utf-8")
+        self.assertGreater(len(raw_body), 65536)
+
+        srv = HTTPServer(("127.0.0.1", 0), fm.Handler)
+        t = threading.Thread(target=srv.handle_request, daemon=True)
+        t.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", srv.server_port, timeout=10)
+            conn.request(
+                "POST",
+                "/api/settings/threat-intel",
+                body=raw_body,
+                headers={
+                    "Authorization": f"Bearer {fm.FLEET_COMMAND_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+            )
+            resp = conn.getresponse()
+            data = _json.loads(resp.read().decode("utf-8"))
+        finally:
+            t.join(timeout=2)
+            srv.server_close()
+
+        self.assertEqual(resp.status, 200)
+        self.assertTrue(data["success"])
+        saved_out = data["settings"]["ai_config"]["saved_api_keys"]
+        self.assertEqual(len(saved_out), 2)
+        self.assertEqual(len(saved_out[0]["models"]), 600)
+
 
 if __name__ == "__main__":
     unittest.main()

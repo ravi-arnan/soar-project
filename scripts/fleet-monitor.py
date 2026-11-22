@@ -2342,7 +2342,7 @@ def _sanitize_discovered_models(raw_models):
         return []
     cleaned = []
     seen = set()
-    for m in raw_models[:400]:
+    for m in raw_models[:1000]:
         if not isinstance(m, dict):
             continue
         mid = str(m.get("id", "")).strip()
@@ -4819,7 +4819,7 @@ class Handler(BaseHTTPRequestHandler):
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
                 self._unauthorized()
                 return
-            data, err = self._read_json(max_bytes=65536)
+            data, err = self._read_json(max_bytes=2097152)
             if err:
                 return
             try:
