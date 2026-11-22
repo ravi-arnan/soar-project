@@ -36,22 +36,35 @@ export function useAuth(): AuthContextValue {
   return useContext(AuthContext);
 }
 
+type SessionProbeResult = { status: 'ok'; user: AuthUser | null } | { status: 'redirect' };
+
+async function probeSession(): Promise<SessionProbeResult> {
+  const res = await fetch('/api/auth/me', { cache: 'no-store', redirect: 'manual' });
+  if (res.type === 'opaqueredirect') {
+    return { status: 'redirect' };
+  }
+  if (!res.ok) {
+    return { status: 'ok', user: null };
+  }
+  const data = (await res.json()) as { authenticated?: boolean; user?: AuthUser | null };
+  return { status: 'ok', user: data.authenticated && data.user ? data.user : null };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshAuth = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/me', { cache: 'no-store' });
-      if (res.ok) {
-        const data = (await res.json()) as { authenticated?: boolean; user?: AuthUser | null };
-        setUser(data.authenticated && data.user ? data.user : null);
-      } else {
-        setUser(null);
+      const result = await probeSession();
+      if (result.status === 'redirect') {
+        window.location.reload();
+        return;
       }
+      setUser(result.user);
+      setLoading(false);
     } catch {
       setUser(null);
-    } finally {
       setLoading(false);
     }
   }, []);
@@ -62,7 +75,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'same-origin',
+        redirect: 'manual',
       });
+      if (res.type === 'opaqueredirect') {
+        window.location.reload();
+        return;
+      }
       const data = await res.json().catch(() => null);
       if (data && typeof data.logoutUrl === 'string' && data.logoutUrl) {
         window.location.assign(data.logoutUrl);
@@ -78,23 +96,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/auth/me', { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { authenticated?: boolean; user?: AuthUser | null } | null) => {
-        if (!cancelled) {
-          setUser(data?.authenticated && data.user ? data.user : null);
+    probeSession()
+      .then((result) => {
+        if (cancelled) return;
+        if (result.status === 'redirect') {
+          window.location.reload();
+          return;
         }
+        setUser(result.user);
+        setLoading(false);
       })
       .catch(() => {
-        if (!cancelled) setUser(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setUser(null);
+          setLoading(false);
+        }
       });
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        setLoading(true);
+        void refreshAuth();
+      }
+    };
+    window.addEventListener('pageshow', handlePageShow);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('pageshow', handlePageShow);
     };
-  }, []);
+  }, [refreshAuth]);
 
   return (
     <AuthContext.Provider
