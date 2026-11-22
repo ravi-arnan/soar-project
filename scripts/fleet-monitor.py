@@ -2885,6 +2885,23 @@ def _invoke_ai_provider(
     }
 
 
+def _base_url_allowed_for_stored_key(stored_ai, prov, base_url, saved_key_id=None, slot_field=""):
+    """Izinkan stored key dipakai ke host resmi provider atau base_url milik config tersimpan sendiri."""
+    clean_base = str(base_url or "").strip().rstrip("/")
+    if not clean_base:
+        return True
+    if _fleet_sec.provider_host_allows_stored_key(prov, clean_base):
+        return True
+    saved = _find_saved_key((stored_ai or {}).get("saved_api_keys"), saved_key_id)
+    if saved and str(saved.get("base_url") or "").strip().rstrip("/") == clean_base:
+        return True
+    if slot_field == "api_key" and clean_base == str((stored_ai or {}).get("custom_base_url") or "").strip().rstrip("/"):
+        return True
+    if slot_field == "fallback_api_key" and clean_base == str((stored_ai or {}).get("fallback_base_url") or "").strip().rstrip("/"):
+        return True
+    return False
+
+
 def _fetch_provider_models(provider, api_key=None, base_url=None, saved_key_id=None, slot=None):
     prov = str(provider or "google").strip().lower()
     stored_ai = _merge_ai_defaults(_get_system_setting("ai_config", DEFAULT_AI_CONFIG))
@@ -2893,9 +2910,12 @@ def _fetch_provider_models(provider, api_key=None, base_url=None, saved_key_id=N
         slot_field = "api_key"
     elif slot == "fallback" and stored_ai.get("fallback_provider") == prov:
         slot_field = "fallback_api_key"
-    clean_base = str(base_url or "").strip().rstrip("/")
+    saved_entry = _find_saved_key(stored_ai.get("saved_api_keys"), saved_key_id)
+    clean_base = str(base_url or (saved_entry.get("base_url") if saved_entry else "") or "").strip().rstrip("/")
     using_stored_secret = bool(saved_key_id or slot_field) and not (api_key and "•" not in str(api_key))
-    if clean_base and using_stored_secret and not _fleet_sec.provider_host_allows_stored_key(prov, clean_base):
+    if clean_base and using_stored_secret and not _base_url_allowed_for_stored_key(
+        stored_ai, prov, clean_base, saved_key_id=saved_key_id, slot_field=slot_field
+    ):
         return {
             "success": False,
             "provider": prov,
@@ -3071,10 +3091,12 @@ def _test_ai_inference(
         fb_prov = fb.get("provider") or stored_ai.get("fallback_provider") or "pollinations"
         fb_model = fb.get("model") or stored_ai.get("fallback_model") or "deepseek/deepseek-v4-flash"
         fb_slot = "fallback_api_key" if stored_ai.get("fallback_provider") == fb_prov else ""
-        fb_base = fb.get("base_url") if fb.get("base_url") is not None else stored_ai.get("fallback_base_url")
-        if fb_base and not (fb.get("api_key") and "•" not in str(fb.get("api_key"))) and not _fleet_sec.provider_host_allows_stored_key(fb_prov, fb_base):
-            if fb_base != stored_ai.get("fallback_base_url"):
-                return {"success": False, "provider": fb_prov, "model": fb_model, "error": "Ditolak: stored API key tidak boleh dikirim ke custom base_url asing"}
+        fb_saved = _find_saved_key(stored_ai.get("saved_api_keys"), fb.get("saved_key_id"))
+        fb_base = fb.get("base_url") if fb.get("base_url") is not None else (fb_saved.get("base_url") if fb_saved else stored_ai.get("fallback_base_url"))
+        if fb_base and not (fb.get("api_key") and "•" not in str(fb.get("api_key"))) and not _base_url_allowed_for_stored_key(
+            stored_ai, fb_prov, fb_base, saved_key_id=fb.get("saved_key_id"), slot_field="fallback_api_key"
+        ):
+            return {"success": False, "provider": fb_prov, "model": fb_model, "error": "Ditolak: stored API key tidak boleh dikirim ke custom base_url asing"}
         fb_key = _resolve_ai_key(fb.get("api_key"), fb.get("saved_key_id"), stored_ai, fb_slot, fb_prov)
         return _invoke_ai_provider(
             fb_prov,
@@ -3088,10 +3110,12 @@ def _test_ai_inference(
         )
 
     p_slot = "api_key" if stored_ai.get("provider") == provider else ""
-    eff_base = base_url if base_url is not None else stored_ai.get("custom_base_url")
-    if base_url and not (api_key and "•" not in str(api_key)) and not _fleet_sec.provider_host_allows_stored_key(provider, base_url):
-        if str(base_url).strip().rstrip("/") != str(stored_ai.get("custom_base_url") or "").strip().rstrip("/"):
-            return {"success": False, "provider": provider, "model": model_name, "error": "Ditolak: stored API key tidak boleh dikirim ke custom base_url asing"}
+    p_saved = _find_saved_key(stored_ai.get("saved_api_keys"), saved_key_id)
+    eff_base = base_url if base_url not in (None, "") else (p_saved.get("base_url") if p_saved else stored_ai.get("custom_base_url"))
+    if eff_base and not (api_key and "•" not in str(api_key)) and not _base_url_allowed_for_stored_key(
+        stored_ai, provider, eff_base, saved_key_id=saved_key_id, slot_field="api_key"
+    ):
+        return {"success": False, "provider": provider, "model": model_name, "error": "Ditolak: stored API key tidak boleh dikirim ke custom base_url asing"}
     eff_key = _resolve_ai_key(api_key, saved_key_id, stored_ai, p_slot, provider)
 
     if target == "auto" and AI_CIRCUIT_BREAKER.is_open(provider):

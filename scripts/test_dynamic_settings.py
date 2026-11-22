@@ -342,6 +342,72 @@ class TestDynamicSettings(unittest.TestCase):
         self.assertEqual(captured[0][0], "https://api.experientiallabs.ai/v1/models")
         self.assertEqual(captured[1][0], "https://api.experientiallabs.ai/v1/chat/completions")
 
+    def test_10_custom_saved_key_models_and_test_allowed(self):
+        from unittest.mock import patch
+
+        fm._update_system_settings(
+            {
+                "ai_config": {
+                    "saved_api_keys": [
+                        {
+                            "id": "key_custom_or",
+                            "name": "OpenRouter Custom",
+                            "provider": "custom",
+                            "model": "google/gemini-3.8-flash",
+                            "base_url": "https://openrouter.ai/api/v1",
+                            "api_key": "sk-or-v1-secret-1234567890",
+                        }
+                    ]
+                }
+            },
+            updated_by="admin_test",
+        )
+
+        class _FakeResp:
+            def __init__(self, payload):
+                self._raw = fm.json.dumps(payload).encode("utf-8")
+
+            def read(self):
+                return self._raw
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=20):
+            if req.full_url.endswith("/models"):
+                return _FakeResp({"data": [{"id": "google/gemini-3.8-flash"}]})
+            return _FakeResp({"choices": [{"message": {"content": "OK"}}]})
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            res_models = fm._fetch_provider_models(
+                "custom",
+                base_url="https://openrouter.ai/api/v1",
+                saved_key_id="key_custom_or",
+            )
+            res_test = fm._test_ai_inference(
+                "custom",
+                "google/gemini-3.8-flash",
+                "Balas hanya dengan satu kata: OK",
+                base_url="https://openrouter.ai/api/v1",
+                saved_key_id="key_custom_or",
+            )
+        self.assertTrue(res_models["success"])
+        self.assertEqual(res_models["models"][0]["id"], "google/gemini-3.8-flash")
+        self.assertTrue(res_test["success"])
+        self.assertEqual(res_test["response"], "OK")
+
+        # Foreign base_url tidak boleh menerima stored key milik saved key custom
+        res_bad = fm._fetch_provider_models(
+            "custom",
+            base_url="https://evil.example/v1",
+            saved_key_id="key_custom_or",
+        )
+        self.assertFalse(res_bad["success"])
+        self.assertIn("Ditolak", res_bad["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

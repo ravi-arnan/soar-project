@@ -325,6 +325,18 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
     'Analisis file mencurigakan ransom_payload.exe yang mendeteksi ekstensi terenkripsi di folder workstation.'
   );
   const [isTestingAi, setIsTestingAi] = useState(false);
+  const [savedKeyTests, setSavedKeyTests] = useState<
+    Record<
+      string,
+      {
+        loading: boolean;
+        success?: boolean;
+        response?: string;
+        latency_ms?: number;
+        error?: string;
+      }
+    >
+  >({});
   const [testResult, setTestResult] = useState<{
     success: boolean;
     model?: string;
@@ -486,6 +498,53 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
     }));
     setSuccessMsg(`Berhasil memuat ${result.statusText} untuk profil '${saved.name}'. Klik Simpan Perubahan untuk menyimpan.`);
     setTimeout(() => setSuccessMsg(null), 5000);
+  };
+
+  const handleTestSavedKey = async (saved: SavedAiKey) => {
+    setSavedKeyTests((prev) => ({ ...prev, [saved.id]: { loading: true } }));
+    try {
+      const res = await fetch('/api/settings/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target: 'primary',
+          provider: saved.provider,
+          model: saved.model,
+          prompt: 'Balas hanya dengan satu kata: OK',
+          api_key: cleanSecretInput(saved.api_key),
+          base_url: saved.base_url || '',
+          saved_key_id: saved.id,
+          temperature: 0,
+          max_tokens: 128,
+          system_instruction: 'Kamu adalah endpoint diagnostik. Balas hanya dengan satu kata: OK',
+        }),
+      });
+      const data = (await res.json()) as {
+        success?: boolean;
+        response?: string;
+        latency_ms?: number;
+        error?: string;
+      };
+      setSavedKeyTests((prev) => ({
+        ...prev,
+        [saved.id]: {
+          loading: false,
+          success: Boolean(res.ok && data.success),
+          response: data.response,
+          latency_ms: data.latency_ms,
+          error: data.error || (!res.ok ? `HTTP ${res.status}` : undefined),
+        },
+      }));
+    } catch (err) {
+      setSavedKeyTests((prev) => ({
+        ...prev,
+        [saved.id]: {
+          loading: false,
+          success: false,
+          error: err instanceof Error ? err.message : 'Gagal menghubungi server',
+        },
+      }));
+    }
   };
 
   const handleSaveSlotToSavedKeys = (slot: 'primary' | 'fallback') => {
@@ -1003,6 +1062,10 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
                     const models = sk.models || [];
                     const freeCount = models.filter((m) => m.free).length;
                     const loadingThis = loadingModelsKey === `saved:${sk.id}`;
+                    const testThis = savedKeyTests[sk.id];
+                    const testingThis = Boolean(testThis?.loading);
+                    const testResp = (testThis?.response || '').trim();
+                    const isOkReply = /\bok\b/i.test(testResp);
                     return (
                       <tr key={sk.id} className="border-b border-[#F0F2F5] last:border-b-0">
                         <td className="py-2 px-3 font-medium text-[#1A1C21]">
@@ -1059,31 +1122,70 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
                                 : `${models.length} model`
                               : 'Belum dimuat'}
                           </div>
+                          {testThis && !testThis.loading && (
+                            <div
+                              title={testThis.success ? testResp : testThis.error}
+                              className={`text-[10.5px] font-mono mt-0.5 truncate max-w-[380px] ${
+                                testThis.success ? 'text-[#017D73]' : 'text-[#BD271E]'
+                              }`}
+                            >
+                              {testThis.success
+                                ? `Test ${isOkReply ? 'OK' : 'Sukses'}${typeof testThis.latency_ms === 'number' ? ` (${testThis.latency_ms}ms)` : ''}: ${testResp}`
+                                : `Test Gagal: ${testThis.error || 'Unknown error'}`}
+                            </div>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-right">
-                          <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                          <div className="inline-flex items-center justify-end gap-1">
                             <button
                               type="button"
                               onClick={() => handleSwitchToSavedKey('primary', sk.id)}
-                              className="px-2 py-1 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white hover:bg-[#F5F7FA] text-[#006BB4] font-medium cursor-pointer"
+                              title={isPrimaryActive ? 'Aktif sebagai Primary' : 'Pakai sebagai Primary'}
+                              aria-label={`Pakai ${sk.name} sebagai Primary`}
+                              className={`w-7 h-7 inline-flex items-center justify-center border rounded-[4px] transition-colors cursor-pointer ${
+                                isPrimaryActive
+                                  ? 'border-[#006BB4] bg-[#EBF5FB] text-[#006BB4]'
+                                  : 'border-[#D3DAE6] bg-white hover:bg-[#F5F7FA] text-[#006BB4]'
+                              }`}
                             >
-                              Pakai Primary
+                              <WuiIcon type="bolt" size="s" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleSwitchToSavedKey('fallback', sk.id)}
-                              className="px-2 py-1 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white hover:bg-[#F5F7FA] text-[#1A1C21] font-medium cursor-pointer"
+                              title={isFallbackActive ? 'Aktif sebagai Fallback' : 'Pakai sebagai Fallback'}
+                              aria-label={`Pakai ${sk.name} sebagai Fallback`}
+                              className={`w-7 h-7 inline-flex items-center justify-center border rounded-[4px] transition-colors cursor-pointer ${
+                                isFallbackActive
+                                  ? 'border-[#017D73] bg-[#E6F4F3] text-[#017D73]'
+                                  : 'border-[#D3DAE6] bg-white hover:bg-[#F5F7FA] text-[#535966]'
+                              }`}
                             >
-                              Pakai Fallback
+                              <WuiIcon type="pulse" size="s" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={testingThis}
+                              onClick={() => handleTestSavedKey(sk)}
+                              title="Test model (cek apakah mengembalikan OK)"
+                              aria-label={`Test model ${sk.name}`}
+                              className="w-7 h-7 inline-flex items-center justify-center border border-[#D3DAE6] rounded-[4px] bg-white hover:bg-[#F5F7FA] text-[#017D73] transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              <WuiIcon
+                                type={testingThis ? 'refresh' : 'play'}
+                                size="s"
+                                className={testingThis ? 'animate-spin' : ''}
+                              />
                             </button>
                             <button
                               type="button"
                               disabled={loadingThis}
                               onClick={() => handleFetchSavedKeyModels(sk)}
-                              className="px-2 py-1 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white hover:bg-[#F5F7FA] text-[#535966] cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
+                              title="Muat daftar model"
+                              aria-label={`Muat daftar model ${sk.name}`}
+                              className="w-7 h-7 inline-flex items-center justify-center border border-[#D3DAE6] rounded-[4px] bg-white hover:bg-[#F5F7FA] text-[#535966] transition-colors cursor-pointer disabled:opacity-50"
                             >
-                              <WuiIcon type="refresh" size="xs" className={loadingThis ? 'animate-spin' : ''} />
-                              <span>Muat Model</span>
+                              <WuiIcon type="refresh" size="s" className={loadingThis ? 'animate-spin' : ''} />
                             </button>
                             <button
                               type="button"
@@ -1095,10 +1197,11 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
                                   saved_api_keys: (prev.saved_api_keys || []).filter((item) => item.id !== sk.id),
                                 }))
                               }
-                              className="px-2 py-1 border border-[#D3DAE6] rounded-[4px] text-[11px] bg-white hover:bg-[#FDECEB] text-[#BD271E] cursor-pointer"
+                              title="Hapus Saved API Key"
                               aria-label={`Hapus ${sk.name}`}
+                              className="w-7 h-7 inline-flex items-center justify-center border border-[#D3DAE6] rounded-[4px] bg-white hover:bg-[#FDECEB] text-[#BD271E] transition-colors cursor-pointer"
                             >
-                              Hapus
+                              <WuiIcon type="trash" size="s" />
                             </button>
                           </div>
                         </td>
