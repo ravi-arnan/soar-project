@@ -2687,7 +2687,7 @@ def _format_http_error(exc, effective_key=""):
     detail = ""
     if isinstance(exc, urllib.error.HTTPError):
         try:
-            body = exc.read().decode("utf-8", errors="replace")[:240]
+            body = exc.read().decode("utf-8", errors="replace").strip()[:2000]
             detail = f"HTTP {exc.code}: {body or exc.reason}"
         except Exception:
             detail = f"HTTP {exc.code}: {exc.reason}"

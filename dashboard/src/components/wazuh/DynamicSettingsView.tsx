@@ -1230,8 +1230,7 @@ export function DynamicSettingsView({ userRole = 'viewer' }: DynamicSettingsView
                           </div>
                           {testThis && !testThis.loading && (
                             <div
-                              title={testThis.success ? testResp : testThis.error}
-                              className={`text-[10.5px] font-mono mt-0.5 truncate max-w-[380px] ${
+                              className={`text-[10.5px] font-mono mt-1 whitespace-pre-wrap break-words max-w-[520px] ${
                                 testThis.success ? 'text-[#017D73]' : 'text-[#BD271E]'
                               }`}
                             >
