@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { rangeToWindow, periodToWindow, buildHistoryQuery } from './fleet.ts';
+import { rangeToWindow, periodToWindow, buildHistoryQuery, agentRiskMeta } from './fleet.ts';
 
 test('rangeToWindow: preset 24h -> since 24 jam lalu, until null', () => {
   const now = new Date('2026-10-04T00:00:00.000Z');
@@ -63,4 +63,42 @@ test('buildHistoryQuery: default limit/offset/omitempat kosong', () => {
   assert.equal(p.get('severity'), null);
   assert.equal(p.get('dedup'), null);
   assert.equal(p.getAll('q').length, 0);
+});
+
+test('agentRiskMeta: memetakan low/medium/high dan fallback default', () => {
+  assert.deepEqual(agentRiskMeta(undefined), {
+    level: 'low',
+    label: 'Rendah',
+    tone: 'success',
+    activeAlerts: 0,
+    resolved: 0,
+  });
+  assert.deepEqual(
+    agentRiskMeta({
+      level: 'medium',
+      score: 20,
+      window_days: 7,
+      active_alerts: 2,
+      critical: 0,
+      high: 1,
+      medium: 1,
+      unverified: 0,
+      resolved: 0,
+    }),
+    { level: 'medium', label: 'Sedang', tone: 'warning', activeAlerts: 2, resolved: 0 },
+  );
+  assert.deepEqual(
+    agentRiskMeta({
+      level: 'high',
+      score: 60,
+      window_days: 7,
+      active_alerts: 3,
+      critical: 1,
+      high: 1,
+      medium: 1,
+      unverified: 0,
+      resolved: 1,
+    }),
+    { level: 'high', label: 'Tinggi', tone: 'danger', activeAlerts: 3, resolved: 1 },
+  );
 });

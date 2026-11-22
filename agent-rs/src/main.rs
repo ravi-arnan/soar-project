@@ -339,11 +339,12 @@ async fn post_with_retry(
     client: &reqwest::Client,
     webhook: &str,
     webhook_secret: &str,
+    poll_token: &str,
     payload: &serde_json::Value,
     path: &Path,
 ) -> bool {
     for attempt in 1..=3 {
-        match post_to_n8n(client, webhook, webhook_secret, payload).await {
+        match post_to_n8n(client, webhook, webhook_secret, poll_token, payload).await {
             Ok(_) => return true,
             Err(e) => {
                 warn!(attempt, error = %e, "POST gagal, retry");
@@ -359,11 +360,15 @@ async fn post_to_n8n(
     client: &reqwest::Client,
     webhook: &str,
     webhook_secret: &str,
+    poll_token: &str,
     payload: &serde_json::Value,
 ) -> Result<()> {
     let mut req = client.post(webhook).json(payload);
     if !webhook_secret.is_empty() {
         req = req.header("X-SOAR-Webhook-Secret", webhook_secret);
+    }
+    if !poll_token.is_empty() {
+        req = req.bearer_auth(poll_token);
     }
     let resp = req.send().await?;
     let status = resp.status();
@@ -1197,9 +1202,10 @@ async fn main() -> Result<()> {
                     let http_c = http.clone();
                     let wh = args.webhook.clone();
                     let sec = args.webhook_secret.clone();
+                    let tok_c = fleet_poll_token.clone();
                     let p_clone = path.clone();
                     tokio::spawn(async move {
-                        post_with_retry(&http_c, &wh, &sec, &payload, &p_clone).await;
+                        post_with_retry(&http_c, &wh, &sec, &tok_c, &payload, &p_clone).await;
                     });
                     // Pulihkan canary agar siap mendeteksi serangan lanjutan
                     let _ = std::fs::write(&path, CANARY_BYTES);
@@ -1239,6 +1245,7 @@ async fn main() -> Result<()> {
             };
             let http_c = http.clone();
             let args_c = args.clone();
+            let tok_c = fleet_poll_token.clone();
             tokio::spawn(async move {
                 let _permit = permit;
                 if !wait_settled(&path).await {
@@ -1263,7 +1270,7 @@ async fn main() -> Result<()> {
                     for url in &urls {
                         info!(url = %url, path = %path.display(), "URL -> webhook phishing");
                         let payload = build_phishing_payload(&args_c, &path, url);
-                        post_with_retry(&http_c, &args_c.phishing_webhook, &args_c.webhook_secret, &payload, &path).await;
+                        post_with_retry(&http_c, &args_c.phishing_webhook, &args_c.webhook_secret, &tok_c, &payload, &path).await;
                     }
                     if is_url_file && !urls.is_empty() {
                         return;
@@ -1284,7 +1291,7 @@ async fn main() -> Result<()> {
 
                 let payload = build_payload(&args_c, &path, &hash);
                 info!(hash = %hash, path = %path.display(), "POST ke n8n");
-                post_with_retry(&http_c, &args_c.webhook, &args_c.webhook_secret, &payload, &path).await;
+                post_with_retry(&http_c, &args_c.webhook, &args_c.webhook_secret, &tok_c, &payload, &path).await;
             });
         }
     }

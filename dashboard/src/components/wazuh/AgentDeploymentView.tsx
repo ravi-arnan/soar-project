@@ -19,7 +19,7 @@ export interface EnrollmentRequest {
   os: string;
   arch: string;
   ip: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'revoked';
   agent_id: string | null;
   created_at: string;
   updated_at: string | null;
@@ -368,7 +368,11 @@ export function AgentDeploymentView({ onBackToAgents, userRole = 'viewer' }: Age
                     </td>
                     <td className="py-2 px-4">
                       <WuiHealth tone={r.status === 'approved' ? 'success' : 'danger'}>
-                        {r.status === 'approved' ? 'Approved' : 'Rejected'}
+                        {r.status === 'approved'
+                          ? 'Approved'
+                          : r.status === 'revoked'
+                          ? 'Revoked'
+                          : 'Rejected'}
                       </WuiHealth>
                     </td>
                     <td className="py-2 px-4 text-[11px]">{r.approved_by || '-'}</td>

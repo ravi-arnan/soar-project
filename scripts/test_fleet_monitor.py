@@ -793,6 +793,134 @@ class SecurityHardeningTests(_ApiTestCase):
         self.assertEqual(st2, 200)
         self.assertIsNone(d2.get("poll_token"))
 
+    def test_enrollment_text_format_and_zero_python_installer(self):
+        # 1. Script installer Linux/macOS tidak bergantung python3 & memakai relay HTTPS :443
+        for target_os in ("linux", "macos"):
+            with urlopen(f"{self.base_url}/api/enroll/script/{target_os}", timeout=2) as resp:
+                script = resp.read().decode("utf-8")
+            self.assertNotIn("python3", script)
+            self.assertIn("/api/agent/webhook/alert", script)
+            self.assertIn("/api/agent/webhook/phishing", script)
+            self.assertNotIn(":5678", script)
+
+        with urlopen(f"{self.base_url}/api/enroll/script/windows", timeout=2) as resp:
+            win_script = resp.read().decode("utf-8")
+        self.assertIn("WindowsBuiltInRole]::Administrator", win_script)
+        self.assertIn("/api/agent/webhook/alert", win_script)
+        self.assertNotIn(":5678", win_script)
+
+        # 2. format=text pada enroll/request dan enroll/status
+        req = Request(
+            f"{self.base_url}/api/enroll/request?format=text",
+            data=json.dumps({"hostname": "host-nopi-1", "os": "linux", "arch": "x86_64"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req, timeout=2) as resp:
+            self.assertEqual(resp.status, 201)
+            kv_text = resp.read().decode("utf-8")
+        kv = dict(line.split("=", 1) for line in kv_text.strip().splitlines() if "=" in line)
+        self.assertTrue(kv.get("request_id"))
+        self.assertTrue(kv.get("claim_secret"))
+        self.assertEqual(kv.get("status"), "pending")
+
+        st_app, _, _ = self.request(
+            "POST",
+            "/api/enroll/approve",
+            {"request_id": kv["request_id"]},
+            fleet_monitor.FLEET_COMMAND_TOKEN,
+        )
+        self.assertEqual(st_app, 200)
+
+        with urlopen(
+            f"{self.base_url}/api/enroll/status?request_id={kv['request_id']}&claim_secret={kv['claim_secret']}&format=text",
+            timeout=2,
+        ) as resp:
+            st_kv_text = resp.read().decode("utf-8")
+        st_kv = dict(line.split("=", 1) for line in st_kv_text.strip().splitlines() if "=" in line)
+        self.assertEqual(st_kv.get("status"), "approved")
+        self.assertTrue(st_kv.get("agent_id"))
+        self.assertTrue(st_kv.get("poll_token"))
+
+    def test_agent_webhook_relay_auth_and_secret(self):
+        from http.server import BaseHTTPRequestHandler
+
+        captured = []
+
+        class MockN8nHandler(BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                pass
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                captured.append(
+                    {
+                        "path": self.path,
+                        "secret": self.headers.get("X-SOAR-Webhook-Secret"),
+                        "body": body,
+                    }
+                )
+                out = json.dumps({"relayed": True}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+
+        mock_srv = HTTPServer(("127.0.0.1", 0), MockN8nHandler)
+        mock_thread = threading.Thread(target=mock_srv.serve_forever, daemon=True)
+        mock_thread.start()
+        orig_base = getattr(fleet_monitor, "N8N_WEBHOOK_BASE", None)
+        orig_secret = os.environ.get("N8N_WEBHOOK_SECRET")
+        try:
+            fleet_monitor.N8N_WEBHOOK_BASE = f"http://127.0.0.1:{mock_srv.server_port}"
+            os.environ["N8N_WEBHOOK_SECRET"] = "relay-test-secret"
+
+            # Tanpa token ditolak 401
+            st_unauth, _, _ = self.request(
+                "POST",
+                "/api/agent/webhook/alert",
+                {"agent": {"id": "009", "name": "host-009"}, "data": {"path": "/tmp/a"}},
+            )
+            self.assertEqual(st_unauth, 401)
+
+            # Dengan poll_token agent 009 sukses relay ke /webhook/wazuh-alert & /webhook/wazuh-phishing
+            poll_tok = fleet_monitor.FLEET_AGENT_POLL_TOKENS["009"]
+            st_ok, _, body_ok = self.request(
+                "POST",
+                "/api/agent/webhook/alert",
+                {"agent": {"id": "009", "name": "host-009"}, "data": {"path": "/tmp/a"}},
+                poll_tok,
+            )
+            self.assertEqual(st_ok, 200)
+            self.assertEqual(body_ok, {"relayed": True})
+
+            st_phish, _, _ = self.request(
+                "POST",
+                "/api/agent/webhook/phishing",
+                {"agent": {"id": "009", "name": "host-009"}, "data": {"url": "http://bad.test"}},
+                poll_tok,
+            )
+            self.assertEqual(st_phish, 200)
+            self.assertEqual(len(captured), 2)
+            self.assertEqual(captured[0]["path"], "/webhook/wazuh-alert")
+            self.assertEqual(captured[0]["secret"], "relay-test-secret")
+            self.assertEqual(captured[1]["path"], "/webhook/wazuh-phishing")
+            self.assertEqual(captured[1]["secret"], "relay-test-secret")
+        finally:
+            if orig_base is None:
+                if hasattr(fleet_monitor, "N8N_WEBHOOK_BASE"):
+                    delattr(fleet_monitor, "N8N_WEBHOOK_BASE")
+            else:
+                fleet_monitor.N8N_WEBHOOK_BASE = orig_base
+            if orig_secret is None:
+                os.environ.pop("N8N_WEBHOOK_SECRET", None)
+            else:
+                os.environ["N8N_WEBHOOK_SECRET"] = orig_secret
+            mock_srv.shutdown()
+            mock_srv.server_close()
+
 
 class ContainerStatsTests(unittest.TestCase):
     def setUp(self):

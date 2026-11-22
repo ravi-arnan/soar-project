@@ -13,6 +13,21 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+export type AgentRiskLevel = 'low' | 'medium' | 'high';
+
+export interface AgentRisk {
+  level: AgentRiskLevel;
+  label?: string;
+  score: number;
+  window_days: number;
+  active_alerts: number;
+  critical: number;
+  high: number;
+  medium: number;
+  unverified: number;
+  resolved: number;
+}
+
 export interface FleetAgent {
   id: string;
   name: string;
@@ -30,6 +45,7 @@ export interface FleetAgent {
   ram_gb?: { total?: number; used?: number };
   regDate?: string;
   watch_paths?: string[];
+  risk?: AgentRisk;
 }
 
 export interface FleetEvent {
@@ -132,7 +148,46 @@ export interface FleetStats {
   events_total: number;
   events_all_time?: number;
   severity: FleetSeverityCounts;
+  risk_summary?: { high: number; medium: number; low: number };
   capacity_demo?: string;
+}
+
+export function agentRiskMeta(risk?: AgentRisk): {
+  level: AgentRiskLevel;
+  label: 'Rendah' | 'Sedang' | 'Tinggi';
+  tone: 'success' | 'warning' | 'danger';
+  activeAlerts: number;
+  resolved: number;
+} {
+  const level: AgentRiskLevel =
+    risk?.level === 'high' || risk?.level === 'medium' || risk?.level === 'low'
+      ? risk.level
+      : 'low';
+  if (level === 'high') {
+    return {
+      level,
+      label: 'Tinggi',
+      tone: 'danger',
+      activeAlerts: risk?.active_alerts ?? 0,
+      resolved: risk?.resolved ?? 0,
+    };
+  }
+  if (level === 'medium') {
+    return {
+      level,
+      label: 'Sedang',
+      tone: 'warning',
+      activeAlerts: risk?.active_alerts ?? 0,
+      resolved: risk?.resolved ?? 0,
+    };
+  }
+  return {
+    level,
+    label: 'Rendah',
+    tone: 'success',
+    activeAlerts: risk?.active_alerts ?? 0,
+    resolved: risk?.resolved ?? 0,
+  };
 }
 
 export interface FleetSnapshot {

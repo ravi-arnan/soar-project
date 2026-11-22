@@ -466,6 +466,10 @@ function AuthenticatedDashboard({ userRole }: { userRole: 'admin' | 'analyst' | 
           <AgentDetailView
             agentId={effectiveAgentId}
             agent={selectedAgent}
+            onAgentRevoked={() => {
+              refresh();
+              setCurrentView('agents');
+            }}
             onNavigateTab={(tab, agentId) => {
               if (tab === 'Security events') {
                 setEventsAgentFilter(agentId);

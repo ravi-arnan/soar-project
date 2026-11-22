@@ -1,9 +1,17 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { agentStatus, formatWazuhTime, osType, type FleetAgent, type FleetHealth } from '@/lib/fleet';
+import {
+  agentRiskMeta,
+  agentStatus,
+  formatWazuhTime,
+  osType,
+  type AgentRiskLevel,
+  type FleetAgent,
+  type FleetHealth,
+} from '@/lib/fleet';
 import { WuiIcon } from '../wui/WuiIcon';
-import { WuiHealth, WuiPageHeader, WuiPanel } from '../wui/WuiPrimitives';
+import { HostRiskBadge, WuiHealth, WuiPageHeader, WuiPanel } from '../wui/WuiPrimitives';
 
 interface NetworkMapViewProps {
   agents: FleetAgent[];
@@ -12,7 +20,8 @@ interface NetworkMapViewProps {
 }
 
 type StatusFilter = 'all' | 'active' | 'disconnected';
-type GroupMode = 'status' | 'os' | 'flat';
+type RiskFilter = 'all' | AgentRiskLevel;
+type GroupMode = 'status' | 'os' | 'risk' | 'flat';
 
 function getOsIcon(os?: string): 'osWindows' | 'osMac' | 'osLinux' {
   const kind = osType(os || '');
@@ -38,6 +47,7 @@ function getSubnetPrefix(ip?: string): string {
 export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [riskFilter, setRiskFilter] = useState<RiskFilter>('all');
   const [groupMode, setGroupMode] = useState<GroupMode>('status');
 
   const normalized = useMemo(
@@ -45,6 +55,7 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
       agents.map((a) => {
         const st = agentStatus(a.status);
         const osKind = osType(a.os);
+        const risk = agentRiskMeta(a.risk);
         return {
           agent: a,
           status: st,
@@ -53,6 +64,7 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
           osLabel: osKind === 'windows' ? 'Windows' : osKind === 'mac' ? 'macOS' : 'Linux',
           isRust: a.type === 'rust',
           subnet: getSubnetPrefix(a.ip),
+          risk,
         };
       }),
     [agents]
@@ -60,6 +72,9 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
 
   const activeCount = normalized.filter((n) => n.active).length;
   const disconnectedCount = normalized.length - activeCount;
+  const highRiskCount = normalized.filter((n) => n.risk.level === 'high').length;
+  const mediumRiskCount = normalized.filter((n) => n.risk.level === 'medium').length;
+  const lowRiskCount = normalized.filter((n) => n.risk.level === 'low').length;
   const rustCount = normalized.filter((n) => n.isRust).length;
   const wazuhCount = normalized.length - rustCount;
   const coveragePct = normalized.length > 0 ? Math.round((activeCount / normalized.length) * 100) : 0;
@@ -69,6 +84,7 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
     return normalized.filter((item) => {
       if (statusFilter === 'active' && !item.active) return false;
       if (statusFilter === 'disconnected' && item.active) return false;
+      if (riskFilter !== 'all' && item.risk.level !== riskFilter) return false;
       if (!q) return true;
       return (
         item.agent.name.toLowerCase().includes(q) ||
@@ -77,11 +93,23 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
         (item.agent.os || '').toLowerCase().includes(q)
       );
     });
-  }, [normalized, searchTerm, statusFilter]);
+  }, [normalized, searchTerm, statusFilter, riskFilter]);
 
   const groups = useMemo(() => {
     if (groupMode === 'flat') {
       return [{ id: 'all', title: 'Semua Endpoint Terdaftar', tone: 'primary' as const, items: filtered }];
+    }
+    if (groupMode === 'risk') {
+      const buckets: Array<{ id: AgentRiskLevel; title: string; tone: 'danger' | 'warning' | 'success'; items: typeof filtered }> = [
+        { id: 'high', title: 'Kerentanan Tinggi (Butuh Tindakan)', tone: 'danger', items: [] },
+        { id: 'medium', title: 'Kerentanan Sedang (Perlu Pantau)', tone: 'warning', items: [] },
+        { id: 'low', title: 'Kerentanan Rendah (Normal)', tone: 'success', items: [] },
+      ];
+      for (const item of filtered) {
+        const target = buckets.find((b) => b.id === item.risk.level) || buckets[2];
+        target.items.push(item);
+      }
+      return buckets.filter((b) => b.items.length > 0);
     }
     if (groupMode === 'os') {
       const buckets: Array<{ id: string; title: string; tone: 'primary'; items: typeof filtered }> = [
@@ -293,6 +321,30 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
             ))}
           </div>
 
+          <div className="inline-flex border border-[#D3DAE6] rounded-[4px] overflow-hidden divide-x divide-[#D3DAE6] text-[12px]">
+            {(
+              [
+                { id: 'all', label: 'Semua Risiko', colorClass: 'text-[#535966]' },
+                { id: 'high', label: `Tinggi (${highRiskCount})`, colorClass: 'text-[#BD271E]' },
+                { id: 'medium', label: `Sedang (${mediumRiskCount})`, colorClass: 'text-[#935E00]' },
+                { id: 'low', label: `Rendah (${lowRiskCount})`, colorClass: 'text-[#017D73]' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => setRiskFilter(opt.id)}
+                className={`h-8 px-2.5 font-medium transition-colors cursor-pointer ${
+                  riskFilter === opt.id
+                    ? 'bg-[#EBF5FB] text-[#006BB4]'
+                    : `bg-white ${opt.colorClass} hover:bg-[#FAFBFD]`
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
           <select
             value={groupMode}
             onChange={(e) => setGroupMode(e.target.value as GroupMode)}
@@ -300,6 +352,7 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
             className="h-8 px-2.5 border border-[#D3DAE6] rounded-[4px] bg-white text-[12px] text-[#1A1C21] outline-none focus:border-[#006BB4]"
           >
             <option value="status">Kelompokkan: Status Koneksi</option>
+            <option value="risk">Kelompokkan: Tingkat Kerentanan</option>
             <option value="os">Kelompokkan: Sistem Operasi</option>
             <option value="flat">Tampilan Datar (Semua)</option>
           </select>
@@ -367,6 +420,10 @@ export function NetworkMapView({ agents, health, onSelectAgent }: NetworkMapView
                       <span className="font-mono text-[#535966] tabular-nums">
                         {formatWazuhTime(agent.lastKeepAlive)}
                       </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-0.5">
+                      <span className="text-[#69707D]">Kerentanan</span>
+                      <HostRiskBadge risk={agent.risk} showCount />
                     </div>
                   </div>
 

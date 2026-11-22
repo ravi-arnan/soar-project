@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createSessionToken } from "../../../lib/session.ts";
-import { POST } from "./route.ts";
+import { GET, POST } from "./route.ts";
 
 const originalFetch = globalThis.fetch;
 const originalToken = process.env.FLEET_COMMAND_TOKEN;
@@ -161,4 +161,33 @@ test("maps an upstream rejection to a generic gateway error", { concurrency: fal
 
   assert.equal(response.status, 502);
   assert.deepEqual(body, { error: "fleet monitor menolak command" });
+});
+
+test("GET proxies agent command polling with agent bearer token", { concurrency: false }, async () => {
+  process.env.FLEET_API_URL = "http://fleet.test";
+  let receivedUrl = "";
+  let receivedAuth = "";
+  globalThis.fetch = async (input, init) => {
+    receivedUrl = String(input);
+    receivedAuth = (init?.headers as Record<string, string>).Authorization ?? "";
+    return new Response(JSON.stringify({ commands: [{ id: "cmd-1", action: "scan" }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const unauthRes = await GET(new Request("http://dashboard.test/api/commands?agent_id=009"));
+  assert.equal(unauthRes.status, 401);
+
+  const okRes = await GET(
+    new Request("http://dashboard.test/api/commands?agent_id=009", {
+      headers: { authorization: "Bearer agent-poll-secret" },
+    }),
+  );
+  const body = await okRes.json();
+
+  assert.equal(okRes.status, 200);
+  assert.equal(receivedUrl, "http://fleet.test/api/commands?agent_id=009");
+  assert.equal(receivedAuth, "Bearer agent-poll-secret");
+  assert.deepEqual(body, { commands: [{ id: "cmd-1", action: "scan" }] });
 });

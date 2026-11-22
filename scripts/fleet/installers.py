@@ -32,13 +32,17 @@ echo "============================================================"
 HOSTNAME_VAL="$(hostname | tr -cd 'a-zA-Z0-9._-' | cut -c1-48)"
 ARCH_VAL="$(uname -m)"
 
+kv_get() {{
+  printf '%s\\n' "$1" | sed -n "s/^$2=//p" | head -n 1
+}}
+
 echo "[1/5] Mengajukan permohonan enrollment ke server SOAR..."
-ENROLL_RESP="$(curl -fsSL -X POST "${{SERVER_URL}}/api/enroll/request" \\
+ENROLL_RESP="$(curl -fsSL -X POST "${{SERVER_URL}}/api/enroll/request?format=text" \\
   -H "Content-Type: application/json" \\
   -d "{{\\"hostname\\":\\"${{HOSTNAME_VAL}}\\",\\"os\\":\\"linux\\",\\"arch\\":\\"${{ARCH_VAL}}\\"}}")"
 
-REQ_ID="$(printf '%s' "$ENROLL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('request_id',''))")"
-CLAIM_SECRET="$(printf '%s' "$ENROLL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('claim_secret',''))")"
+REQ_ID="$(kv_get "$ENROLL_RESP" request_id)"
+CLAIM_SECRET="$(kv_get "$ENROLL_RESP" claim_secret)"
 if [ -z "$REQ_ID" ]; then
   echo "[x] Gagal mendaftar ke server SOAR. Response: $ENROLL_RESP"
   exit 1
@@ -52,12 +56,13 @@ AGENT_ID=""
 POLL_TOKEN=""
 AGENT_NAME=""
 for _ in $(seq 1 180); do
-  STATUS_RESP="$(curl -fsSL "${{SERVER_URL}}/api/enroll/status?request_id=${{REQ_ID}}&claim_secret=${{CLAIM_SECRET}}" 2>/dev/null || true)"
-  STATUS="$(printf '%s' "$STATUS_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','pending'))" 2>/dev/null || echo pending)"
+  STATUS_RESP="$(curl -fsSL "${{SERVER_URL}}/api/enroll/status?request_id=${{REQ_ID}}&claim_secret=${{CLAIM_SECRET}}&format=text" 2>/dev/null || true)"
+  STATUS="$(kv_get "$STATUS_RESP" status)"
+  STATUS="${{STATUS:-pending}}"
   if [ "$STATUS" = "approved" ]; then
-    AGENT_ID="$(printf '%s' "$STATUS_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent_id',''))")"
-    POLL_TOKEN="$(printf '%s' "$STATUS_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('poll_token',''))")"
-    AGENT_NAME="$(printf '%s' "$STATUS_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent_name',''))")"
+    AGENT_ID="$(kv_get "$STATUS_RESP" agent_id)"
+    POLL_TOKEN="$(kv_get "$STATUS_RESP" poll_token)"
+    AGENT_NAME="$(kv_get "$STATUS_RESP" agent_name)"
     break
   elif [ "$STATUS" = "rejected" ]; then
     echo "[x] Permohonan enrollment DITOLAK oleh Admin."
@@ -97,7 +102,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${{BINARY_PATH}} --webhook http://${{SERVER_HOST}}:5678/webhook/wazuh-alert --phishing-webhook http://${{SERVER_HOST}}:5678/webhook/wazuh-phishing --agent-id ${{AGENT_ID}} --agent-name ${{AGENT_NAME}} --fleet-url ${{SERVER_URL}}/api/heartbeat
+ExecStart=${{BINARY_PATH}} --webhook ${{SERVER_URL}}/api/agent/webhook/alert --phishing-webhook ${{SERVER_URL}}/api/agent/webhook/phishing --agent-id ${{AGENT_ID}} --agent-name ${{AGENT_NAME}} --fleet-url ${{SERVER_URL}}/api/heartbeat
 Restart=always
 RestartSec=5
 Environment=RUST_LOG=info
@@ -138,13 +143,17 @@ if [ "$ARCH_VAL" = "x86_64" ]; then
   BIN_ASSET="soar-agent-macos-x86_64"
 fi
 
+kv_get() {{
+  printf '%s\\n' "$1" | sed -n "s/^$2=//p" | head -n 1
+}}
+
 echo "[1/5] Mengajukan permohonan enrollment macOS (${{ARCH_VAL}})..."
-ENROLL_RESP="$(curl -fsSL -X POST "${{SERVER_URL}}/api/enroll/request" \\
+ENROLL_RESP="$(curl -fsSL -X POST "${{SERVER_URL}}/api/enroll/request?format=text" \\
   -H "Content-Type: application/json" \\
   -d "{{\\"hostname\\":\\"${{HOSTNAME_VAL}}\\",\\"os\\":\\"macos\\",\\"arch\\":\\"${{ARCH_VAL}}\\"}}")"
 
-REQ_ID="$(printf '%s' "$ENROLL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('request_id',''))")"
-CLAIM_SECRET="$(printf '%s' "$ENROLL_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('claim_secret',''))")"
+REQ_ID="$(kv_get "$ENROLL_RESP" request_id)"
+CLAIM_SECRET="$(kv_get "$ENROLL_RESP" claim_secret)"
 if [ -z "$REQ_ID" ]; then
   echo "[x] Gagal mendaftar ke server SOAR."
   exit 1
@@ -155,12 +164,13 @@ AGENT_ID=""
 POLL_TOKEN=""
 AGENT_NAME=""
 for _ in $(seq 1 180); do
-  STATUS_RESP="$(curl -fsSL "${{SERVER_URL}}/api/enroll/status?request_id=${{REQ_ID}}&claim_secret=${{CLAIM_SECRET}}" 2>/dev/null || true)"
-  STATUS="$(printf '%s' "$STATUS_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','pending'))" 2>/dev/null || echo pending)"
+  STATUS_RESP="$(curl -fsSL "${{SERVER_URL}}/api/enroll/status?request_id=${{REQ_ID}}&claim_secret=${{CLAIM_SECRET}}&format=text" 2>/dev/null || true)"
+  STATUS="$(kv_get "$STATUS_RESP" status)"
+  STATUS="${{STATUS:-pending}}"
   if [ "$STATUS" = "approved" ]; then
-    AGENT_ID="$(printf '%s' "$STATUS_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent_id',''))")"
-    POLL_TOKEN="$(printf '%s' "$STATUS_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('poll_token',''))")"
-    AGENT_NAME="$(printf '%s' "$STATUS_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent_name',''))")"
+    AGENT_ID="$(kv_get "$STATUS_RESP" agent_id)"
+    POLL_TOKEN="$(kv_get "$STATUS_RESP" poll_token)"
+    AGENT_NAME="$(kv_get "$STATUS_RESP" agent_name)"
     break
   elif [ "$STATUS" = "rejected" ]; then
     echo "[x] Permohonan enrollment DITOLAK oleh Admin."
@@ -200,8 +210,8 @@ cat > "$PLIST_PATH" <<PLIST
   <key>ProgramArguments</key>
   <array>
     <string>${{BINARY_PATH}}</string>
-    <string>--webhook</string><string>http://${{SERVER_HOST}}:5678/webhook/wazuh-alert</string>
-    <string>--phishing-webhook</string><string>http://${{SERVER_HOST}}:5678/webhook/wazuh-phishing</string>
+    <string>--webhook</string><string>${{SERVER_URL}}/api/agent/webhook/alert</string>
+    <string>--phishing-webhook</string><string>${{SERVER_URL}}/api/agent/webhook/phishing</string>
     <string>--agent-id</string><string>${{AGENT_ID}}</string>
     <string>--agent-name</string><string>${{AGENT_NAME}}</string>
     <string>--fleet-url</string><string>${{SERVER_URL}}/api/heartbeat</string>
@@ -236,6 +246,11 @@ $TaskName = "SOAR Agent"
 
 $HostName = $env:COMPUTERNAME
 $Arch = $env:PROCESSOR_ARCHITECTURE
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {{
+    throw "Jalankan PowerShell sebagai Administrator (Run as Administrator) untuk memasang SOAR Agent."
+}}
 
 Write-Host "[1/5] Mengajukan permohonan enrollment ke $ServerUrl ..."
 $Body = @{{ hostname = $HostName; os = "windows"; arch = $Arch }} | ConvertTo-Json
@@ -288,7 +303,7 @@ icacls $TokenFile /inheritance:r /grant:r "*S-1-5-18:(R)" "*S-1-5-32-544:(R)" | 
 
 Write-Host "[5/5] Mendaftarkan Scheduled Task $TaskName ..."
 $Watch = "$env:USERPROFILE\\Downloads,$env:USERPROFILE\\Desktop,$env:USERPROFILE\\Documents"
-$ArgsStr = "--webhook http://${{ServerHost}}:5678/webhook/wazuh-alert --phishing-webhook http://${{ServerHost}}:5678/webhook/wazuh-phishing --agent-id $AgentId --agent-name `"$AgentName`" --fleet-url $ServerUrl/api/heartbeat --fleet-poll-token-file `"$TokenFile`" --watch `"$Watch`""
+$ArgsStr = "--webhook $ServerUrl/api/agent/webhook/alert --phishing-webhook $ServerUrl/api/agent/webhook/phishing --agent-id $AgentId --agent-name `"$AgentName`" --fleet-url $ServerUrl/api/heartbeat --fleet-poll-token-file `"$TokenFile`" --watch `"$Watch`""
 Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
 $Action = New-ScheduledTaskAction -Execute $BinPath -Argument $ArgsStr
 $Trigger1 = New-ScheduledTaskTrigger -AtStartup

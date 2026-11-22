@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { agentStatus, formatWazuhTime, osType } from '@/lib/fleet';
-import { WuiHealth } from '../wui/WuiPrimitives';
+import { agentRiskMeta, agentStatus, formatWazuhTime, osType } from '@/lib/fleet';
+import { HostRiskBadge, WuiHealth } from '../wui/WuiPrimitives';
 import { WuiIcon } from '../wui/WuiIcon';
 import type { FleetAgent } from '@/lib/fleet';
 
@@ -52,12 +52,12 @@ export function AgentsManagement({
       return `"${safe.replace(/"/g, '""')}"`;
     };
     const lines = agents.map((a) =>
-      [a.id, a.name, a.ip, a.groups.join(';'), a.os, a.version, a.lastKeepAlive, a.status]
+      [a.id, a.name, a.ip, a.groups.join(';'), a.os, a.version, a.lastKeepAlive, a.status, agentRiskMeta(a.risk).label]
         .map(cell)
         .join(',')
     );
     const blob = new Blob(
-      [[['id', 'name', 'ip', 'groups', 'os', 'version', 'last_keep_alive', 'status'].join(','), ...lines].join('\n')],
+      [[['id', 'name', 'ip', 'groups', 'os', 'version', 'last_keep_alive', 'status', 'risk'].join(','), ...lines].join('\n')],
       { type: 'text/csv' }
     );
     const url = URL.createObjectURL(blob);
@@ -80,6 +80,7 @@ export function AgentsManagement({
     regDate: a.regDate && a.regDate !== '-' ? formatWazuhTime(a.regDate) : '-',
     lastKeepAlive: formatWazuhTime(a.lastKeepAlive),
     status: agentStatus(a.status),
+    risk: a.risk,
   }));
 
   const total = agents.length;
@@ -351,6 +352,7 @@ export function AgentsManagement({
                 <th className="py-2.5 px-3">Registration date</th>
                 <th className="py-2.5 px-3">Last keep alive</th>
                 <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3">Kerentanan</th>
                 <th className="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -407,6 +409,9 @@ export function AgentsManagement({
                     >
                       {agent.status.replace('_', ' ')}
                     </WuiHealth>
+                  </td>
+                  <td className="py-2 px-3 whitespace-nowrap">
+                    <HostRiskBadge risk={agent.risk} showCount />
                   </td>
                   <td className="py-2 px-3 text-right">
                     <div className="flex items-center justify-end gap-2 text-[#006BB4]">

@@ -8,7 +8,7 @@ import { ExpandableCard } from './ExpandableCard';
 import { AgentCredentialLifecyclePanel, CommandQueueHistoryPanel } from './AuditAndCommandsView';
 import { PeriodFilter } from './PeriodFilter';
 import { useAuth } from '../AuthContext';
-import { WuiHealth } from '../wui/WuiPrimitives';
+import { HostRiskBadge, WuiHealth } from '../wui/WuiPrimitives';
 import { useEventHistory, periodToWindow } from '@/lib/fleet';
 import type { FleetAgent, FleetEvent, FleetScanResult, PeriodValue } from '@/lib/fleet';
 
@@ -17,6 +17,7 @@ interface AgentDetailViewProps {
   /** Agent terpilih dari /api/fleet. */
   agent?: FleetAgent;
   onNavigateTab?: (tab: string, agentId?: string) => void;
+  onAgentRevoked?: () => void;
 }
 
 const DEFAULT_PERIOD: PeriodValue = { preset: '7d', since: null, until: null };
@@ -444,6 +445,7 @@ export function AgentDetailView({
   agentId = '004',
   agent,
   onNavigateTab,
+  onAgentRevoked,
 }: AgentDetailViewProps) {
   const { user } = useAuth();
   const canWrite = user?.role === 'admin' || user?.role === 'analyst';
@@ -551,6 +553,13 @@ export function AgentDetailView({
             >
               {status.replace('_', ' ')}
             </WuiHealth>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[#69707D] text-[11px]">Kerentanan (7h)</div>
+          <div className="mt-0.5">
+            <HostRiskBadge risk={agent?.risk} showCount />
           </div>
         </div>
 
@@ -740,6 +749,7 @@ export function AgentDetailView({
             agentId={agentId}
             agentName={agent?.name || `agent-${agentId}`}
             canManage={user?.role === 'admin'}
+            onRevoked={onAgentRevoked}
           />
         </ExpandableCard>
       )}

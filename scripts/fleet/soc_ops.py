@@ -657,6 +657,113 @@ def enrich_events_with_triage(db_fn, events):
     return out
 
 
+_RISK_LABELS = {
+    "high": "Tinggi",
+    "medium": "Sedang",
+    "low": "Rendah",
+}
+
+
+def default_agent_risk(window_days=7):
+    """Struktur risiko default (Rendah / Hijau) untuk host tanpa alert signifikan."""
+    return {
+        "level": "low",
+        "label": "Rendah",
+        "score": 0,
+        "window_days": window_days,
+        "active_alerts": 0,
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "unverified": 0,
+        "resolved": 0,
+    }
+
+
+def _classify_host_risk(counts, window_days=7):
+    ac = counts["critical"]
+    ah = counts["high"]
+    am = counts["medium"]
+    au = counts["unverified"]
+    res = counts["resolved"]
+    if ac >= 1 or ah >= 3 or (ah >= 1 and am >= 3):
+        level = "high"
+    elif ah >= 1 or am >= 1 or au >= 2 or res >= 1:
+        level = "medium"
+    else:
+        level = "low"
+    score = min(100, ac * 40 + ah * 20 + am * 10 + au * 5 + res * 5)
+    return {
+        "level": level,
+        "label": _RISK_LABELS[level],
+        "score": score,
+        "window_days": window_days,
+        "active_alerts": ac + ah + am + au,
+        "critical": ac,
+        "high": ah,
+        "medium": am,
+        "unverified": au,
+        "resolved": res,
+    }
+
+
+def compute_agent_risk_map(db_fn, window_days=7):
+    """Hitung tingkat kerentanan (low/medium/high) per agent_id dari SQLite events + alert_triage."""
+    since_iso = (
+        (datetime.now(timezone.utc) - timedelta(days=max(1, int(window_days))))
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    rows = []
+    try:
+        with closing(db_fn()) as conn:
+            raw = conn.execute(
+                """SELECT id, agent_id, hash, severity
+                   FROM events
+                   WHERE source = 'soar' AND ts >= ? AND agent_id IS NOT NULL AND agent_id != ''""",
+                (since_iso,),
+            ).fetchall()
+            rows = [dict(r) for r in raw]
+    except Exception:
+        return {}
+
+    if not rows:
+        return {}
+
+    enriched = enrich_events_with_triage(db_fn, rows)
+    buckets = {}
+    for ev in enriched:
+        aid = str(ev.get("agent_id") or "").strip()
+        if not aid:
+            continue
+        triage = str(ev.get("triage_status") or "new").strip().lower()
+        if triage == "false_positive":
+            continue
+        sev = str(ev.get("severity") or "INFO").strip().upper()
+        if sev not in ("CRITICAL", "HIGH", "MEDIUM", "UNVERIFIED"):
+            continue
+        b = buckets.setdefault(
+            aid, {"critical": 0, "high": 0, "medium": 0, "unverified": 0, "resolved": 0}
+        )
+        if triage in ("contained", "resolved"):
+            if sev in ("CRITICAL", "HIGH", "MEDIUM"):
+                b["resolved"] += 1
+            continue
+        if sev == "CRITICAL":
+            b["critical"] += 1
+        elif sev == "HIGH":
+            b["high"] += 1
+        elif sev == "MEDIUM":
+            b["medium"] += 1
+        elif sev == "UNVERIFIED":
+            b["unverified"] += 1
+
+    return {
+        aid: _classify_host_risk(counts, window_days=window_days)
+        for aid, counts in buckets.items()
+    }
+
+
 # ---------------------------------------------------------------------------
 # 4. Dashboard HITL Decision Queue Integration (`alert-log` :8091)
 # ---------------------------------------------------------------------------

@@ -53,6 +53,9 @@ const nextConfig: NextConfig = {
       { source: "/api/update/script/:os", destination: `${base}/api/update/script/:os` },
       { source: "/api/installer/:path*", destination: `${base}/api/installer/:path*` },
       { source: "/api/heartbeat", destination: `${base}/api/heartbeat` },
+      { source: "/api/commands/ack", destination: `${base}/api/commands/ack` },
+      { source: "/api/scan-result", destination: `${base}/api/scan-result` },
+      { source: "/api/agent/webhook/:path*", destination: `${base}/api/agent/webhook/:path*` },
       { source: "/healthz", destination: `${base}/healthz` },
     ];
   },

@@ -1,3 +1,4 @@
+import { fleetBaseUrl } from "../../../lib/requestGuard.ts";
 import {
   isValidSession,
   resolveAuthorizedSession,
@@ -90,6 +91,45 @@ async function readJsonBody(request: Request): Promise<unknown> {
     offset += chunk.byteLength;
   }
   return JSON.parse(new TextDecoder().decode(body));
+}
+
+export async function GET(request: Request): Promise<Response> {
+  const authHeader = (request.headers.get("authorization") ?? "").trim();
+  if (!authHeader.toLowerCase().startsWith("bearer ") || authHeader.length <= 7) {
+    return errorResponse("unauthorized", 401);
+  }
+  const reqUrl = new URL(request.url);
+  const agentId = (reqUrl.searchParams.get("agent_id") ?? "").trim();
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(agentId)) {
+    return errorResponse("agent_id tidak valid", 400);
+  }
+  const commandUrl = fleetCommandUrl(process.env.FLEET_API_URL || fleetBaseUrl());
+  if (!commandUrl) {
+    return errorResponse("command service belum dikonfigurasi", 503);
+  }
+  commandUrl.searchParams.set("agent_id", agentId);
+  try {
+    const upstream = await fetch(commandUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: authHeader,
+      },
+      cache: "no-store",
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
+    });
+    const text = await upstream.text();
+    return new Response(text, {
+      status: upstream.status,
+      headers: {
+        "Content-Type": upstream.headers.get("content-type") || "application/json",
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch {
+    return errorResponse("fleet monitor tidak dapat dihubungi", 502);
+  }
 }
 
 export async function POST(request: Request): Promise<Response> {

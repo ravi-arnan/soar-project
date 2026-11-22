@@ -229,6 +229,18 @@ class SocOpsTests(unittest.TestCase):
         code_after, _ = self.request("GET", "/api/commands?agent_id=009", token=new_token)
         self.assertEqual(code_after, 403)
 
+        # Agent revoked (even if still in HEARTBEATS) must not appear in active fleet roster
+        fleet_monitor.HEARTBEATS["009"] = {
+            "name": "revoked-host",
+            "ip": "10.0.0.9",
+            "os": "linux",
+            "version": "0.3.0",
+            "last_seen": 0,
+            "revoked": True,
+        }
+        snap_after_rev = fleet_monitor.build_fleet(fleet_monitor._cfg())
+        self.assertFalse(any(a["id"] == "009" for a in snap_after_rev["agents"]))
+
     def test_alert_triage_and_event_enrichment(self):
         # Insert an event via /webhook-log
         ev_hash = "e" * 64
@@ -336,6 +348,85 @@ class SocOpsTests(unittest.TestCase):
                 os.environ["ALERT_LOG_URL"] = old_url
             mock_srv.shutdown()
             mock_srv.server_close()
+
+    def test_agent_risk_level_classification(self):
+        # Agent 009: CRITICAL alert -> level 'high'
+        self.request(
+            "POST",
+            "/webhook-log",
+            {
+                "agent": "host-crit",
+                "agent_id": "009",
+                "path": "/tmp/crit.elf",
+                "hash": "1" * 64,
+                "severity": "CRITICAL",
+            },
+            token=TEST_COMMAND_TOKEN,
+        )
+        # Agent 010: 1 HIGH alert -> level 'medium'
+        self.request(
+            "POST",
+            "/webhook-log",
+            {
+                "agent": "host-med",
+                "agent_id": "010",
+                "path": "/tmp/med.sh",
+                "hash": "2" * 64,
+                "severity": "HIGH",
+            },
+            token=TEST_COMMAND_TOKEN,
+        )
+        # Agent 011: INFO + false_positive HIGH -> tidak boleh masuk tinggi/sedang
+        self.request(
+            "POST",
+            "/webhook-log",
+            {
+                "agent": "host-low",
+                "agent_id": "011",
+                "path": "/tmp/info.txt",
+                "hash": "3" * 64,
+                "severity": "INFO",
+            },
+            token=TEST_COMMAND_TOKEN,
+        )
+        self.request(
+            "POST",
+            "/webhook-log",
+            {
+                "agent": "host-low",
+                "agent_id": "011",
+                "path": "/tmp/fp.exe",
+                "hash": "4" * 64,
+                "severity": "HIGH",
+            },
+            token=TEST_COMMAND_TOKEN,
+        )
+        self.request(
+            "POST",
+            "/api/triage",
+            {"event_key": f"011:{'4' * 64}", "status": "false_positive"},
+            token=TEST_COMMAND_TOKEN,
+        )
+
+        risk_map = fleet_monitor._fleet_soc.compute_agent_risk_map(fleet_monitor._db, window_days=7)
+        self.assertEqual(risk_map["009"]["level"], "high")
+        self.assertEqual(risk_map["009"]["critical"], 1)
+        self.assertEqual(risk_map["010"]["level"], "medium")
+        self.assertEqual(risk_map["010"]["high"], 1)
+        self.assertNotIn("011", risk_map)
+
+        # Pastikan build_fleet() menyertakan field risk per agent + risk_summary
+        fleet_monitor.HEARTBEATS["009"] = {
+            "name": "host-crit",
+            "ip": "10.0.0.9",
+            "os": "linux",
+            "version": "0.3.0",
+            "last_seen": 9999999999.0,
+        }
+        snap = fleet_monitor.build_fleet(fleet_monitor._cfg())
+        a009 = next(a for a in snap["agents"] if a["id"] == "009")
+        self.assertEqual(a009["risk"]["level"], "high")
+        self.assertGreaterEqual(snap["stats"]["risk_summary"]["high"], 1)
 
 
 if __name__ == "__main__":

@@ -290,7 +290,7 @@ def _load_state():
     if isinstance(hbs, dict):
         with _fleet_locks.STATE_LOCK:
             for k, v in hbs.items():
-                if isinstance(v, dict) and v.get("last_seen", 0) >= cutoff:
+                if isinstance(v, dict) and not v.get("revoked") and v.get("last_seen", 0) >= cutoff:
                     HEARTBEATS[str(k)] = v
     print(f"state dimuat: {len(HEARTBEATS)} heartbeat dari {STATE_FILE}", flush=True)
 
@@ -614,6 +614,8 @@ def build_fleet(cfg):
     with _fleet_locks.STATE_LOCK:
         hb_items = list(HEARTBEATS.items())
     for hid, hb in hb_items:
+        if hb.get("revoked"):
+            continue
         age = now - hb["last_seen"]
         status = "active" if age < HEARTBEAT_TTL else "disconnected"
         existing = next((x for x in fleet if x["id"] == hid), None)
@@ -644,6 +646,15 @@ def build_fleet(cfg):
         fleet.append(entry)
 
     fleet.sort(key=lambda x: x["id"])
+
+    risk_map = _fleet_soc.compute_agent_risk_map(_db, window_days=7)
+    risk_summary = {"high": 0, "medium": 0, "low": 0}
+    for item in fleet:
+        risk_info = risk_map.get(item["id"]) or _fleet_soc.default_agent_risk(window_days=7)
+        item["risk"] = risk_info
+        lvl = risk_info.get("level", "low")
+        if lvl in risk_summary:
+            risk_summary[lvl] += 1
 
     has_gemini = bool(cfg.get("gemini_key"))
     misp_url = os.environ.get("MISP_HEALTH_URL", "http://127.0.0.1:8090/healthz")
@@ -723,6 +734,7 @@ def build_fleet(cfg):
             "events_total": events_total,
             "events_all_time": events_all,
             "severity": sev_counts,
+            "risk_summary": risk_summary,
         },
         "agents": fleet,
     }
@@ -3725,6 +3737,19 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _plain_kv(self, code, pairs):
+        lines = []
+        for k, v in pairs:
+            safe_val = str(v if v is not None else "").replace("\r", "").replace("\n", " ")
+            lines.append(f"{k}={safe_val}")
+        body = ("\n".join(lines) + "\n").encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _unauthorized(self):
         self._json(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
 
@@ -3973,12 +3998,30 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             req_id = qs.get("request_id", [""])[0].strip()
             claim_secret = qs.get("claim_secret", [""])[0].strip()
+            fmt = (qs.get("format", [""])[0] or "").strip().lower()
             if not req_id:
-                self._json(400, {"error": "request_id diperlukan"})
+                if fmt == "text":
+                    self._plain_kv(400, [("error", "request_id diperlukan")])
+                else:
+                    self._json(400, {"error": "request_id diperlukan"})
                 return
             data, code, err = _enroll_claim_status(req_id, claim_secret=claim_secret)
             if err:
-                self._json(code, {"error": err})
+                if fmt == "text":
+                    self._plain_kv(code, [("error", err)])
+                else:
+                    self._json(code, {"error": err})
+                return
+            if fmt == "text":
+                self._plain_kv(
+                    200,
+                    [
+                        ("status", data.get("status", "pending")),
+                        ("agent_id", data.get("agent_id") or ""),
+                        ("agent_name", data.get("agent_name") or ""),
+                        ("poll_token", data.get("poll_token") or ""),
+                    ],
+                )
                 return
             self._json(200, data)
         elif parsed.path == "/api/enroll/requests":
@@ -4097,7 +4140,22 @@ class Handler(BaseHTTPRequestHandler):
                 if not _is_agent_or_command_authorized(self.headers, hid):
                     legacy_compat = os.environ.get("FLEET_LEGACY_HEARTBEAT_COMPAT", "").strip().lower() in ("1", "true", "yes")
                     with _fleet_locks.STATE_LOCK:
-                        enrolled = bool(FLEET_AGENT_POLL_TOKENS.get(hid)) or (hid in HEARTBEATS)
+                        hb_existing = HEARTBEATS.get(hid) or {}
+                        enrolled = (
+                            bool(FLEET_AGENT_POLL_TOKENS.get(hid))
+                            or (hid in HEARTBEATS and not hb_existing.get("revoked"))
+                        )
+                    if enrolled:
+                        try:
+                            with closing(_db()) as conn:
+                                st_row = conn.execute(
+                                    "SELECT status FROM enrolled_agents WHERE agent_id = ?",
+                                    (hid,),
+                                ).fetchone()
+                                if st_row and st_row["status"] == "revoked":
+                                    enrolled = False
+                        except Exception:
+                            pass
                     if not (legacy_compat and _valid_agent_id(hid) and enrolled):
                         self._unauthorized()
                         return
@@ -4601,12 +4659,23 @@ class Handler(BaseHTTPRequestHandler):
             data, err = self._read_json(max_bytes=8192)
             if err:
                 return
+            fmt = (parse_qs(parsed.query).get("format", [""])[0] or "").strip().lower()
             try:
                 hostname = str(data.get("hostname", "")).strip()
                 os_name = str(data.get("os", "linux")).strip()
                 arch = str(data.get("arch", "x86_64")).strip()
                 ip = self.client_address[0]
                 req = _enroll_request_create(hostname, os_name, arch, ip)
+                if fmt == "text":
+                    self._plain_kv(
+                        201,
+                        [
+                            ("request_id", req["request_id"]),
+                            ("claim_secret", req["claim_secret"]),
+                            ("status", "pending"),
+                        ],
+                    )
+                    return
                 self._json(
                     201,
                     {
@@ -4617,7 +4686,10 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 )
             except Exception as e:
-                self._json(400, {"error": str(e)})
+                if fmt == "text":
+                    self._plain_kv(400, [("error", str(e))])
+                else:
+                    self._json(400, {"error": str(e)})
         elif parsed.path == "/api/enroll/approve":
             if not _bearer_matches(self.headers, FLEET_COMMAND_TOKEN):
                 self._unauthorized()
@@ -5037,6 +5109,53 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(code, {"ok": code == 200, "resolved": resolved, "ar_dispatched": ar_dispatched})
             except Exception as e:
                 self._json(400, {"error": str(e)})
+        elif parsed.path in ("/api/agent/webhook/alert", "/api/agent/webhook/phishing"):
+            data, err = self._read_json(max_bytes=262144)
+            if err:
+                return
+            agent_obj = data.get("agent") if isinstance(data.get("agent"), dict) else {}
+            aid = str(data.get("agent_id") or agent_obj.get("id") or "").strip()
+            if not _is_agent_or_command_authorized(self.headers, aid):
+                self._unauthorized()
+                return
+            hook_slug = (
+                "wazuh-phishing"
+                if parsed.path.endswith("/phishing")
+                else "wazuh-alert"
+            )
+            n8n_base = (
+                globals().get("N8N_WEBHOOK_BASE")
+                or os.environ.get("N8N_WEBHOOK_BASE")
+                or "http://127.0.0.1:5678"
+            ).rstrip("/")
+            target_url = f"{n8n_base}/webhook/{hook_slug}"
+            fwd_headers = {"Content-Type": "application/json"}
+            wh_secret = os.environ.get("N8N_WEBHOOK_SECRET", "").strip()
+            if wh_secret:
+                fwd_headers["X-SOAR-Webhook-Secret"] = wh_secret
+            req = urllib.request.Request(
+                target_url,
+                data=json.dumps(data).encode("utf-8"),
+                headers=fwd_headers,
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    resp_body = resp.read()
+                    try:
+                        parsed_resp = json.loads(resp_body.decode("utf-8")) if resp_body else {"ok": True}
+                    except Exception:
+                        parsed_resp = {"ok": True, "upstream_status": resp.status}
+                    self._json(resp.status, parsed_resp if isinstance(parsed_resp, dict) else {"ok": True, "result": parsed_resp})
+            except urllib.error.HTTPError as he:
+                err_txt = ""
+                try:
+                    err_txt = he.read().decode("utf-8", "replace")[:300]
+                except Exception:
+                    pass
+                self._json(he.code if 400 <= he.code < 600 else 502, {"error": err_txt or str(he)})
+            except Exception as e:
+                self._json(502, {"error": f"relay webhook n8n gagal: {e}"})
         else:
             self._json(404, {"error": "not found"})
 

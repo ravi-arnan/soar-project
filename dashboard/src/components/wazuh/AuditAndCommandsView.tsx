@@ -384,10 +384,12 @@ export function AgentCredentialLifecyclePanel({
   agentId,
   agentName,
   canManage,
+  onRevoked,
 }: {
   agentId: string;
   agentName: string;
   canManage: boolean;
+  onRevoked?: () => void;
 }) {
   const [rotatedToken, setRotatedToken] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>('');
@@ -444,11 +446,17 @@ export function AgentCredentialLifecyclePanel({
       const res = await fetch('/api/enroll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'revoke', agent_id: agentId, reason }),
+        body: JSON.stringify({
+          action: 'revoke',
+          agent_id: agentId,
+          reason,
+          remove_heartbeat: true,
+        }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setStatusMsg(`Akses agent ${agentId} telah dicabut (revoked) dan antrean command dibatalkan.`);
+        onRevoked?.();
       } else {
         setStatusMsg(`Gagal mencabut token: ${data.error || res.status}`);
       }

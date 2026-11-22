@@ -10,6 +10,9 @@ const ALLOWED_INSTALLER_API_PATHS = [
   '/api/installer/download/',
   '/api/installer/checksum/',
   '/api/heartbeat',
+  '/api/commands/ack',
+  '/api/scan-result',
+  '/api/agent/webhook/',
 ];
 
 function extractHostname(request: NextRequest): string {
@@ -38,9 +41,11 @@ export function proxy(request: NextRequest) {
   }
 
   if (pathname.startsWith('/api/')) {
-    const allowed = ALLOWED_INSTALLER_API_PATHS.some((entry) =>
-      entry.endsWith('/') ? pathname.startsWith(entry) : pathname === entry
-    );
+    const allowed =
+      (pathname === '/api/commands' && request.method === 'GET') ||
+      ALLOWED_INSTALLER_API_PATHS.some((entry) =>
+        entry.endsWith('/') ? pathname.startsWith(entry) : pathname === entry
+      );
     if (allowed) {
       return NextResponse.next();
     }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { agentRiskMeta, type AgentRisk } from '@/lib/fleet';
 import { WuiIcon, type WuiIconType } from './WuiIcon';
 
 /**
@@ -59,6 +60,43 @@ export function WuiHealth({
     <span className={`inline-flex items-center gap-1.5 text-[12px] font-medium ${cfg.text} ${className}`}>
       <WuiIcon type={cfg.icon} size="s" />
       <span className="text-[#1A1C21]">{children}</span>
+    </span>
+  );
+}
+
+const RISK_TEXT_CLASS = {
+  low: 'text-[#017D73]',
+  medium: 'text-[#935E00]',
+  high: 'text-[#BD271E]',
+} as const;
+
+/** Indikator tingkat kerentanan host (Hijau=Rendah, Kuning=Sedang, Merah=Tinggi) berbasis teks berwarna. */
+export function HostRiskBadge({
+  risk,
+  showCount = false,
+}: {
+  risk?: AgentRisk;
+  showCount?: boolean;
+}) {
+  const meta = agentRiskMeta(risk);
+  const titleParts = [
+    `Kerentanan ${meta.label} (${risk?.window_days ?? 7} hari terakhir)`,
+    `Alert aktif: ${meta.activeAlerts}`,
+  ];
+  if (risk?.critical) titleParts.push(`Critical: ${risk.critical}`);
+  if (risk?.high) titleParts.push(`High: ${risk.high}`);
+  if (risk?.medium) titleParts.push(`Medium: ${risk.medium}`);
+  if (meta.resolved) titleParts.push(`Tertangani: ${meta.resolved}`);
+
+  return (
+    <span
+      title={titleParts.join(' | ')}
+      className={`inline-flex items-center gap-1 text-[12px] font-medium ${RISK_TEXT_CLASS[meta.level]}`}
+    >
+      <span>{meta.label}</span>
+      {showCount && meta.activeAlerts > 0 && (
+        <span className="font-mono tabular-nums">({meta.activeAlerts})</span>
+      )}
     </span>
   );
 }
